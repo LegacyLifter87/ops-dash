@@ -1,0 +1,13 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Local tooling (preview server config — not needed for deploy)
+.claude/
+
+# Dependencies (none used — zero-build app), just in case
+node_modules/
+
+# Tailwind standalone CLI binary (download as needed to regenerate tailwind.css)
+tailwindcss.exe
