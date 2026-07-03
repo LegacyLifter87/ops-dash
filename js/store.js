@@ -94,3 +94,17 @@ export async function seoLoadData(siteId) {
   ]);
   return { queries: queries || [], pages: pages || [] };
 }
+
+// --- Job Tracker bridge (agency link + analytics pull) ----------------------
+async function jtInvoke(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('jt-bridge', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const jtStatus = () => jtInvoke('status');
+export const jtAnalytics = () => jtInvoke('analytics');
+export const jtListCompanies = () => jtInvoke('list_companies');
+export const jtLink = (companyId) => jtInvoke('link', { companyId });
+export const jtUnlink = () => jtInvoke('unlink');
+export const jtCreateFromCompany = (companyId) => jtInvoke('create_from_company', { companyId });

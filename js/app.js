@@ -6,11 +6,13 @@ import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAcco
 import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
 import { Dashboard } from './dashboard.js';
 import { SEO } from './seo.js';
+import { JobTracker } from './jt.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
+  { id: 'jt', label: 'Business', icon: '📊' },
 ];
 
 function parseHash() {
@@ -97,6 +99,7 @@ function App() {
         <main class="flex-1">
           ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
           ${view === 'seo' && html`<${SEO} />`}
+          ${view === 'jt' && html`<${JobTracker} />`}
         </main>
       </div>
 
