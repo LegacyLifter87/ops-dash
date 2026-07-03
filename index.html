@@ -7,6 +7,17 @@
   <meta name="description" content="Ops Dash — agency operations & SEO intelligence." />
   <link rel="preconnect" href="https://esm.sh" crossorigin />
   <link rel="preconnect" href="https://ghwmaluhbrainprieoaq.supabase.co" crossorigin />
+  <!-- Import map: resolves the bare specifiers used in js/lib.js. Must load before the module script. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "preact": "https://esm.sh/preact@10.23.2",
+        "preact/hooks": "https://esm.sh/preact@10.23.2/hooks",
+        "htm/preact": "https://esm.sh/htm@3.1.1/preact?external=preact",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+  </script>
   <link rel="stylesheet" href="./tailwind.css" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
