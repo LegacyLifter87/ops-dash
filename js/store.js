@@ -94,6 +94,24 @@ export async function seoLoadData(siteId) {
   ]);
   return { queries: queries || [], pages: pages || [] };
 }
+export async function seoLoadSites() {
+  const aid = getActiveAccountId();
+  if (!aid) return [];
+  const { data } = await supabase.from('seo_sites').select('*').eq('account_id', aid).order('created_at');
+  return data || [];
+}
+export async function seoLoadKeywords(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_keywords').select('*').eq('site_id', siteId).order('opportunity', { ascending: false });
+  return data || [];
+}
+export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
+async function seoInvokeKw(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-keywords', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
 
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
