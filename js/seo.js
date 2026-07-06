@@ -6,6 +6,7 @@
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
 import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, getActiveAccountId } from './store.js';
 import { Card, Btn, Select } from './ui.js';
+import { useSort, SortTh } from './sortable.js';
 
 const pctf = (n) => `${(n * 100).toFixed(1)}%`;
 const num = (n) => (n || 0).toLocaleString();
@@ -163,23 +164,27 @@ function cellVal(r, c) {
 }
 function QTable({ caption, rows, cols }) {
   const head = { query: 'Query', impressions: 'Impr.', clicks: 'Clicks', ctr: 'CTR', position: 'Pos.', delta: 'Δ Impr.', pageCount: 'Pages' };
+  const sort = useSort(cols.find((c) => c !== 'query') || cols[0], 'desc');
+  const sorted = sort.sort(rows, { pageCount: (r) => r.pageCount });
   return html`<${Card}><div class="p-3">
     <p class="text-xs text-slate-500 mb-2">${caption}</p>
     <div class="overflow-x-auto"><table class="w-full text-sm">
-      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">${cols.map((c) => html`<th class=${cx('py-1.5 pr-3', c !== 'query' && 'text-right')}>${head[c]}</th>`)}</tr></thead>
-      <tbody>${rows.length === 0
+      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">${cols.map((c) => html`<${SortTh} k=${c} label=${head[c]} sort=${sort} right=${c !== 'query'} />`)}</tr></thead>
+      <tbody>${sorted.length === 0
         ? html`<tr><td colspan=${cols.length} class="py-4 text-center text-slate-400">Nothing here right now.</td></tr>`
-        : rows.map((r) => html`<tr class="border-b border-slate-50">${cols.map((c) => html`<td class=${cx('py-1.5 pr-3 max-w-xs truncate', c !== 'query' && 'text-right tabular-nums')}>${cellVal(r, c)}</td>`)}</tr>`)}
+        : sorted.map((r) => html`<tr class="border-b border-slate-50">${cols.map((c) => html`<td class=${cx('py-1.5 pr-3 max-w-xs truncate', c !== 'query' && 'text-right tabular-nums')}>${cellVal(r, c)}</td>`)}</tr>`)}
       </tbody>
     </table></div>
   </div></${Card}>`;
 }
 function PTable({ rows }) {
+  const sort = useSort('clicks', 'desc');
+  const sorted = sort.sort(rows, { ctr: (r) => (r.impressions ? r.clicks / r.impressions : 0) });
   return html`<${Card}><div class="p-3">
-    <p class="text-xs text-slate-500 mb-2">Top pages by clicks (last 28 days).</p>
+    <p class="text-xs text-slate-500 mb-2">Pages (last 28 days). Click a column to sort.</p>
     <div class="overflow-x-auto"><table class="w-full text-sm">
-      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-1.5 pr-3">Page</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Clicks</th><th class="py-1.5 pr-3 text-right">CTR</th><th class="py-1.5 pr-3 text-right">Pos.</th></tr></thead>
-      <tbody>${rows.map((r) => html`<tr class="border-b border-slate-50">
+      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><${SortTh} k="page" label="Page" sort=${sort} /><${SortTh} k="impressions" label="Impr." sort=${sort} right=${true} /><${SortTh} k="clicks" label="Clicks" sort=${sort} right=${true} /><${SortTh} k="ctr" label="CTR" sort=${sort} right=${true} /><${SortTh} k="position" label="Pos." sort=${sort} right=${true} /></tr></thead>
+      <tbody>${sorted.map((r) => html`<tr class="border-b border-slate-50">
         <td class="py-1.5 pr-3 max-w-sm truncate"><a href=${r.page} target="_blank" rel="noopener" class="text-brand-700 hover:underline">${short(r.page)}</a></td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.impressions)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${num(r.clicks)}</td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${pctf(r.impressions ? r.clicks / r.impressions : 0)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${posf(r.position)}</td>

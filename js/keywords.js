@@ -6,6 +6,7 @@
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
 import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs, seoSetEconomics, seoAdsEnrich } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
+import { useSort, SortTh } from './sortable.js';
 
 const num = (n) => (n || 0).toLocaleString();
 const money = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -37,6 +38,8 @@ export function Keywords() {
   const [econ, setEcon] = useState(null);
   const [marginPct, setMarginPct] = useState(45);
   const [leadPct, setLeadPct] = useState(3);
+  const sortKw = useSort('opportunity', 'desc');
+  const sortCl = useSort('count', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const loadKw = async (sid) => { setRows(await seoLoadKeywords(sid)); };
@@ -162,9 +165,9 @@ export function Keywords() {
         ${view === 'keywords'
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th class="py-1.5 pr-3">Opp.</th><th class="py-1.5 pr-3">Keyword</th><th class="py-1.5 pr-3">Intent</th><th class="py-1.5 pr-3">Cluster</th>
-                <th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Vol.</th><th class="py-1.5 pr-3 text-right">CPC</th><th class="py-1.5 pr-3 text-right">Pos.</th><th class="py-1.5 pr-3 text-right">$/mo</th><th class="py-1.5 pr-3">Recommended action</th></tr></thead>
-              <tbody>${filtered.slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
+                <${SortTh} k="opportunity" label="Opp." sort=${sortKw} /><${SortTh} k="keyword" label="Keyword" sort=${sortKw} /><${SortTh} k="intent" label="Intent" sort=${sortKw} /><${SortTh} k="cluster" label="Cluster" sort=${sortKw} />
+                <${SortTh} k="impressions" label="Impr." sort=${sortKw} right=${true} /><${SortTh} k="volume" label="Vol." sort=${sortKw} right=${true} /><${SortTh} k="cpc" label="CPC" sort=${sortKw} right=${true} /><${SortTh} k="position" label="Pos." sort=${sortKw} right=${true} /><${SortTh} k="est_value" label="$/mo" sort=${sortKw} right=${true} /><${SortTh} k="recommended_action" label="Recommended action" sort=${sortKw} /></tr></thead>
+              <tbody>${sortKw.sort(filtered).slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
                 <td class="py-1.5 pr-3"><${Pill} cls=${oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
                 <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${k.keyword}</td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[k.intent] || 'bg-slate-100 text-slate-600'}>${k.intent}</${Pill}></td>
@@ -182,8 +185,8 @@ export function Keywords() {
           : view === 'clusters'
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th class="py-1.5 pr-3">Cluster</th><th class="py-1.5 pr-3 text-right">Keywords</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Avg opp.</th><th class="py-1.5 pr-3">Primary intent</th><th class="py-1.5 pr-3"></th></tr></thead>
-              <tbody>${clusters.map((c) => html`<tr class="border-b border-slate-50">
+                <${SortTh} k="cluster" label="Cluster" sort=${sortCl} /><${SortTh} k="count" label="Keywords" sort=${sortCl} right=${true} /><${SortTh} k="impressions" label="Impr." sort=${sortCl} right=${true} /><${SortTh} k="avgOpp" label="Avg opp." sort=${sortCl} right=${true} /><${SortTh} k="topIntent" label="Primary intent" sort=${sortCl} /><th class="py-1.5 pr-3"></th></tr></thead>
+              <tbody>${sortCl.sort(clusters).map((c) => html`<tr class="border-b border-slate-50">
                 <td class="py-1.5 pr-3 font-medium text-slate-800 cursor-pointer hover:text-brand-700" onClick=${() => { setCluster(c.cluster); setView('keywords'); }}>${c.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${c.count}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(c.impressions)}</td>

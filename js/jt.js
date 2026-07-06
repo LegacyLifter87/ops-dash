@@ -7,10 +7,30 @@
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, jtStatus, jtAnalytics, jtListCompanies, jtLink, jtUnlink } from './store.js';
 import { Card, Btn, Select, Stat } from './ui.js';
+import { useSort, SortTh } from './sortable.js';
 
 const money = (n) => '$' + Math.round(n || 0).toLocaleString();
 const pct = (n) => `${((n || 0) * 100).toFixed(1)}%`;
 const k = (n) => (Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(0) + 'k' : money(n));
+
+function RevTable({ title, sub, rows }) {
+  const sort = useSort('value', 'desc');
+  const sorted = sort.sort(rows || []);
+  return html`<${Card}><div class="p-4">
+    <div class="font-semibold text-slate-800">${title}</div>
+    ${sub && html`<div class="text-xs text-slate-400 mb-2">${sub}</div>`}
+    <table class="w-full text-sm mt-2">
+      <thead><tr class="text-left text-[11px] text-slate-400 border-b border-slate-100"><${SortTh} k="key" label="Name" sort=${sort} /><${SortTh} k="count" label="#" sort=${sort} right=${true} /><${SortTh} k="value" label="Value" sort=${sort} right=${true} /></tr></thead>
+      <tbody>${sorted.slice(0, 8).map((r) => html`<tr class="border-b border-slate-50">
+        <td class="py-1.5 pr-2 text-slate-700 truncate max-w-[9rem]">${r.key}</td>
+        <td class="py-1.5 text-right tabular-nums text-slate-500">${r.count}</td>
+        <td class="py-1.5 pl-2 text-right tabular-nums font-medium text-slate-800">${k(r.value)}</td>
+      </tr>`)}
+      ${sorted.length === 0 && html`<tr><td class="py-2 text-slate-400 text-center" colspan="3">No data.</td></tr>`}
+      </tbody>
+    </table>
+  </div></${Card}>`;
+}
 
 export function JobTracker() {
   const store = useStore();
@@ -115,20 +135,9 @@ export function JobTracker() {
     </div>
 
     <div class="grid md:grid-cols-3 gap-4">
-      ${[['Revenue by lead source', data.bySource, 'Marketing origin of won work'], ['Revenue by job type', data.byType, ''], ['Revenue by salesperson', data.bySellingPm, '']]
-        .map(([title, rows, sub]) => html`<${Card}><div class="p-4">
-          <div class="font-semibold text-slate-800">${title}</div>
-          ${sub && html`<div class="text-xs text-slate-400 mb-2">${sub}</div>`}
-          <table class="w-full text-sm mt-2">
-            <tbody>${(rows || []).slice(0, 8).map((r) => html`<tr class="border-b border-slate-50">
-              <td class="py-1.5 pr-2 text-slate-700 truncate max-w-[9rem]">${r.key}</td>
-              <td class="py-1.5 text-right tabular-nums text-slate-500">${r.count}</td>
-              <td class="py-1.5 pl-2 text-right tabular-nums font-medium text-slate-800">${k(r.value)}</td>
-            </tr>`)}
-            ${(rows || []).length === 0 && html`<tr><td class="py-2 text-slate-400 text-center" colspan="3">No data.</td></tr>`}
-            </tbody>
-          </table>
-        </div></${Card}>`)}
+      <${RevTable} title="Revenue by lead source" sub="Marketing origin of won work" rows=${data.bySource} />
+      <${RevTable} title="Revenue by job type" rows=${data.byType} />
+      <${RevTable} title="Revenue by salesperson" rows=${data.bySellingPm} />
     </div>
   </div>`;
 }

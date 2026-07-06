@@ -5,6 +5,7 @@
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadRankHistory } from './store.js';
 import { Card, Select } from './ui.js';
+import { useSort, SortTh } from './sortable.js';
 
 const posf = (n) => (n ? n.toFixed(1) : '—');
 const num = (n) => (n || 0).toLocaleString();
@@ -25,7 +26,7 @@ export function Ranks() {
   const [sites, setSites] = useState(null);
   const [site, setSite] = useState('');
   const [hist, setHist] = useState([]);
-  const [sort, setSort] = useState('impr');
+  const sortR = useSort('impressions', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   useEffect(() => { if (site) seoLoadRankHistory(site).then(setHist); else setHist([]); }, [site]);
@@ -42,13 +43,7 @@ export function Ranks() {
     return out;
   }, [hist]);
 
-  const sorted = useMemo(() => {
-    const r = [...rows];
-    if (sort === 'movers') r.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
-    else if (sort === 'pos') r.sort((a, b) => a.position - b.position);
-    else r.sort((a, b) => b.impressions - a.impressions);
-    return r.slice(0, 300);
-  }, [rows, sort]);
+  const sorted = sortR.sort(rows).slice(0, 300);
 
   const stats = useMemo(() => ({
     tracked: rows.length,
@@ -81,12 +76,9 @@ export function Ranks() {
             ${[['Tracked', num(stats.tracked)], ['Avg position', posf(stats.avg)], ['In top 3', num(stats.top3)], ['In top 10', num(stats.top10)], ['Improved', num(stats.up)], ['Declined', num(stats.down)]]
               .map(([k, v]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div></div></${Card}>`)}
           </div>
-          <div class="flex gap-1 border-b border-slate-200">
-            ${[['impr', 'By importance'], ['movers', 'Biggest movers'], ['pos', 'Best positions']].map(([id, l]) => html`<button onClick=${() => setSort(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', sort === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${l}</button>`)}
-          </div>
           <${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
             <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
-              <th class="py-1.5 pr-3">Keyword</th><th class="py-1.5 pr-3 text-right">Position</th><th class="py-1.5 pr-3 text-right">Change</th><th class="py-1.5 pr-3">Trend</th><th class="py-1.5 pr-3 text-right">Impr.</th></tr></thead>
+              <${SortTh} k="keyword" label="Keyword" sort=${sortR} /><${SortTh} k="position" label="Position" sort=${sortR} right=${true} /><${SortTh} k="change" label="Change" sort=${sortR} right=${true} /><th class="py-1.5 pr-3">Trend</th><${SortTh} k="impressions" label="Impr." sort=${sortR} right=${true} /></tr></thead>
             <tbody>${sorted.map((r) => html`<tr class="border-b border-slate-50">
               <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${r.keyword}</td>
               <td class="py-1.5 pr-3 text-right tabular-nums">${posf(r.position)}</td>
