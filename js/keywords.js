@@ -31,7 +31,7 @@ export function Keywords() {
   const [banner, setBanner] = useState('');
   const [brand, setBrand] = useState('');
   const [briefs, setBriefs] = useState([]);
-  const [showBrief, setShowBrief] = useState(null);
+  const [openCluster, setOpenCluster] = useState(null);
   const [briefBusy, setBriefBusy] = useState('');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
@@ -55,12 +55,11 @@ export function Keywords() {
       await loadKw(site);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
-  const genBrief = async (cl) => {
+  const genBrief = async (cl, format) => {
     setBriefBusy(cl); setErr('');
-    try { const r = await seoBriefGenerate(site, cl); setShowBrief(r.brief); setBriefs(await seoLoadBriefs(site)); }
+    try { await seoBriefGenerate(site, cl, format); setBriefs(await seoLoadBriefs(site)); }
     catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
   };
-  const openBrief = (cl) => { const b = briefs.find((x) => x.cluster === cl); if (b) setShowBrief(b); else genBrief(cl); };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
 
   const clusters = useMemo(() => {
@@ -154,48 +153,85 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(c.impressions)}</td>
                 <td class="py-1.5 pr-3 text-right"><${Pill} cls=${oppColor(c.avgOpp)}>${c.avgOpp}</${Pill}></td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[c.topIntent] || 'bg-slate-100 text-slate-600'}>${c.topIntent}</${Pill}></td>
-                <td class="py-1.5 pr-3 text-right"><button onClick=${() => openBrief(c.cluster)} disabled=${briefBusy === c.cluster} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefBusy === c.cluster ? 'Writing…' : briefFor(c.cluster) ? 'View brief' : '✨ Brief'}</button></td>
+                <td class="py-1.5 pr-3 text-right"><button onClick=${() => setOpenCluster(c.cluster)} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
               </tr>`)}</tbody>
             </table></div></${Card}>`
           : html`<${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
-                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => setShowBrief(b)} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
+                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => setOpenCluster(b.cluster)} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
                     <div class="min-w-0"><div class="font-medium text-slate-800">${b.cluster}</div><div class="text-xs text-slate-500 truncate">${b.title}</div></div>
-                    <${Pill} cls="bg-slate-100 text-slate-600 shrink-0">${(b.page_type || '').replace('_', ' ')}</${Pill}>
+                    <${Pill} cls="bg-slate-100 text-slate-600 shrink-0">${(b.format || b.page_type || '').replace('_', ' ')}</${Pill}>
                   </button>`)}</div>`}
             </div></${Card}>`}
       `}
-    ${showBrief && html`<${BriefModal} brief=${showBrief} busy=${briefBusy === showBrief.cluster} onClose=${() => setShowBrief(null)} onRegen=${() => genBrief(showBrief.cluster)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, fmt)} />`}
   </div>`;
 }
 
-function BriefModal({ brief, busy, onClose, onRegen }) {
-  const label = { text: 'text-xs font-semibold text-slate-400 uppercase tracking-wide' };
-  return html`<${Modal} title=${`Content brief — ${brief.cluster}`} wide onClose=${onClose}
-    footer=${html`<div class="flex justify-between items-center w-full"><span class="text-xs text-slate-400">AI-generated · edit before publishing</span><${Btn} size="sm" onClick=${onRegen} disabled=${busy}>${busy ? 'Regenerating…' : 'Regenerate'}</${Btn}></div>`}>
-    <div class="space-y-4 text-sm">
-      <div class="flex flex-wrap gap-2">
-        <${Pill} cls="bg-brand-100 text-brand-700">${(brief.page_type || '').replace('_', ' ')}</${Pill}>
-        <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>
-      </div>
-      <div><div class=${label.text}>Title tag</div><div class="text-slate-800 font-medium">${brief.title}</div></div>
-      <div><div class=${label.text}>Meta description</div><div class="text-slate-600">${brief.meta}</div></div>
-      <div><div class=${label.text}>H1</div><div class="text-slate-800 font-medium">${brief.h1}</div></div>
-      <div><div class=${cx(label.text, 'mb-1')}>Outline</div>
-        <div class="space-y-2">${(brief.outline || []).map((s) => html`<div>
-          <div class="font-medium text-slate-800">${s.h2}</div>
-          <ul class="list-disc ml-5 text-slate-600">${(s.points || []).map((p) => html`<li>${p}</li>`)}</ul>
-        </div>`)}</div>
-      </div>
-      <div><div class=${cx(label.text, 'mb-1')}>FAQs</div>
-        <div class="space-y-2">${(brief.faqs || []).map((f) => html`<div><div class="font-medium text-slate-700">${f.q}</div><div class="text-slate-600">${f.a}</div></div>`)}</div>
-      </div>
-      <div class="grid sm:grid-cols-2 gap-4">
-        <div><div class=${cx(label.text, 'mb-1')}>Internal links</div><ul class="list-disc ml-5 text-slate-600">${(brief.internal_links || []).map((l) => html`<li>${l}</li>`)}</ul></div>
-        <div><div class=${cx(label.text, 'mb-1')}>Target keywords</div><div class="text-slate-500 text-xs leading-relaxed">${(brief.keywords || []).slice(0, 15).join(' · ')}</div></div>
-      </div>
-      <div><div class=${label.text}>Call to action</div><div class="text-slate-700">${brief.cta}</div></div>
+// Minimal, safe Markdown -> preact vnodes (headings, bold, links, lists, paragraphs).
+function mdInline(s) {
+  const parts = []; const re = /(\*\*([^*]+)\*\*)|(\[([^\]]+)\]\(([^)]+)\))/g;
+  let m, last = 0;
+  while ((m = re.exec(s))) {
+    if (m.index > last) parts.push(s.slice(last, m.index));
+    if (m[2] !== undefined) parts.push(html`<strong>${m[2]}</strong>`);
+    else parts.push(html`<a href=${m[5]} target="_blank" rel="noopener" class="text-brand-700 underline">${m[4]}</a>`);
+    last = re.lastIndex;
+  }
+  if (last < s.length) parts.push(s.slice(last));
+  return parts;
+}
+function mdRender(md) {
+  const out = []; let list = null;
+  const flush = () => { if (list) { out.push(html`<ul class="list-disc ml-5 space-y-1 text-slate-700">${list}</ul>`); list = null; } };
+  for (const ln of (md || '').split(/\r?\n/)) {
+    if (/^\s*###\s+/.test(ln)) { flush(); out.push(html`<h3 class="font-semibold text-slate-800 mt-3">${mdInline(ln.replace(/^\s*###\s+/, ''))}</h3>`); }
+    else if (/^\s*##\s+/.test(ln)) { flush(); out.push(html`<h2 class="text-lg font-bold text-slate-800 mt-4">${mdInline(ln.replace(/^\s*##\s+/, ''))}</h2>`); }
+    else if (/^\s*#\s+/.test(ln)) { flush(); out.push(html`<h1 class="text-xl font-bold text-slate-900 mt-1">${mdInline(ln.replace(/^\s*#\s+/, ''))}</h1>`); }
+    else if (/^\s*[-*]\s+/.test(ln)) { if (!list) list = []; list.push(html`<li>${mdInline(ln.replace(/^\s*[-*]\s+/, ''))}</li>`); }
+    else if (ln.trim() === '') { flush(); }
+    else { flush(); out.push(html`<p class="text-slate-700">${mdInline(ln)}</p>`); }
+  }
+  flush();
+  return out;
+}
+
+function ContentModal({ cluster, brief, busy, onClose, onGen }) {
+  const [copied, setCopied] = useState(false);
+  const has = brief && brief.content;
+  const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
+  const footer = has ? html`<div class="flex justify-between items-center w-full gap-2">
+    <div class="flex gap-2">
+      <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
+      <${Btn} size="sm" onClick=${() => onGen('service')} disabled=${busy}>${busy ? '…' : 'Rewrite as page'}</${Btn}>
     </div>
+    <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy markdown'}</${Btn}>
+  </div>` : null;
+  return html`<${Modal} title=${`Content — ${cluster}`} wide onClose=${onClose} footer=${footer}>
+    ${!has ? html`<div class="text-center space-y-4 py-4">
+        <div class="text-sm text-slate-600">Generate publish-ready copy for <span class="font-medium">${cluster}</span>. Pick the format:</div>
+        <div class="flex justify-center gap-3">
+          <${Btn} onClick=${() => onGen('blog')} disabled=${busy}>${busy ? 'Writing…' : '📝 Blog post'}</${Btn}>
+          <${Btn} onClick=${() => onGen('service')} disabled=${busy}>${busy ? 'Writing…' : '🧰 Service page'}</${Btn}>
+        </div>
+        <div class="text-xs text-slate-400">Includes SEO title/meta + internal links to your existing pages.</div>
+      </div>`
+      : html`<div class="space-y-4 text-sm">
+        <div class="flex flex-wrap gap-2 items-center">
+          <${Pill} cls="bg-brand-100 text-brand-700">${(brief.format || brief.page_type || '').replace('_', ' ')}</${Pill}>
+          <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>
+          ${brief.slug && html`<span class="text-xs text-slate-400">/${brief.slug}</span>`}
+        </div>
+        <div class="rounded-lg bg-slate-50 p-3 space-y-1">
+          <div><span class="text-xs font-semibold text-slate-400 uppercase">Title</span> <span class="text-slate-800">${brief.title}</span></div>
+          <div><span class="text-xs font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
+        </div>
+        <article class="space-y-2">${mdRender(brief.content)}</article>
+        ${(brief.internal_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100">
+          <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Internal links used</div>
+          <ul class="list-disc ml-5 text-slate-600">${brief.internal_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
+        </div>`}
+      </div>`}
   </${Modal}>`;
 }
