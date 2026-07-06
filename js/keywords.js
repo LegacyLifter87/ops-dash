@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
 
 const num = (n) => (n || 0).toLocaleString();
@@ -29,15 +29,28 @@ export function Keywords() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
+  const [brand, setBrand] = useState('');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const loadKw = async (sid) => { setRows(await seoLoadKeywords(sid)); };
   useEffect(() => { if (site) loadKw(site); else setRows([]); }, [site]);
+  useEffect(() => { const s = (sites || []).find((x) => x.id === site); setBrand((s?.brand_terms || []).join(', ')); }, [site, sites]);
 
   const rebuild = async () => {
     setBusy(true); setErr(''); setBanner('');
     try { const r = await seoKeywordsRebuild(site); setBanner(`Built ${num(r.keywords)} keywords from Search Console.`); await loadKw(site); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const saveBrand = async () => {
+    setBusy(true); setErr(''); setBanner('');
+    try {
+      const terms = brand.split(',').map((t) => t.trim()).filter(Boolean);
+      await seoSetBrandTerms(site, terms);
+      setSites(await seoLoadSites());
+      await seoKeywordsRebuild(site);
+      setBanner('Brand terms saved — keywords rebuilt.');
+      await loadKw(site);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
 
   const clusters = useMemo(() => {
@@ -77,6 +90,13 @@ export function Keywords() {
     <${Head} />
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
+
+    <${Card}><div class="p-3 flex flex-wrap items-center gap-2">
+      <span class="text-sm font-medium text-slate-700">Brand terms</span>
+      <span class="text-xs text-slate-400 hidden sm:inline">matches are tagged navigational & down-ranked</span>
+      <${Input} value=${brand} onInput=${setBrand} placeholder="your name, company, domain…" class="flex-1 min-w-[12rem]" />
+      <${Btn} size="sm" onClick=${saveBrand} disabled=${busy || !site}>${busy ? 'Saving…' : 'Save & rebuild'}</${Btn}>
+    </div></${Card}>
 
     ${rows.length === 0
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No keywords yet. Click <span class="font-medium">Build / refresh</span> to generate the keyword database from your Search Console data.</div></${Card}>`
