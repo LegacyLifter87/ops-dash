@@ -105,6 +105,11 @@ export async function seoLoadKeywords(siteId) {
   const { data } = await supabase.from('seo_keywords').select('*').eq('site_id', siteId).order('opportunity', { ascending: false });
   return data || [];
 }
+export async function seoLoadRankHistory(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_rank_history').select('*').eq('site_id', siteId).order('snapshot_date');
+  return data || [];
+}
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
 async function seoInvokeAds(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-ads', { body: { action, accountId: getActiveAccountId(), ...extra } });
