@@ -110,6 +110,19 @@ export async function seoLoadRankHistory(siteId) {
   const { data } = await supabase.from('seo_rank_history').select('*').eq('site_id', siteId).order('snapshot_date');
   return data || [];
 }
+async function seoInvokeAudit(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-audit', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoAuditRun = (siteId) => seoInvokeAudit('crawl', { siteId });
+export const seoAuditAi = (siteId, url) => seoInvokeAudit('ai_analyze', { siteId, url });
+export async function seoLoadAudit(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_audit_pages').select('*').eq('site_id', siteId).order('technical_score');
+  return data || [];
+}
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
 async function seoInvokeAds(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-ads', { body: { action, accountId: getActiveAccountId(), ...extra } });

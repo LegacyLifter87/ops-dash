@@ -8,6 +8,7 @@ import { Dashboard } from './dashboard.js';
 import { SEO } from './seo.js';
 import { Keywords } from './keywords.js';
 import { Ranks } from './ranks.js';
+import { Audit } from './audit.js';
 import { JobTracker } from './jt.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
@@ -16,6 +17,7 @@ const NAV = [
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
+  { id: 'audit', label: 'Audit', icon: '🩺' },
   { id: 'jt', label: 'Business', icon: '📊' },
 ];
 
@@ -105,6 +107,7 @@ function App() {
           ${view === 'seo' && html`<${SEO} />`}
           ${view === 'keywords' && html`<${Keywords} />`}
           ${view === 'ranks' && html`<${Ranks} />`}
+          ${view === 'audit' && html`<${Audit} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
         </main>
       </div>
