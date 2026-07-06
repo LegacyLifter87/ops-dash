@@ -4,10 +4,11 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs, seoSetEconomics } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 
 const num = (n) => (n || 0).toLocaleString();
+const money = (n) => '$' + Math.round(n || 0).toLocaleString();
 const posf = (n) => (n ? n.toFixed(1) : '—');
 const intentColor = {
   emergency: 'bg-rose-100 text-rose-700', transactional: 'bg-emerald-100 text-emerald-700', local: 'bg-teal-100 text-teal-700',
@@ -33,16 +34,29 @@ export function Keywords() {
   const [briefs, setBriefs] = useState([]);
   const [openCluster, setOpenCluster] = useState(null);
   const [briefBusy, setBriefBusy] = useState('');
+  const [econ, setEcon] = useState(null);
+  const [marginPct, setMarginPct] = useState(45);
+  const [leadPct, setLeadPct] = useState(3);
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const loadKw = async (sid) => { setRows(await seoLoadKeywords(sid)); };
   useEffect(() => { if (site) { loadKw(site); seoLoadBriefs(site).then(setBriefs); } else { setRows([]); setBriefs([]); } }, [site]);
   useEffect(() => { const s = (sites || []).find((x) => x.id === site); setBrand((s?.brand_terms || []).join(', ')); }, [site, sites]);
+  useEffect(() => { const a = activeAccount(); if (a) { if (a.assumed_margin != null) setMarginPct(Math.round(a.assumed_margin * 100)); if (a.lead_rate != null) setLeadPct(+(a.lead_rate * 100).toFixed(1)); } }, [accountId]);
 
   const rebuild = async () => {
     setBusy(true); setErr(''); setBanner('');
-    try { const r = await seoKeywordsRebuild(site); setBanner(`Built ${num(r.keywords)} keywords from Search Console.`); await loadKw(site); }
+    try { const r = await seoKeywordsRebuild(site); setEcon(r.economics); setBanner(`Built ${num(r.keywords)} keywords from Search Console.`); await loadKw(site); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const saveEconomics = async () => {
+    setBusy(true); setErr(''); setBanner('');
+    try {
+      await seoSetEconomics((Number(marginPct) || 0) / 100, (Number(leadPct) || 0) / 100);
+      const r = await seoKeywordsRebuild(site); setEcon(r.economics);
+      setBanner('Revenue model saved — keywords rescored by dollar potential.');
+      await loadKw(site);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   const saveBrand = async () => {
     setBusy(true); setErr(''); setBanner('');
@@ -50,7 +64,7 @@ export function Keywords() {
       const terms = brand.split(',').map((t) => t.trim()).filter(Boolean);
       await seoSetBrandTerms(site, terms);
       setSites(await seoLoadSites());
-      await seoKeywordsRebuild(site);
+      { const r = await seoKeywordsRebuild(site); setEcon(r.economics); }
       setBanner('Brand terms saved — keywords rebuilt.');
       await loadKw(site);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -73,7 +87,7 @@ export function Keywords() {
     (intent === 'all' || r.intent === intent) && (cluster === 'all' || r.cluster === cluster) && (!q || r.keyword.toLowerCase().includes(q.toLowerCase()))
   ), [rows, intent, cluster, q]);
 
-  const stats = useMemo(() => ({ total: rows.length, clusters: clusters.length, high: rows.filter((r) => r.opportunity >= 75).length, avg: rows.length ? Math.round(rows.reduce((s, r) => s + Number(r.opportunity), 0) / rows.length) : 0 }), [rows, clusters]);
+  const stats = useMemo(() => ({ total: rows.length, clusters: clusters.length, high: rows.filter((r) => r.opportunity >= 75).length, avg: rows.length ? Math.round(rows.reduce((s, r) => s + Number(r.opportunity), 0) / rows.length) : 0, value: rows.reduce((s, r) => s + Number(r.est_value || 0), 0) }), [rows, clusters]);
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading keywords…</div>`;
@@ -107,11 +121,21 @@ export function Keywords() {
       <${Btn} size="sm" onClick=${saveBrand} disabled=${busy || !site}>${busy ? 'Saving…' : 'Save & rebuild'}</${Btn}>
     </div></${Card}>
 
+    <${Card}><div class="p-3 flex flex-wrap items-center gap-3">
+      <span class="text-sm font-medium text-slate-700">Revenue model</span>
+      <div class="flex items-center gap-1"><${Input} value=${String(marginPct)} onInput=${(v) => setMarginPct(v)} class="w-16" /><span class="text-xs text-slate-500">% margin</span></div>
+      <div class="flex items-center gap-1"><${Input} value=${String(leadPct)} onInput=${(v) => setLeadPct(v)} class="w-16" /><span class="text-xs text-slate-500">% visitor→lead</span></div>
+      <${Btn} size="sm" onClick=${saveEconomics} disabled=${busy || !site}>${busy ? 'Saving…' : 'Save & rescore'}</${Btn}>
+      ${econ && econ.linked
+        ? html`<span class="text-xs text-slate-500">Real JT data: avg job ${money(econ.avgJob)} · win ${(econ.winRate * 100).toFixed(0)}% → ${money(econ.profitPerCustomer)}/job</span>`
+        : html`<span class="text-xs text-amber-600">Link a Job Tracker company (Business tab) to power $ estimates.</span>`}
+    </div></${Card}>
+
     ${rows.length === 0
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No keywords yet. Click <span class="font-medium">Build / refresh</span> to generate the keyword database from your Search Console data.</div></${Card}>`
       : html`
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          ${[['Keywords', num(stats.total)], ['Topic clusters', num(stats.clusters)], ['High opportunity', num(stats.high), 'score ≥ 75'], ['Avg opportunity', stats.avg]]
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          ${[['Keywords', num(stats.total)], ['Topic clusters', num(stats.clusters)], ['High opportunity', num(stats.high), 'score ≥ 75'], ['Avg opportunity', stats.avg], ['Est. $/mo', stats.value > 0 ? money(stats.value) : '—', 'at top-3 rankings']]
             .map(([k, v, sub]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div>${sub && html`<div class="text-[11px] text-slate-400">${sub}</div>`}</div></${Card}>`)}
         </div>
 
@@ -130,7 +154,7 @@ export function Keywords() {
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
                 <th class="py-1.5 pr-3">Opp.</th><th class="py-1.5 pr-3">Keyword</th><th class="py-1.5 pr-3">Intent</th><th class="py-1.5 pr-3">Cluster</th>
-                <th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Pos.</th><th class="py-1.5 pr-3">Recommended action</th></tr></thead>
+                <th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Pos.</th><th class="py-1.5 pr-3 text-right">$/mo</th><th class="py-1.5 pr-3">Recommended action</th></tr></thead>
               <tbody>${filtered.slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
                 <td class="py-1.5 pr-3"><${Pill} cls=${oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
                 <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${k.keyword}</td>
@@ -138,6 +162,7 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-slate-500 truncate max-w-[8rem]">${k.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(k.impressions)}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${posf(k.position)}</td>
+                <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', k.est_value > 0 ? 'text-emerald-700' : 'text-slate-300')}>${k.est_value > 0 ? money(k.est_value) : '—'}</td>
                 <td class="py-1.5 pr-3 text-slate-600">${k.recommended_action}</td>
               </tr>`)}</tbody>
             </table>
