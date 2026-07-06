@@ -118,6 +118,7 @@ async function seoInvokeAudit(action, extra = {}) {
 }
 export const seoAuditRun = (siteId) => seoInvokeAudit('crawl', { siteId });
 export const seoAuditAi = (siteId, url) => seoInvokeAudit('ai_analyze', { siteId, url });
+export const seoAuditSpeed = (siteId, url) => seoInvokeAudit('speed', { siteId, url });
 export async function seoLoadAudit(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_audit_pages').select('*').eq('site_id', siteId).order('technical_score');

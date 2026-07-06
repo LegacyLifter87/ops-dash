@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditRun, seoAuditAi } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditRun, seoAuditAi, seoAuditSpeed } from './store.js';
 import { Card, Btn, Select, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -38,6 +38,11 @@ export function Audit() {
   const analyzeAi = async (url) => {
     setBusy('ai:' + url); setErr('');
     try { await seoAuditAi(site, url); await load(site); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const analyzeSpeed = async (url) => {
+    setBusy('psi:' + url); setErr('');
+    try { await seoAuditSpeed(site, url); await load(site); }
     catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
 
@@ -124,17 +129,26 @@ export function Audit() {
           </table></div></${Card}>
         `}
 
-    ${openPage && html`<${DetailModal} page=${openPage} busy=${busy === 'ai:' + openPage.url} onClose=${() => setOpenUrl(null)} onAi=${() => analyzeAi(openPage.url)} />`}
+    ${openPage && html`<${DetailModal} page=${openPage} busyAi=${busy === 'ai:' + openPage.url} busyPsi=${busy === 'psi:' + openPage.url} onClose=${() => setOpenUrl(null)} onAi=${() => analyzeAi(openPage.url)} onSpeed=${() => analyzeSpeed(openPage.url)} />`}
   </div>`;
 }
 
-function DetailModal({ page, busy, onClose, onAi }) {
-  const ai = page.ai_insights;
+function DetailModal({ page, busyAi, busyPsi, onClose, onAi, onSpeed }) {
+  const ai = page.ai_insights, c = page.checks || {}, cwv = page.cwv;
+  const kv = (label, val) => html`<div class="flex justify-between gap-3 py-0.5 border-b border-slate-50"><span class="text-slate-400 shrink-0">${label}</span><span class="text-slate-700 text-right truncate">${val}</span></div>`;
+  const yn = (b) => (b ? '✅' : '—');
   return html`<${Modal} title=${shortUrl(page.url)} wide onClose=${onClose}
-    footer=${html`<div class="flex justify-between items-center w-full"><a href=${page.url} target="_blank" rel="noopener" class="text-xs text-brand-700 underline">Open page ↗</a><${Btn} size="sm" onClick=${onAi} disabled=${busy}>${busy ? 'Analyzing…' : (ai ? 'Re-run AI analysis' : '✨ Run AI / AEO analysis')}</${Btn}></div>`}>
+    footer=${html`<div class="flex justify-between items-center w-full gap-2">
+      <a href=${page.url} target="_blank" rel="noopener" class="text-xs text-brand-700 underline">Open page ↗</a>
+      <div class="flex gap-2">
+        <${Btn} size="sm" onClick=${onSpeed} disabled=${busyPsi}>${busyPsi ? 'Testing…' : (cwv ? '↻ Speed' : '⚡ Speed test')}</${Btn}>
+        <${Btn} size="sm" onClick=${onAi} disabled=${busyAi}>${busyAi ? 'Analyzing…' : (ai ? '↻ AI' : '✨ AI / AEO')}</${Btn}>
+      </div>
+    </div>`}>
     <div class="space-y-4 text-sm">
       <div class="flex flex-wrap gap-2 items-center">
         <${Pill} cls=${scoreColor(page.technical_score || 0)}>Tech ${page.technical_score ?? '—'}</${Pill}>
+        ${cwv && html`<${Pill} cls=${scoreColor(cwv.perf)}>Speed ${cwv.perf}</${Pill}>`}
         ${page.ai_score != null && html`<${Pill} cls=${scoreColor(page.ai_score)}>AI ${page.ai_score}</${Pill}>`}
         <span class="text-xs text-slate-400">HTTP ${page.status_code} · ${num(page.word_count)} words</span>
       </div>
@@ -142,7 +156,31 @@ function DetailModal({ page, busy, onClose, onAi }) {
       <div>
         <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Technical issues (${(page.issues || []).length})</div>
         ${(page.issues || []).length === 0 ? html`<div class="text-emerald-600">No technical issues. 🎉</div>`
-          : html`<ul class="space-y-1">${(page.issues || []).map((i) => html`<li class=${cx('flex gap-2', sevColor[i.severity])}><span class="text-[10px] uppercase font-bold mt-0.5">${i.severity}</span><span class="text-slate-700">${i.message}</span></li>`)}</ul>`}
+          : html`<ul class="space-y-2">${(page.issues || []).map((i) => html`<li class="flex gap-2">
+              <span class=${cx('text-[10px] uppercase font-bold mt-0.5 shrink-0', sevColor[i.severity])}>${i.severity}</span>
+              <span><span class="text-slate-800">${i.message}</span>${i.fix && html`<span class="text-slate-500"> — ${i.fix}</span>`}</span>
+            </li>`)}</ul>`}
+      </div>
+
+      ${cwv && html`<div class="border-t border-slate-100 pt-3">
+        <div class="text-xs font-semibold text-slate-400 uppercase mb-2">Core Web Vitals — mobile</div>
+        <div class="grid grid-cols-4 gap-2 text-center">
+          ${[['Perf', cwv.perf], ['LCP', cwv.lcp != null ? (cwv.lcp / 1000).toFixed(1) + 's' : '—'], ['CLS', cwv.cls != null ? cwv.cls : '—'], ['TBT', cwv.tbt != null ? cwv.tbt + 'ms' : '—']].map(([k, v]) => html`<div class="rounded-lg bg-slate-50 p-2"><div class="text-[11px] text-slate-400">${k}</div><div class="font-bold text-slate-800">${v}</div></div>`)}
+        </div>
+      </div>`}
+
+      <div class="border-t border-slate-100 pt-3">
+        <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Extracted signals</div>
+        <div class="text-xs">
+          ${kv('Title', c.title || '—')}
+          ${kv('Meta', c.metaDesc || '—')}
+          ${kv('H1', c.h1Text || '—')}
+          ${kv('Headings', `H2×${c.h2Count || 0} · H3×${c.h3Count || 0}`)}
+          ${kv('Schema', (c.schemaTypes || []).length ? c.schemaTypes.join(', ') : '—')}
+          ${kv('Links', `${c.internalLinks || 0} internal · ${c.externalLinks || 0} external`)}
+          ${kv('Signals', `${yn(c.canonical)} canonical · ${yn(c.og)} OG · ${yn(c.viewport)} viewport · ${c.lang || 'no'} lang`)}
+          ${kv('Images', `${c.imgs || 0} (${c.imgNoAlt || 0} missing alt)`)}
+        </div>
       </div>
 
       ${ai ? html`<div class="border-t border-slate-100 pt-3 space-y-3">
