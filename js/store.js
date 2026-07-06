@@ -106,6 +106,14 @@ export async function seoLoadKeywords(siteId) {
   return data || [];
 }
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
+async function seoInvokeAds(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-ads', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoAdsStatus = () => seoInvokeAds('status');
+export const seoAdsEnrich = (siteId) => seoInvokeAds('enrich', siteId ? { siteId } : {});
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs, seoSetEconomics } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs, seoSetEconomics, seoAdsEnrich } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 
 const num = (n) => (n || 0).toLocaleString();
@@ -58,6 +58,14 @@ export function Keywords() {
       await loadKw(site);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
+  const adsEnrich = async () => {
+    setBusy(true); setErr(''); setBanner('');
+    try {
+      const r = await seoAdsEnrich(site);
+      if (r.configured === false) setErr('Google Ads Keyword Planner not connected yet — needs: ' + (r.missing || []).join('; ') + '.');
+      else { setBanner(`Pulled Google Ads volume + CPC for ${num(r.updated)} keywords.`); await loadKw(site); }
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
   const saveBrand = async () => {
     setBusy(true); setErr(''); setBanner('');
     try {
@@ -99,6 +107,7 @@ export function Keywords() {
     </div>
     <div class="flex items-center gap-2">
       ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
+      ${site && html`<button onClick=${adsEnrich} disabled=${busy} class="text-sm px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:border-slate-300 disabled:opacity-50">Search volume</button>`}
       ${site && html`<${Btn} onClick=${rebuild} disabled=${busy}>${busy ? 'Building…' : 'Build / refresh'}</${Btn}>`}
     </div>
   </div>`;
@@ -154,13 +163,15 @@ export function Keywords() {
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
                 <th class="py-1.5 pr-3">Opp.</th><th class="py-1.5 pr-3">Keyword</th><th class="py-1.5 pr-3">Intent</th><th class="py-1.5 pr-3">Cluster</th>
-                <th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Pos.</th><th class="py-1.5 pr-3 text-right">$/mo</th><th class="py-1.5 pr-3">Recommended action</th></tr></thead>
+                <th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Vol.</th><th class="py-1.5 pr-3 text-right">CPC</th><th class="py-1.5 pr-3 text-right">Pos.</th><th class="py-1.5 pr-3 text-right">$/mo</th><th class="py-1.5 pr-3">Recommended action</th></tr></thead>
               <tbody>${filtered.slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
                 <td class="py-1.5 pr-3"><${Pill} cls=${oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
                 <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${k.keyword}</td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[k.intent] || 'bg-slate-100 text-slate-600'}>${k.intent}</${Pill}></td>
                 <td class="py-1.5 pr-3 text-slate-500 truncate max-w-[8rem]">${k.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(k.impressions)}</td>
+                <td class=${cx('py-1.5 pr-3 text-right tabular-nums', k.volume == null && 'text-slate-300')}>${k.volume != null ? num(k.volume) : '—'}</td>
+                <td class=${cx('py-1.5 pr-3 text-right tabular-nums', !k.cpc && 'text-slate-300')}>${k.cpc ? '$' + Number(k.cpc).toFixed(2) : '—'}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${posf(k.position)}</td>
                 <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', k.est_value > 0 ? 'text-emerald-700' : 'text-slate-300')}>${k.est_value > 0 ? money(k.est_value) : '—'}</td>
                 <td class="py-1.5 pr-3 text-slate-600">${k.recommended_action}</td>
