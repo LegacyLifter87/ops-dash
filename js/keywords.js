@@ -4,8 +4,8 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms } from './store.js';
-import { Card, Btn, Select, Input } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs } from './store.js';
+import { Card, Btn, Select, Input, Modal } from './ui.js';
 
 const num = (n) => (n || 0).toLocaleString();
 const posf = (n) => (n ? n.toFixed(1) : '—');
@@ -30,10 +30,13 @@ export function Keywords() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
   const [brand, setBrand] = useState('');
+  const [briefs, setBriefs] = useState([]);
+  const [showBrief, setShowBrief] = useState(null);
+  const [briefBusy, setBriefBusy] = useState('');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const loadKw = async (sid) => { setRows(await seoLoadKeywords(sid)); };
-  useEffect(() => { if (site) loadKw(site); else setRows([]); }, [site]);
+  useEffect(() => { if (site) { loadKw(site); seoLoadBriefs(site).then(setBriefs); } else { setRows([]); setBriefs([]); } }, [site]);
   useEffect(() => { const s = (sites || []).find((x) => x.id === site); setBrand((s?.brand_terms || []).join(', ')); }, [site, sites]);
 
   const rebuild = async () => {
@@ -52,6 +55,13 @@ export function Keywords() {
       await loadKw(site);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
+  const genBrief = async (cl) => {
+    setBriefBusy(cl); setErr('');
+    try { const r = await seoBriefGenerate(site, cl); setShowBrief(r.brief); setBriefs(await seoLoadBriefs(site)); }
+    catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
+  };
+  const openBrief = (cl) => { const b = briefs.find((x) => x.cluster === cl); if (b) setShowBrief(b); else genBrief(cl); };
+  const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
 
   const clusters = useMemo(() => {
     const m = new Map();
@@ -108,7 +118,7 @@ export function Keywords() {
 
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex gap-1 border-b border-slate-200">
-            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
+            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['briefs', `Briefs (${briefs.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
           </div>
           ${view === 'keywords' && html`<div class="ml-auto flex flex-wrap items-center gap-2">
             <${Input} value=${q} onInput=${setQ} placeholder="Search…" class="w-40" />
@@ -134,17 +144,58 @@ export function Keywords() {
             </table>
             ${filtered.length > 250 && html`<div class="text-xs text-slate-400 pt-2">Showing top 250 of ${num(filtered.length)}.</div>`}
           </div></${Card}>`
-          : html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
+          : view === 'clusters'
+          ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th class="py-1.5 pr-3">Cluster</th><th class="py-1.5 pr-3 text-right">Keywords</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Avg opp.</th><th class="py-1.5 pr-3">Primary intent</th></tr></thead>
-              <tbody>${clusters.map((c) => html`<tr class="border-b border-slate-50 cursor-pointer hover:bg-slate-50" onClick=${() => { setCluster(c.cluster); setView('keywords'); }}>
-                <td class="py-1.5 pr-3 font-medium text-slate-800">${c.cluster}</td>
+                <th class="py-1.5 pr-3">Cluster</th><th class="py-1.5 pr-3 text-right">Keywords</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Avg opp.</th><th class="py-1.5 pr-3">Primary intent</th><th class="py-1.5 pr-3"></th></tr></thead>
+              <tbody>${clusters.map((c) => html`<tr class="border-b border-slate-50">
+                <td class="py-1.5 pr-3 font-medium text-slate-800 cursor-pointer hover:text-brand-700" onClick=${() => { setCluster(c.cluster); setView('keywords'); }}>${c.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${c.count}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(c.impressions)}</td>
                 <td class="py-1.5 pr-3 text-right"><${Pill} cls=${oppColor(c.avgOpp)}>${c.avgOpp}</${Pill}></td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[c.topIntent] || 'bg-slate-100 text-slate-600'}>${c.topIntent}</${Pill}></td>
+                <td class="py-1.5 pr-3 text-right"><button onClick=${() => openBrief(c.cluster)} disabled=${briefBusy === c.cluster} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefBusy === c.cluster ? 'Writing…' : briefFor(c.cluster) ? 'View brief' : '✨ Brief'}</button></td>
               </tr>`)}</tbody>
-            </table></div></${Card}>`}
+            </table></div></${Card}>`
+          : html`<${Card}><div class="p-3">
+              ${briefs.length === 0
+                ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
+                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => setShowBrief(b)} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
+                    <div class="min-w-0"><div class="font-medium text-slate-800">${b.cluster}</div><div class="text-xs text-slate-500 truncate">${b.title}</div></div>
+                    <${Pill} cls="bg-slate-100 text-slate-600 shrink-0">${(b.page_type || '').replace('_', ' ')}</${Pill}>
+                  </button>`)}</div>`}
+            </div></${Card}>`}
       `}
+    ${showBrief && html`<${BriefModal} brief=${showBrief} busy=${briefBusy === showBrief.cluster} onClose=${() => setShowBrief(null)} onRegen=${() => genBrief(showBrief.cluster)} />`}
   </div>`;
+}
+
+function BriefModal({ brief, busy, onClose, onRegen }) {
+  const label = { text: 'text-xs font-semibold text-slate-400 uppercase tracking-wide' };
+  return html`<${Modal} title=${`Content brief — ${brief.cluster}`} wide onClose=${onClose}
+    footer=${html`<div class="flex justify-between items-center w-full"><span class="text-xs text-slate-400">AI-generated · edit before publishing</span><${Btn} size="sm" onClick=${onRegen} disabled=${busy}>${busy ? 'Regenerating…' : 'Regenerate'}</${Btn}></div>`}>
+    <div class="space-y-4 text-sm">
+      <div class="flex flex-wrap gap-2">
+        <${Pill} cls="bg-brand-100 text-brand-700">${(brief.page_type || '').replace('_', ' ')}</${Pill}>
+        <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>
+      </div>
+      <div><div class=${label.text}>Title tag</div><div class="text-slate-800 font-medium">${brief.title}</div></div>
+      <div><div class=${label.text}>Meta description</div><div class="text-slate-600">${brief.meta}</div></div>
+      <div><div class=${label.text}>H1</div><div class="text-slate-800 font-medium">${brief.h1}</div></div>
+      <div><div class=${cx(label.text, 'mb-1')}>Outline</div>
+        <div class="space-y-2">${(brief.outline || []).map((s) => html`<div>
+          <div class="font-medium text-slate-800">${s.h2}</div>
+          <ul class="list-disc ml-5 text-slate-600">${(s.points || []).map((p) => html`<li>${p}</li>`)}</ul>
+        </div>`)}</div>
+      </div>
+      <div><div class=${cx(label.text, 'mb-1')}>FAQs</div>
+        <div class="space-y-2">${(brief.faqs || []).map((f) => html`<div><div class="font-medium text-slate-700">${f.q}</div><div class="text-slate-600">${f.a}</div></div>`)}</div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div><div class=${cx(label.text, 'mb-1')}>Internal links</div><ul class="list-disc ml-5 text-slate-600">${(brief.internal_links || []).map((l) => html`<li>${l}</li>`)}</ul></div>
+        <div><div class=${cx(label.text, 'mb-1')}>Target keywords</div><div class="text-slate-500 text-xs leading-relaxed">${(brief.keywords || []).slice(0, 15).join(' · ')}</div></div>
+      </div>
+      <div><div class=${label.text}>Call to action</div><div class="text-slate-700">${brief.cta}</div></div>
+    </div>
+  </${Modal}>`;
 }
