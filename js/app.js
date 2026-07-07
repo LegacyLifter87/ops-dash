@@ -7,6 +7,7 @@ import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
 import { Dashboard } from './dashboard.js';
 import { SEO } from './seo.js';
 import { Keywords } from './keywords.js';
+import { Competitors } from './competitors.js';
 import { Ranks } from './ranks.js';
 import { Audit } from './audit.js';
 import { JobTracker } from './jt.js';
@@ -16,6 +17,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
+  { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
   { id: 'audit', label: 'Audit', icon: '🩺' },
   { id: 'jt', label: 'Business', icon: '📊' },
@@ -106,6 +108,7 @@ function App() {
           ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
           ${view === 'seo' && html`<${SEO} />`}
           ${view === 'keywords' && html`<${Keywords} />`}
+          ${view === 'competitors' && html`<${Competitors} />`}
           ${view === 'ranks' && html`<${Ranks} />`}
           ${view === 'audit' && html`<${Audit} />`}
           ${view === 'jt' && html`<${JobTracker} />`}

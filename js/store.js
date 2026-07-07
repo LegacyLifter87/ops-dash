@@ -133,6 +133,25 @@ async function seoInvokeAds(action, extra = {}) {
 }
 export const seoAdsStatus = () => seoInvokeAds('status');
 export const seoAdsEnrich = (siteId) => seoInvokeAds('enrich', siteId ? { siteId } : {});
+async function seoInvokeComp(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-competitors', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoCompetitorsDiscover = (siteId) => seoInvokeComp('discover', { siteId });
+export const seoCompetitorGap = (siteId, competitor) => seoInvokeComp('gap', { siteId, competitor });
+export const seoAddCompetitor = (siteId, domain) => seoInvokeComp('add_competitor', { siteId, domain });
+export async function seoLoadCompetitors(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_competitors').select('*').eq('site_id', siteId).order('common_keywords', { ascending: false });
+  return data || [];
+}
+export async function seoLoadGap(siteId, competitor) {
+  if (!siteId || !competitor) return [];
+  const { data } = await supabase.from('seo_gap_keywords').select('*').eq('site_id', siteId).eq('competitor_domain', competitor).order('volume', { ascending: false });
+  return data || [];
+}
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);
