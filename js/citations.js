@@ -5,7 +5,10 @@
 // stale-former-name citations with deep links to fix them. Push/sync = Phase 2.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { seoCitationsLoad, seoCitationsSaveProfile, seoCitationsScan, seoFbStatus, seoFbConnect, seoFbDisconnect, seoFbPages, seoFbSelectPage, seoFbGet, seoFbUpdate } from './store.js';
+import { seoCitationsLoad, seoCitationsSaveProfile, seoCitationsScan, seoCitationsRecheck, seoCitationsSetStatus, seoFbStatus, seoFbConnect, seoFbDisconnect, seoFbPages, seoFbSelectPage, seoFbGet, seoFbUpdate } from './store.js';
+
+const STATUS_OPTS = [['todo', 'To do'], ['in_progress', 'In progress'], ['fixed', 'Fixed'], ['ignored', 'Ignored']];
+const statusTone = (s) => s === 'fixed' ? 'text-emerald-700 border-emerald-200 bg-emerald-50' : s === 'in_progress' ? 'text-amber-700 border-amber-200 bg-amber-50' : s === 'ignored' ? 'text-slate-400 border-slate-200 bg-slate-50' : 'text-slate-600 border-slate-200 bg-white';
 import { Card, Btn, Input } from './ui.js';
 
 // Facebook Page sync — connect, pick a Page, compare its NAP to the source of
@@ -89,6 +92,8 @@ export function Citations({ siteId, domain, canRun = true }) {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [noteFor, setNoteFor] = useState('');
 
   const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
 
@@ -106,6 +111,10 @@ export function Citations({ siteId, domain, canRun = true }) {
   }, [siteId]);
 
   const save = async () => { setBusy('save'); setErr(''); try { const d = await seoCitationsSaveProfile(siteId, f); const p = d.profile; setF({ ...p, former_names: (p.former_names || []).join(', ') }); setSeeded(false); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const patchLocal = (domain, patch) => setCites((p) => p.map((c) => (c.directory_domain === domain ? { ...c, ...patch } : c)));
+  const setStatus = async (c, status) => { patchLocal(c.directory_domain, { status }); try { await seoCitationsSetStatus(siteId, c.directory_domain, { status }); } catch (e) { setErr(e.message); } };
+  const saveNotes = async (c, notes) => { patchLocal(c.directory_domain, { notes }); setNoteFor(''); try { await seoCitationsSetStatus(siteId, c.directory_domain, { notes }); } catch (e) { setErr(e.message); } };
+  const recheck = async (c) => { setBusy('re:' + c.directory_domain); setErr(''); try { const d = await seoCitationsRecheck(siteId, c.directory_domain); patchLocal(c.directory_domain, d.citation); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const scan = async () => {
     if (!f?.business_name?.trim()) { setErr('Enter and save your business name first.'); return; }
     setBusy('scan'); setErr('');
@@ -157,24 +166,48 @@ export function Citations({ siteId, domain, canRun = true }) {
       </div>
 
       <${Card}><div class="p-4">
-        <div class="font-semibold text-slate-800 mb-2">Directory listings</div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="font-semibold text-slate-800">Directory listings</div>
+          <div class="flex items-center gap-1">
+            ${[['all', 'All'], ['issues', 'Needs work'], ['in_progress', 'In progress'], ['fixed', 'Fixed']].map(([id, label]) => html`
+              <button onClick=${() => setFilter(id)} class=${cx('px-2.5 py-1 rounded-full text-xs border', filter === id ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>${label}</button>`)}
+          </div>
+        </div>
         <div class="divide-y divide-slate-50">
-          ${cites.map((c) => html`<div class="flex items-start gap-3 py-2.5">
-            <span class=${cx('shrink-0 w-2.5 h-2.5 rounded-full mt-1.5', c.found ? (c.is_former_name ? 'bg-rose-500' : c.name_match && c.phone_match !== false ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-slate-200')}></span>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-slate-800">${c.directory}
-                ${c.found
-                  ? (c.is_former_name ? html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">former name</span>`
-                    : c.name_match && c.phone_match !== false ? html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">consistent</span>`
-                      : html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">check</span>`)
-                  : html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">not found</span>`}
+          ${cites.filter((c) => filter === 'all' ? true
+            : filter === 'issues' ? (((c.issues || []).length > 0 || !c.found) && !['fixed', 'ignored'].includes(c.status))
+              : c.status === filter)
+            .map((c) => html`<div class=${cx('py-2.5', ['fixed', 'ignored'].includes(c.status) && 'opacity-55')}>
+            <div class="flex items-start gap-3">
+              <span class=${cx('shrink-0 w-2.5 h-2.5 rounded-full mt-1.5', c.found ? (c.is_former_name ? 'bg-rose-500' : c.name_match && c.phone_match !== false ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-slate-200')}></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800">${c.directory}
+                  ${c.found
+                    ? (c.is_former_name ? html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">former name</span>`
+                      : c.name_match && c.phone_match !== false ? html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">consistent</span>`
+                        : html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">check</span>`)
+                    : html`<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">not found</span>`}
+                </div>
+                ${(c.issues || []).map((i) => html`<div class="text-xs text-slate-500">• ${i.msg}${i.fix ? html` — <span class="text-slate-400">${i.fix}</span>` : ''}</div>`)}
+                ${!c.found && html`<div class="text-xs text-slate-400">No listing detected — an opportunity to build this citation.</div>`}
+                ${c.notes && noteFor !== c.directory_domain && html`<div class="text-xs text-sky-700 mt-0.5">🗒 ${c.notes}</div>`}
+                ${noteFor === c.directory_domain && html`<input autofocus value=${c.notes || ''}
+                  onBlur=${(e) => saveNotes(c, e.target.value.trim())}
+                  onKeyDown=${(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setNoteFor(''); }}
+                  placeholder="add a note… (Enter to save)" class="mt-1 w-full max-w-sm text-xs px-2 py-1 rounded border border-slate-300 focus:border-brand-400 outline-none" />`}
               </div>
-              ${(c.issues || []).map((i) => html`<div class="text-xs text-slate-500">• ${i.msg}${i.fix ? html` — <span class="text-slate-400">${i.fix}</span>` : ''}</div>`)}
-              ${!c.found && html`<div class="text-xs text-slate-400">No listing detected — an opportunity to build this citation.</div>`}
+              <div class="shrink-0 flex items-center gap-1.5">
+                ${canRun && html`<select value=${c.status || 'todo'} onChange=${(e) => setStatus(c, e.target.value)}
+                  class=${cx('text-[11px] rounded-md border px-1.5 py-1 outline-none', statusTone(c.status || 'todo'))}>
+                  ${STATUS_OPTS.map(([v, l]) => html`<option value=${v}>${l}</option>`)}
+                </select>`}
+                ${canRun && html`<button title="Add note" onClick=${() => setNoteFor(noteFor === c.directory_domain ? '' : c.directory_domain)} class="text-slate-400 hover:text-slate-700 text-sm">✎</button>`}
+                ${canRun && html`<button title="Re-check this directory" onClick=${() => recheck(c)} disabled=${busy === 're:' + c.directory_domain} class="text-slate-400 hover:text-slate-700 text-sm disabled:animate-pulse">↻</button>`}
+                ${c.url
+                  ? html`<a href=${c.url} target="_blank" rel="noopener" class="text-xs text-brand-700 hover:underline">View ↗</a>`
+                  : html`<a href=${`https://www.google.com/search?q=${encodeURIComponent((f.business_name || '') + ' ' + c.directory)}`} target="_blank" rel="noopener" class="text-xs text-slate-400 hover:underline">Add ↗</a>`}
+              </div>
             </div>
-            ${c.url
-              ? html`<a href=${c.url} target="_blank" rel="noopener" class="shrink-0 text-xs text-brand-700 hover:underline">View / edit ↗</a>`
-              : html`<a href=${`https://www.google.com/search?q=${encodeURIComponent((f.business_name || '') + ' ' + c.directory)}`} target="_blank" rel="noopener" class="shrink-0 text-xs text-slate-400 hover:underline">Add listing ↗</a>`}
           </div>`)}
         </div>
       </div></${Card}>

@@ -186,9 +186,21 @@ async function seoInvokeGrid(action, extra = {}) {
   return data;
 }
 export const seoGeogridRun = (siteId, opts) => seoInvokeGrid('run', { siteId, ...opts });
+export const seoGeogridScheduleSave = (siteId, opts) => seoInvokeGrid('schedule_save', { siteId, ...opts });
+export const seoGeogridScheduleDelete = (siteId, scheduleId) => seoInvokeGrid('schedule_delete', { siteId, scheduleId });
 export async function seoLoadGeogrids(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_geogrid').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
+  return data || [];
+}
+export async function seoLoadGeogridSchedules(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_geogrid_schedules').select('*').eq('site_id', siteId).order('created_at');
+  return data || [];
+}
+export async function seoLoadGeogridHistory(siteId, keyword) {
+  if (!siteId || !keyword) return [];
+  const { data } = await supabase.from('seo_geogrid_history').select('found,total,top3,avg_rank,run_at').eq('site_id', siteId).eq('keyword', keyword).order('run_at');
   return data || [];
 }
 // --- Lighthouse (Google PageSpeed Insights) --------------------------------
@@ -230,6 +242,8 @@ async function seoInvokeCit(action, extra = {}) {
 export const seoCitationsLoad = (siteId) => seoInvokeCit('load', { siteId });
 export const seoCitationsSaveProfile = (siteId, profile) => seoInvokeCit('save_profile', { siteId, profile });
 export const seoCitationsScan = (siteId) => seoInvokeCit('scan', { siteId });
+export const seoCitationsRecheck = (siteId, directoryDomain) => seoInvokeCit('recheck', { siteId, directoryDomain });
+export const seoCitationsSetStatus = (siteId, directoryDomain, patch) => seoInvokeCit('set_status', { siteId, directoryDomain, ...patch });
 // Facebook Page connection + NAP push (Graph API).
 async function seoInvokeFb(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-fb', { body: { action, accountId: getActiveAccountId(), ...extra } });
