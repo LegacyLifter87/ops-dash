@@ -237,6 +237,15 @@ export const seoGbpDisconnect = () => seoInvokeGbp('gbp_disconnect', {});
 export const seoGbpLocations = () => seoInvokeGbp('gbp_locations', {});
 export const seoGbpSelectLocation = (opts) => seoInvokeGbp('gbp_select_location', opts);
 export const seoGbpMetrics = () => seoInvokeGbp('gbp_metrics', {});
+// Write-back to Google Business Profile (Business Information API).
+async function seoInvokeGbpWrite(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-gbp-write', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoGbpGetLocation = () => seoInvokeGbpWrite('gbp_get_location', {});
+export const seoGbpUpdate = (fields) => seoInvokeGbpWrite('gbp_update', { fields });
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

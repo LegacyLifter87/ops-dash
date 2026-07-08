@@ -6,7 +6,7 @@
 // Owner sign-in (business.manage) for private metrics is a gated add-on.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan, seoGbpStatus, seoGbpConnect, seoGbpDisconnect, seoGbpLocations, seoGbpSelectLocation, seoGbpMetrics } from './store.js';
+import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan, seoGbpStatus, seoGbpConnect, seoGbpDisconnect, seoGbpLocations, seoGbpSelectLocation, seoGbpMetrics, seoGbpGetLocation, seoGbpUpdate } from './store.js';
 import { Card, Btn, Input } from './ui.js';
 
 const nfmt = (n) => (n || 0).toLocaleString();
@@ -85,10 +85,46 @@ function normLocId(raw) {
   return runs.length ? `locations/${runs[0]}` : null;
 }
 
+// Write-back: edit the live profile (description/phone/website) and push to Google.
+function GbpEditor() {
+  const [f, setF] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    seoGbpGetLocation().then((d) => { if (!cancelled) setF({ description: d.location.description, phone: d.location.phone, website: d.location.website }); })
+      .catch((e) => { if (!cancelled) setErr(e.message); });
+    return () => { cancelled = true; };
+  }, []);
+  const set = (k) => (v) => { setF((p) => ({ ...p, [k]: v })); setOk(''); };
+  const save = async () => { setBusy('1'); setErr(''); setOk(''); try { const d = await seoGbpUpdate(f); setF({ description: d.updated.description, phone: d.updated.phone, website: d.updated.website }); setOk('Pushed live to Google Business Profile.'); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  if (err && !f) return html`<div class="text-sm text-rose-600 mt-2">${err}</div>`;
+  if (!f) return html`<div class="text-sm text-slate-400 mt-2">Loading current profile…</div>`;
+  return html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-2">
+    <div class="text-sm font-medium text-slate-700">Edit &amp; sync to Google</div>
+    <div>
+      <label class="text-[11px] text-slate-400">Description <span class="text-slate-300">(${(f.description || '').length}/750)</span></label>
+      <textarea value=${f.description} onInput=${(e) => set('description')(e.target.value)} rows="4" maxlength="750" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-300 focus:border-brand-400 focus:ring-1 focus:ring-brand-300 outline-none"></textarea>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-2">
+      <div><label class="text-[11px] text-slate-400">Phone</label><${Input} value=${f.phone} onInput=${set('phone')} placeholder="+1 352-555-0199" /></div>
+      <div><label class="text-[11px] text-slate-400">Website</label><${Input} value=${f.website} onInput=${set('website')} placeholder="https://example.com" /></div>
+    </div>
+    <div class="flex items-center gap-2">
+      <${Btn} size="sm" onClick=${save} disabled=${busy === '1'}>${busy === '1' ? 'Pushing…' : 'Push to Google'}</${Btn}>
+      ${ok && html`<span class="text-xs text-emerald-600">✓ ${ok}</span>`}
+      ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
+    </div>
+    <div class="text-[11px] text-slate-400">Changes go live on your Google Business Profile. Name &amp; address edits can trigger re-verification, so they're managed in Google directly for now.</div>
+  </div>`;
+}
+
 function GbpLive({ canRun }) {
   const [st, setSt] = useState(null);
   const [locs, setLocs] = useState(null);
   const [manualId, setManualId] = useState('');
+  const [showEdit, setShowEdit] = useState(false);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
@@ -158,10 +194,12 @@ function GbpLive({ canRun }) {
         <div class="text-xs text-slate-400">${st.location.address || ''} · ${st.email}${m ? ` · last 90 days` : ''}</div>
       </div>
       <div class="flex items-center gap-2">
+        ${canRun && html`<${Btn} size="sm" variant="ghost" onClick=${() => setShowEdit((v) => !v)}>${showEdit ? 'Close editor' : '✏️ Edit'}</${Btn}>`}
         ${canRun && html`<${Btn} size="sm" variant="secondary" onClick=${refresh} disabled=${busy === 'metrics'}>${busy === 'metrics' ? 'Loading…' : (m ? '↻ Refresh' : 'Load metrics')}</${Btn}>`}
         <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
       </div>
     </div>
+    ${canRun && showEdit && html`<${GbpEditor} />`}
     ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
 
     ${!m ? html`<div class="text-sm text-slate-400">Click “Load metrics” to pull the last 90 days.</div>` : html`
