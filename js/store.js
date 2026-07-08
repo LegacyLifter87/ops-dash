@@ -179,6 +179,18 @@ async function seoInvokeOverview(action, extra = {}) {
 }
 export const seoOverview = (siteId) => seoInvokeOverview('get', { siteId });
 export const seoOverviewAiSummary = (siteId) => seoInvokeOverview('ai_summary', { siteId });
+async function seoInvokeGrid(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-geogrid', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoGeogridRun = (siteId, opts) => seoInvokeGrid('run', { siteId, ...opts });
+export async function seoLoadGeogrids(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_geogrid').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
+  return data || [];
+}
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

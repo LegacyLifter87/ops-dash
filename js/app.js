@@ -9,6 +9,7 @@ import { SEO } from './seo.js';
 import { Keywords } from './keywords.js';
 import { Competitors } from './competitors.js';
 import { Ranks } from './ranks.js';
+import { Local } from './local.js';
 import { Audit } from './audit.js';
 import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
@@ -20,6 +21,7 @@ const NAV = [
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
+  { id: 'local', label: 'Local', icon: '📍' },
   { id: 'audit', label: 'Audit', icon: '🩺' },
   { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'jt', label: 'Business', icon: '📊' },
@@ -112,6 +114,7 @@ function App() {
           ${view === 'keywords' && html`<${Keywords} />`}
           ${view === 'competitors' && html`<${Competitors} />`}
           ${view === 'ranks' && html`<${Ranks} />`}
+          ${view === 'local' && html`<${Local} />`}
           ${view === 'audit' && html`<${Audit} />`}
           ${view === 'backlinks' && html`<${Backlinks} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
