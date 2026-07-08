@@ -11,6 +11,7 @@ import { Competitors } from './competitors.js';
 import { Ranks } from './ranks.js';
 import { Local } from './local.js';
 import { Audit } from './audit.js';
+import { Lighthouse } from './lighthouse.js';
 import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
@@ -23,6 +24,7 @@ const NAV = [
   { id: 'ranks', label: 'Ranks', icon: '📈' },
   { id: 'local', label: 'Local', icon: '📍' },
   { id: 'audit', label: 'Audit', icon: '🩺' },
+  { id: 'lighthouse', label: 'Lighthouse', icon: '🚦' },
   { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'jt', label: 'Business', icon: '📊' },
 ];
@@ -116,6 +118,7 @@ function App() {
           ${view === 'ranks' && html`<${Ranks} />`}
           ${view === 'local' && html`<${Local} />`}
           ${view === 'audit' && html`<${Audit} />`}
+          ${view === 'lighthouse' && html`<${Lighthouse} />`}
           ${view === 'backlinks' && html`<${Backlinks} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
         </main>

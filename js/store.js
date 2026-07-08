@@ -191,6 +191,20 @@ export async function seoLoadGeogrids(siteId) {
   const { data } = await supabase.from('seo_geogrid').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
   return data || [];
 }
+// --- Lighthouse (Google PageSpeed Insights) --------------------------------
+async function seoInvokeLh(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-lighthouse', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoLighthouseRun = (siteId, opts) => seoInvokeLh('run', { siteId, ...opts });
+export const seoLighthouseFixPlan = (siteId, opts) => seoInvokeLh('fix_plan', { siteId, ...opts });
+export async function seoLighthouseLoad(siteId) {
+  if (!siteId) return [];
+  const d = await seoInvokeLh('load', { siteId });
+  return d.reports || [];
+}
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);
