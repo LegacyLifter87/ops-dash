@@ -97,7 +97,7 @@ function GbpLive({ canRun }) {
 
   const connect = async () => { setBusy('connect'); setErr(''); try { const d = await seoGbpConnect(); location.href = d.url; } catch (e) { setErr(e.message); setBusy(''); } };
   const disconnect = async () => { if (!confirm('Disconnect Google Business Profile?')) return; setBusy('disc'); try { await seoGbpDisconnect(); setLocs(null); await load(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
-  const pickLocations = async () => { setBusy('locs'); setErr(''); try { const d = await seoGbpLocations(); setLocs(d.locations || []); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const pickLocations = async () => { setBusy('locs'); setErr(''); try { const d = await seoGbpLocations(); setLocs(d.locations || []); } catch (e) { setErr(/429|quota/i.test(e.message) ? "Google's location-list API is quota-limited on your project — use the location-ID field above instead (it doesn't touch that API)." : e.message); } finally { setBusy(''); } };
   const choose = async (l) => { setBusy('sel'); setErr(''); try { await seoGbpSelectLocation({ locationId: l.id, title: l.title, address: l.address }); setLocs(null); await load(); await refresh(); } catch (e) { setErr(e.message); setBusy(''); } };
   const useManual = async () => { const id = normLocId(manualId); if (!id) { setErr('Enter a numeric location ID (the long number), or locations/<id>.'); return; } await choose({ id, title: 'My location', address: '' }); };
   const refresh = async () => { setBusy('metrics'); setErr(''); try { const d = await seoGbpMetrics(); setSt((s) => ({ ...s, metrics: d.metrics, search_keywords: d.search_keywords, metrics_at: d.metrics_at })); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
@@ -123,18 +123,20 @@ function GbpLive({ canRun }) {
         <div class="text-sm text-slate-600">Connected as <span class="font-medium text-slate-800">${st.email}</span></div>
         <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
       </div>
-      ${!locs ? html`<${Btn} size="sm" onClick=${pickLocations} disabled=${busy === 'locs'}>${busy === 'locs' ? 'Loading…' : 'Choose your business location'}</${Btn}>`
-        : locs.length === 0 ? html`<div class="text-sm text-slate-500">No locations found on this Google account. Make sure it manages a verified profile.</div>`
-          : html`<div class="space-y-1">${locs.map((l) => html`<button onClick=${() => choose(l)} disabled=${busy === 'sel'} class="w-full text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40">
-              <div class="text-sm font-medium text-slate-800">${l.title}</div><div class="text-xs text-slate-400">${l.address || l.id}</div>
-            </button>`)}</div>`}
-      <div class="pt-2 mt-1 border-t border-slate-100">
-        <div class="text-xs text-slate-500 mb-1">Or enter your location ID directly <span class="text-slate-400">— skips the Account Management API entirely</span>:</div>
+      <div>
+        <div class="text-sm font-medium text-slate-700 mb-1">Enter your Business Profile location ID</div>
         <div class="flex gap-2">
-          <${Input} value=${manualId} onInput=${setManualId} placeholder="locations/123… or the long number" />
-          <${Btn} size="sm" variant="secondary" onClick=${useManual} disabled=${busy === 'sel' || busy === 'metrics'}>${busy === 'sel' || busy === 'metrics' ? '…' : 'Use ID'}</${Btn}>
+          <${Input} value=${manualId} onInput=${setManualId} placeholder="paste the URL, or the long number / locations/123…" />
+          <${Btn} size="sm" onClick=${useManual} disabled=${busy === 'sel' || busy === 'metrics'}>${busy === 'sel' || busy === 'metrics' ? '…' : 'Use ID'}</${Btn}>
         </div>
-        <div class="text-[11px] text-slate-400 mt-1">Find it in Business Profile Manager (business.google.com): open the location, then copy the long number from the address bar.</div>
+        <div class="text-[11px] text-slate-400 mt-1">In Business Profile Manager (business.google.com), open your location and copy the long number from the address bar — you can paste the whole URL.</div>
+      </div>
+      <div class="pt-2 border-t border-slate-100">
+        ${!locs ? html`<button onClick=${pickLocations} disabled=${busy === 'locs'} class="text-xs text-slate-500 hover:text-slate-700 underline">${busy === 'locs' ? 'Trying…' : 'Or try to auto-detect my locations'}</button>`
+          : locs.length === 0 ? html`<div class="text-sm text-slate-500">No locations found on this Google account.</div>`
+            : html`<div class="space-y-1">${locs.map((l) => html`<button onClick=${() => choose(l)} disabled=${busy === 'sel'} class="w-full text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40">
+                <div class="text-sm font-medium text-slate-800">${l.title}</div><div class="text-xs text-slate-400">${l.address || l.id}</div>
+              </button>`)}</div>`}
       </div>
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
     </div></${Card}>`;
