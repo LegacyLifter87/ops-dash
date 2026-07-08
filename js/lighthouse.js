@@ -235,7 +235,7 @@ export function SiteHealth({ siteId, domain, canRun = true }) {
         ${canRun && html`<input value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder=${`homepage (${domain || 'blank'}) or a URL`} class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 focus:border-brand-400 focus:ring-1 focus:ring-brand-300 outline-none w-full sm:w-72" />`}
         ${canRun && html`<button onClick=${run} disabled=${busy === 'run'} class="text-sm font-semibold px-4 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">${runLabel}</button>`}
       </div>
-      ${busy === 'run' && html`<div class="text-xs text-slate-400 mt-2">Rendering the page in a headless browser on both form factors and running ~50 audits each — 20–40s.</div>`}
+      ${busy === 'run' && html`<div class="text-xs text-slate-400 mt-2">Rendering the page in a headless browser on mobile, then desktop, running ~50 audits each — usually 40–60s.</div>`}
       ${err && html`<div class="text-sm text-rose-600 mt-2">${err}</div>`}
     </div>
 
