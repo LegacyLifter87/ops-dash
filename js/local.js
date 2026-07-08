@@ -3,11 +3,59 @@
 // ranks in Google Maps across a grid of points around it (green = top 3, red =
 // invisible). Powered by DataForSEO maps results at precise coordinates.
 // ---------------------------------------------------------------------------
-import { html, useState, useEffect, cx } from './lib.js';
+import { html, useState, useEffect, useRef, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadGeogrids, seoGeogridRun } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
 
 const cellColor = (r) => r == null ? 'bg-slate-200 text-slate-400' : r <= 3 ? 'bg-emerald-500 text-white' : r <= 10 ? 'bg-amber-400 text-white' : r <= 20 ? 'bg-orange-500 text-white' : 'bg-rose-500 text-white';
+const pointColor = (r) => r == null ? '#94a3b8' : r <= 3 ? '#10b981' : r <= 10 ? '#f59e0b' : r <= 20 ? '#f97316' : '#ef4444';
+
+let _leafletCss = false;
+function ensureLeafletCss() { if (_leafletCss || document.getElementById('leaflet-css')) return; _leafletCss = true; const l = document.createElement('link'); l.id = 'leaflet-css'; l.rel = 'stylesheet'; l.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(l); }
+
+// Geo-grid overlaid on a real map (Leaflet + free OpenStreetMap tiles).
+function GridMap({ grid }) {
+  const elRef = useRef(null), map = useRef(null), layer = useRef(null), Lref = useRef(null);
+  const [failed, setFailed] = useState(false);
+
+  const draw = () => {
+    const L = Lref.current, m = map.current, lg = layer.current;
+    if (!L || !m || !lg || !grid) return;
+    lg.clearLayers();
+    const pts = grid.points || [], latlngs = [];
+    for (const p of pts) {
+      const label = p.rank == null ? '—' : p.rank > 20 ? '20+' : String(p.rank);
+      const icon = L.divIcon({ html: `<div style="width:30px;height:30px;border-radius:9999px;background:${pointColor(p.rank)};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif">${label}</div>`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+      L.marker([p.lat, p.lng], { icon }).addTo(lg);
+      latlngs.push([p.lat, p.lng]);
+    }
+    L.circleMarker([grid.center_lat, grid.center_lng], { radius: 5, color: '#0f172a', weight: 2, fillColor: '#0f172a', fillOpacity: 1 }).addTo(lg).bindTooltip('Business');
+    if (latlngs.length) m.fitBounds(latlngs, { padding: [30, 30], maxZoom: 15 });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        ensureLeafletCss();
+        const Lmod = await import('https://esm.sh/leaflet@1.9.4');
+        const L = Lmod.default || Lmod;
+        if (cancelled || !elRef.current || map.current) return;
+        Lref.current = L;
+        const m = L.map(elRef.current, { scrollWheelZoom: false }).setView([Number(grid.center_lat), Number(grid.center_lng)], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(m);
+        layer.current = L.layerGroup().addTo(m);
+        map.current = m;
+        setTimeout(() => { m.invalidateSize(); draw(); }, 60);
+      } catch (_) { if (!cancelled) setFailed(true); }
+    })();
+    return () => { cancelled = true; if (map.current) { map.current.remove(); map.current = null; } };
+  }, []);
+  useEffect(() => { draw(); }, [grid?.id]);
+
+  if (failed) return html`<div class="text-sm text-slate-400 p-6 text-center">Map couldn't load — check your connection.</div>`;
+  return html`<div ref=${elRef} class="border border-slate-200 rounded-xl overflow-hidden" style="height:460px"></div>`;
+}
 
 export function Local() {
   const store = useStore();
@@ -38,8 +86,6 @@ export function Local() {
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading…</div>`;
 
   const g = current;
-  const size = g?.grid_size || 5;
-  const cells = g ? [...(g.points || [])].sort((a, b) => (a.row - b.row) || (a.col - b.col)) : [];
   const top3 = g ? (g.points || []).filter((p) => p.rank != null && p.rank <= 3).length : 0;
 
   return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
@@ -86,10 +132,8 @@ export function Local() {
                 <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-200"></span>none</span>
               </div>
             </div>
-            <div class="mx-auto" style=${`display:grid;grid-template-columns:repeat(${size},minmax(0,1fr));gap:6px;max-width:${size * 56}px`}>
-              ${cells.map((p) => html`<div class=${cx('aspect-square rounded-lg flex items-center justify-center text-sm font-bold', cellColor(p.rank))} title=${`${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`}>${p.rank == null ? '—' : p.rank > 20 ? '20+' : p.rank}</div>`)}
-            </div>
-            <div class="text-[11px] text-slate-400 text-center mt-2">Each cell = the map-pack position at that spot. Center = your business. ${g.spacing_miles} mi spacing.</div>
+            <${GridMap} grid=${g} />
+            <div class="text-[11px] text-slate-400 text-center mt-2">Each marker = your Google Maps position at that spot. Black dot = the business. ${g.spacing_miles} mi spacing.</div>
           </div></${Card}>
         `}
       `}
