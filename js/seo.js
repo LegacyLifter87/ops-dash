@@ -7,6 +7,7 @@ import { html, useState, useEffect, useMemo, cx } from './lib.js';
 import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, getActiveAccountId } from './store.js';
 import { Card, Btn, Select } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
+import { SiteHealth } from './lighthouse.js';
 
 const pctf = (n) => `${(n * 100).toFixed(1)}%`;
 const num = (n) => (n || 0).toLocaleString();
@@ -98,7 +99,7 @@ export function SEO() {
 
   const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p));
   const site = (status.sites || []).find((s) => s.id === activeSite);
-  const tabs = [['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`]];
+  const tabs = [['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`], ['health', '🩺 Site Health']];
 
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <${Header} />
@@ -123,22 +124,24 @@ export function SEO() {
           </div>`}
         </div>
 
-        ${data.queries.length === 0
-          ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No data synced yet for this site.${isAdmin ? ' Click Sync now to pull the last 28 days from Search Console.' : ''}</div></${Card}>`
-          : html`
-            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-              ${[['Clicks', num(views.stat.clicks)], ['Impressions', num(views.stat.impressions)], ['CTR', pctf(views.stat.ctr)], ['Avg position', posf(views.stat.position)], ['Queries', num(views.stat.queries)], ['Striking dist.', num(views.stat.striking)], ['Cannibalized', num(views.stat.cannibal)]]
-                .map(([k, v]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div></div></${Card}>`)}
-            </div>
-            <div class="flex flex-wrap gap-1 border-b border-slate-200">
-              ${tabs.map(([id, label]) => html`<button onClick=${() => setTab(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', tab === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-slate-700')}>${label}</button>`)}
-            </div>
-            ${tab === 'striking' && html`<${QTable} caption="Queries ranking positions 4–20 — close enough that on-page work can push them onto page one." rows=${views.striking} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
-            ${tab === 'lowctr' && html`<${QTable} caption="Ranking well but under-earning clicks — rewrite the title/meta and add an FAQ to lift CTR." rows=${views.lowCtr} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
-            ${tab === 'rising' && html`<${QTable} caption="Queries gaining impressions vs the prior 28 days (★ = new)." rows=${views.rising} cols=${['query', 'impressions', 'delta', 'clicks', 'position']} />`}
-            ${tab === 'cannibal' && html`<${QTable} caption="One query spread across multiple pages — consolidate or differentiate to stop self-competition." rows=${views.cannibal} cols=${['query', 'pageCount', 'impressions', 'clicks', 'position']} />`}
-            ${tab === 'pages' && html`<${PTable} rows=${views.topPages} />`}
-          `}
+        <div class="flex flex-wrap gap-1 border-b border-slate-200">
+          ${tabs.map(([id, label]) => html`<button onClick=${() => setTab(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', tab === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-slate-700')}>${label}</button>`)}
+        </div>
+        ${tab === 'health'
+          ? html`<${SiteHealth} siteId=${activeSite} domain=${site?.domain} canRun=${isAdmin} />`
+          : data.queries.length === 0
+            ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No data synced yet for this site.${isAdmin ? ' Click Sync now to pull the last 28 days from Search Console — or open Site Health above.' : ''}</div></${Card}>`
+            : html`
+              <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                ${[['Clicks', num(views.stat.clicks)], ['Impressions', num(views.stat.impressions)], ['CTR', pctf(views.stat.ctr)], ['Avg position', posf(views.stat.position)], ['Queries', num(views.stat.queries)], ['Striking dist.', num(views.stat.striking)], ['Cannibalized', num(views.stat.cannibal)]]
+                  .map(([k, v]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div></div></${Card}>`)}
+              </div>
+              ${tab === 'striking' && html`<${QTable} caption="Queries ranking positions 4–20 — close enough that on-page work can push them onto page one." rows=${views.striking} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
+              ${tab === 'lowctr' && html`<${QTable} caption="Ranking well but under-earning clicks — rewrite the title/meta and add an FAQ to lift CTR." rows=${views.lowCtr} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
+              ${tab === 'rising' && html`<${QTable} caption="Queries gaining impressions vs the prior 28 days (★ = new)." rows=${views.rising} cols=${['query', 'impressions', 'delta', 'clicks', 'position']} />`}
+              ${tab === 'cannibal' && html`<${QTable} caption="One query spread across multiple pages — consolidate or differentiate to stop self-competition." rows=${views.cannibal} cols=${['query', 'pageCount', 'impressions', 'clicks', 'position']} />`}
+              ${tab === 'pages' && html`<${PTable} rows=${views.topPages} />`}
+            `}
       `}
   </div>`;
 }
