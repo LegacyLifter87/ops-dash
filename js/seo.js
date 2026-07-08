@@ -8,6 +8,7 @@ import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSi
 import { Card, Btn, Select } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 import { SiteHealth } from './lighthouse.js';
+import { Trends } from './trends.js';
 
 const pctf = (n) => `${(n * 100).toFixed(1)}%`;
 const num = (n) => (n || 0).toLocaleString();
@@ -99,7 +100,7 @@ export function SEO() {
 
   const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p));
   const site = (status.sites || []).find((s) => s.id === activeSite);
-  const tabs = [['health', '🩺 Site Health'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`]];
+  const tabs = [['health', '🩺 Site Health'], ['trends', '📈 Trends'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`]];
 
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <${Header} />
@@ -129,6 +130,8 @@ export function SEO() {
         </div>
         ${tab === 'health'
           ? html`<${SiteHealth} siteId=${activeSite} domain=${site?.domain} canRun=${isAdmin} />`
+          : tab === 'trends'
+          ? html`<${Trends} siteId=${activeSite} canRun=${isAdmin} />`
           : data.queries.length === 0
             ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No data synced yet for this site.${isAdmin ? ' Click Sync now to pull the last 28 days from Search Console — or open Site Health above.' : ''}</div></${Card}>`
             : html`

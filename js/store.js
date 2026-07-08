@@ -86,6 +86,20 @@ export const seoDisconnect = () => seoInvoke('disconnect');
 export const seoAddSite = (property, displayName) => seoInvoke('add_site', { property, displayName });
 export const seoRemoveSite = (siteId) => seoInvoke('remove_site', { siteId });
 export const seoSync = (siteId) => seoInvoke('sync', siteId ? { siteId } : {});
+export const seoGscBackfill = (siteId) => seoInvoke('backfill', { siteId });
+export const seoTrendsAi = (siteId) => seoInvoke('trends_ai', { siteId });
+export async function seoLoadMonthly(siteId) {
+  if (!siteId) return [];
+  const { data } = await supabase.from('seo_monthly_site').select('*').eq('site_id', siteId).order('month');
+  return data || [];
+}
+export async function seoLoadMonthlyQueries(siteId, sinceMonth) {
+  if (!siteId) return [];
+  let q = supabase.from('seo_monthly_queries').select('month,query,clicks,impressions,position').eq('site_id', siteId);
+  if (sinceMonth) q = q.gte('month', sinceMonth);
+  const { data } = await q.limit(10000);
+  return data || [];
+}
 export async function seoLoadData(siteId) {
   if (!siteId) return { queries: [], pages: [] };
   const [{ data: queries }, { data: pages }] = await Promise.all([
