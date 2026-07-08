@@ -171,6 +171,14 @@ export async function seoLoadBacklinks(siteId) {
   const { data } = await supabase.from('seo_backlinks_summary').select('*').eq('site_id', siteId).maybeSingle();
   return data || null;
 }
+async function seoInvokeOverview(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-overview', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoOverview = (siteId) => seoInvokeOverview('get', { siteId });
+export const seoOverviewAiSummary = (siteId) => seoInvokeOverview('ai_summary', { siteId });
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);
