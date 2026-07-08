@@ -32,7 +32,7 @@ export function SEO() {
   const [status, setStatus] = useState(null);
   const [activeSite, setActiveSite] = useState('');
   const [data, setData] = useState({ queries: [], pages: [] });
-  const [tab, setTab] = useState('striking');
+  const [tab, setTab] = useState('health');
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
@@ -99,7 +99,7 @@ export function SEO() {
 
   const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p));
   const site = (status.sites || []).find((s) => s.id === activeSite);
-  const tabs = [['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`], ['health', '🩺 Site Health']];
+  const tabs = [['health', '🩺 Site Health'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`]];
 
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <${Header} />
