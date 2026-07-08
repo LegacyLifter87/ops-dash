@@ -205,6 +205,20 @@ export async function seoLighthouseLoad(siteId) {
   const d = await seoInvokeLh('load', { siteId });
   return d.reports || [];
 }
+// --- Google Business Profile audit (DataForSEO public profile) --------------
+async function seoInvokeGbp(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-gbp', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoGbpAudit = (siteId, opts) => seoInvokeGbp('audit', { siteId, ...opts });
+export const seoGbpAiPlan = (siteId) => seoInvokeGbp('ai_plan', { siteId });
+export async function seoGbpLoad(siteId) {
+  if (!siteId) return null;
+  const d = await seoInvokeGbp('load', { siteId });
+  return d.report || null;
+}
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

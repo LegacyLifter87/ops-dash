@@ -6,6 +6,7 @@
 import { html, useState, useEffect, useRef, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadGeogrids, seoGeogridRun } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
+import { ProfileAudit } from './gbp.js';
 
 const cellColor = (r) => r == null ? 'bg-slate-200 text-slate-400' : r <= 3 ? 'bg-emerald-500 text-white' : r <= 10 ? 'bg-amber-400 text-white' : r <= 20 ? 'bg-orange-500 text-white' : 'bg-rose-500 text-white';
 const pointColor = (r) => r == null ? '#94a3b8' : r <= 3 ? '#10b981' : r <= 10 ? '#f59e0b' : r <= 20 ? '#f97316' : '#ef4444';
@@ -70,6 +71,7 @@ export function Local() {
   const [spacing, setSpacing] = useState('1');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [view, setView] = useState('grid');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (sid) => { const g = await seoLoadGeogrids(sid); setGrids(g); setCurrent(g[0] || null); if (g[0]) { setKw(g[0].keyword); setAddress(g[0].location_label || ''); } };
@@ -86,13 +88,14 @@ export function Local() {
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading…</div>`;
 
   const g = current;
+  const siteObj = sites?.find((x) => x.id === site);
   const top3 = g ? (g.points || []).filter((p) => p.rank != null && p.rank <= 3).length : 0;
 
   return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="text-xl font-bold text-slate-800">Local SEO — Geo-Grid</h1>
-        <p class="text-sm text-slate-500">Where you rank in the Google map pack across the area around your business.</p>
+        <h1 class="text-xl font-bold text-slate-800">Local SEO</h1>
+        <p class="text-sm text-slate-500">Map-pack rankings across your area and your Google Business Profile.</p>
       </div>
       ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
     </div>
@@ -100,6 +103,12 @@ export function Local() {
     ${sites.length === 0
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">Add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}>`
       : html`
+        <div class="flex gap-1 border-b border-slate-200">
+          ${[['grid', '📍 Geo-Grid'], ['profile', '🏢 Profile Audit']].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-slate-700')}>${label}</button>`)}
+        </div>
+        ${view === 'profile'
+          ? html`<${ProfileAudit} siteId=${site} defaultName=${siteObj?.display_name || siteObj?.domain || ''} domain=${siteObj?.domain} />`
+          : html`
         <${Card}><div class="p-3 space-y-2">
           <div class="grid sm:grid-cols-2 gap-2">
             <${Input} value=${kw} onInput=${setKw} placeholder="keyword e.g. chimney sweep" />
@@ -135,6 +144,7 @@ export function Local() {
             <${GridMap} grid=${g} />
             <div class="text-[11px] text-slate-400 text-center mt-2">Each marker = your Google Maps position at that spot. Black dot = the business. ${g.spacing_miles} mi spacing.</div>
           </div></${Card}>
+        `}
         `}
       `}
   </div>`;
