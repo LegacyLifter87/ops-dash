@@ -114,7 +114,7 @@ export function Local() {
             ${grids.length > 0 && html`<${Select} value=${g?.id || ''} onChange=${(v) => { const sel = grids.find((x) => x.id === v); setCurrent(sel); if (sel) { setKw(sel.keyword); setAddress(sel.location_label || ''); } }} options=${grids.map((x) => ({ value: x.id, label: x.keyword }))} />`}
           </div>
           ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
-          ${busy && html`<div class="text-xs text-slate-400">Checking map rank at ${size * size} points — this takes ~30s.</div>`}
+          ${busy && html`<div class="text-xs text-slate-400">Checking map rank at ${Number(gridSize) * Number(gridSize)} points — this takes ~30s.</div>`}
         </div></${Card}>
 
         ${g && html`
