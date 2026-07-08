@@ -230,6 +230,20 @@ async function seoInvokeCit(action, extra = {}) {
 export const seoCitationsLoad = (siteId) => seoInvokeCit('load', { siteId });
 export const seoCitationsSaveProfile = (siteId, profile) => seoInvokeCit('save_profile', { siteId, profile });
 export const seoCitationsScan = (siteId) => seoInvokeCit('scan', { siteId });
+// Facebook Page connection + NAP push (Graph API).
+async function seoInvokeFb(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-fb', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoFbStatus = () => seoInvokeFb('fb_status', {});
+export const seoFbConnect = () => seoInvokeFb('fb_connect', {});
+export const seoFbDisconnect = () => seoInvokeFb('fb_disconnect', {});
+export const seoFbPages = () => seoInvokeFb('fb_pages', {});
+export const seoFbSelectPage = (pageId) => seoInvokeFb('fb_select_page', { pageId });
+export const seoFbGet = () => seoInvokeFb('fb_get', {});
+export const seoFbUpdate = (fields) => seoInvokeFb('fb_update', { fields });
 // Owner connection (business.manage) — account-scoped, private performance data.
 export const seoGbpStatus = () => seoInvokeGbp('gbp_status', {});
 export const seoGbpConnect = () => seoInvokeGbp('gbp_connect', {});
