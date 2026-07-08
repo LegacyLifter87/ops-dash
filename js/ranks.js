@@ -3,9 +3,12 @@
 // (seo_rank_history). Snapshots are captured on every sync + a daily cron.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadRankHistory } from './store.js';
-import { Card, Select } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadRankHistory, seoDfsCheckRanks, seoLoadSerpRanks } from './store.js';
+import { Card, Select, Btn, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
+
+const FEAT = { local_pack: 'Map pack', featured_snippet: 'Snippet', people_also_ask: 'PAA', ai_overview: 'AI Overview', paid: 'Ads', video: 'Video', images: 'Images', related_searches: 'Related', top_stories: 'News', knowledge_graph: 'Knowledge' };
+const feat = (t) => FEAT[t] || t.replace(/_/g, ' ');
 
 const posf = (n) => (n ? n.toFixed(1) : '—');
 const num = (n) => (n || 0).toLocaleString();
@@ -26,10 +29,21 @@ export function Ranks() {
   const [sites, setSites] = useState(null);
   const [site, setSite] = useState('');
   const [hist, setHist] = useState([]);
+  const [serp, setSerp] = useState([]);
+  const [loc, setLoc] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
   const sortR = useSort('impressions', 'desc');
+  const sortS = useSort('volume', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
-  useEffect(() => { if (site) seoLoadRankHistory(site).then(setHist); else setHist([]); }, [site]);
+  useEffect(() => { if (site) { seoLoadRankHistory(site).then(setHist); seoLoadSerpRanks(site).then(setSerp); } else { setHist([]); setSerp([]); } }, [site]);
+
+  const checkExact = async () => {
+    setBusy(true); setNote('');
+    try { const r = await seoDfsCheckRanks(site, loc); setNote(`Checked ${r.checked} keywords in ${r.location}.`); setSerp(await seoLoadSerpRanks(site)); }
+    catch (e) { setNote(e.message); } finally { setBusy(false); }
+  };
 
   const rows = useMemo(() => {
     const byK = new Map();
@@ -66,6 +80,26 @@ export function Ranks() {
       </div>
       ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
     </div>
+
+    ${site && html`<${Card}><div class="p-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="font-semibold text-slate-800">Exact ranks <span class="text-xs font-normal text-slate-400">live Google via DataForSEO</span></div>
+        <${Input} value=${loc} onInput=${setLoc} placeholder="location e.g. Ocala,Florida,United States — blank = US national" class="flex-1 min-w-[14rem]" />
+        <${Btn} size="sm" onClick=${checkExact} disabled=${busy}>${busy ? 'Checking…' : 'Check exact ranks'}</${Btn}>
+      </div>
+      ${note && html`<div class="text-xs text-slate-500 mt-1">${note}</div>`}
+      ${serp.length > 0 && html`<div class="overflow-x-auto mt-3"><table class="w-full text-sm">
+        <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
+          <${SortTh} k="keyword" label="Keyword" sort=${sortS} /><${SortTh} k="position" label="Position" sort=${sortS} right=${true} /><${SortTh} k="volume" label="Volume" sort=${sortS} right=${true} /><th class="py-1.5 pr-3">Location</th><th class="py-1.5 pr-3">SERP features</th></tr></thead>
+        <tbody>${sortS.sort(serp).map((r) => html`<tr class="border-b border-slate-50">
+          <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${r.url ? html`<a href=${r.url} target="_blank" rel="noopener" class="hover:text-brand-700">${r.keyword}</a>` : r.keyword}</td>
+          <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', r.position == null ? 'text-slate-300' : r.position <= 3 ? 'text-emerald-600' : r.position <= 10 ? 'text-slate-800' : 'text-slate-500')}>${r.position == null ? '—' : r.position}</td>
+          <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.volume)}</td>
+          <td class="py-1.5 pr-3 text-xs text-slate-500 truncate max-w-[10rem]">${r.location}</td>
+          <td class="py-1.5 pr-3"><div class="flex flex-wrap gap-1">${(r.serp_features || []).slice(0, 6).map((f) => html`<span class="text-[10px] bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">${feat(f)}</span>`)}</div></td>
+        </tr>`)}</tbody>
+      </table></div>`}
+    </div></${Card}>`}
 
     ${sites.length === 0
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}>`

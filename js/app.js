@@ -10,6 +10,7 @@ import { Keywords } from './keywords.js';
 import { Competitors } from './competitors.js';
 import { Ranks } from './ranks.js';
 import { Audit } from './audit.js';
+import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
@@ -20,6 +21,7 @@ const NAV = [
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
   { id: 'audit', label: 'Audit', icon: '🩺' },
+  { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'jt', label: 'Business', icon: '📊' },
 ];
 
@@ -111,6 +113,7 @@ function App() {
           ${view === 'competitors' && html`<${Competitors} />`}
           ${view === 'ranks' && html`<${Ranks} />`}
           ${view === 'audit' && html`<${Audit} />`}
+          ${view === 'backlinks' && html`<${Backlinks} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
         </main>
       </div>
