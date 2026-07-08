@@ -220,6 +220,17 @@ export async function seoGbpLoad(siteId) {
   return d.report || null;
 }
 // Owner connection (business.manage) — account-scoped, private performance data.
+// Citation builder (DataForSEO SERP discovery + NAP consistency).
+async function seoInvokeCit(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-citations', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoCitationsLoad = (siteId) => seoInvokeCit('load', { siteId });
+export const seoCitationsSaveProfile = (siteId, profile) => seoInvokeCit('save_profile', { siteId, profile });
+export const seoCitationsScan = (siteId) => seoInvokeCit('scan', { siteId });
+// Owner connection (business.manage) — account-scoped, private performance data.
 export const seoGbpStatus = () => seoInvokeGbp('gbp_status', {});
 export const seoGbpConnect = () => seoInvokeGbp('gbp_connect', {});
 export const seoGbpDisconnect = () => seoInvokeGbp('gbp_disconnect', {});

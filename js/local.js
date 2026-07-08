@@ -7,6 +7,7 @@ import { html, useState, useEffect, useRef, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadGeogrids, seoGeogridRun } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
 import { ProfileAudit } from './gbp.js';
+import { Citations } from './citations.js';
 
 const cellColor = (r) => r == null ? 'bg-slate-200 text-slate-400' : r <= 3 ? 'bg-emerald-500 text-white' : r <= 10 ? 'bg-amber-400 text-white' : r <= 20 ? 'bg-orange-500 text-white' : 'bg-rose-500 text-white';
 const pointColor = (r) => r == null ? '#94a3b8' : r <= 3 ? '#10b981' : r <= 10 ? '#f59e0b' : r <= 20 ? '#f97316' : '#ef4444';
@@ -106,9 +107,11 @@ export function Local() {
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">Add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}>`
       : html`
         <div class="flex gap-1 border-b border-slate-200">
-          ${[['grid', '📍 Geo-Grid'], ['profile', '🏢 Profile Audit']].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-slate-700')}>${label}</button>`)}
+          ${[['grid', '📍 Geo-Grid'], ['profile', '🏢 Profile Audit'], ['citations', '📑 Citations']].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-slate-700')}>${label}</button>`)}
         </div>
-        ${view === 'profile'
+        ${view === 'citations'
+          ? html`<${Citations} siteId=${site} domain=${siteObj?.domain} />`
+          : view === 'profile'
           ? html`<${ProfileAudit} siteId=${site} defaultName=${siteObj?.display_name || siteObj?.domain || ''} domain=${siteObj?.domain} />`
           : html`
         <${Card}><div class="p-3 space-y-2">
