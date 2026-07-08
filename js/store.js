@@ -219,6 +219,13 @@ export async function seoGbpLoad(siteId) {
   const d = await seoInvokeGbp('load', { siteId });
   return d.report || null;
 }
+// Owner connection (business.manage) — account-scoped, private performance data.
+export const seoGbpStatus = () => seoInvokeGbp('gbp_status', {});
+export const seoGbpConnect = () => seoInvokeGbp('gbp_connect', {});
+export const seoGbpDisconnect = () => seoInvokeGbp('gbp_disconnect', {});
+export const seoGbpLocations = () => seoInvokeGbp('gbp_locations', {});
+export const seoGbpSelectLocation = (opts) => seoInvokeGbp('gbp_select_location', opts);
+export const seoGbpMetrics = () => seoInvokeGbp('gbp_metrics', {});
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

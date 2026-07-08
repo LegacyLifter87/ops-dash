@@ -6,8 +6,10 @@
 // Owner sign-in (business.manage) for private metrics is a gated add-on.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan } from './store.js';
+import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan, seoGbpStatus, seoGbpConnect, seoGbpDisconnect, seoGbpLocations, seoGbpSelectLocation, seoGbpMetrics } from './store.js';
 import { Card, Btn, Input } from './ui.js';
+
+const nfmt = (n) => (n || 0).toLocaleString();
 
 const sevTone = (s) => s === 'critical' ? 'bg-rose-500' : s === 'warning' ? 'bg-amber-400' : 'bg-sky-400';
 const sevRank = { critical: 0, warning: 1, info: 2 };
@@ -63,6 +65,103 @@ function AiPlan({ plan }) {
   </div></${Card}>`;
 }
 
+function Sparkline({ values, color = '#6366f1', h = 40 }) {
+  if (!values || values.length < 2) return null;
+  const max = Math.max(...values, 1), w = 240, step = w / (values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`);
+  return html`<svg viewBox=${`0 0 ${w} ${h}`} preserveAspectRatio="none" class="w-full" style=${`height:${h}px`}>
+    <polyline points=${pts.join(' ')} fill="none" stroke=${color} stroke-width="1.5" />
+    <polygon points=${`0,${h} ${pts.join(' ')} ${w},${h}`} fill=${color} opacity="0.08" />
+  </svg>`;
+}
+
+function GbpLive({ canRun }) {
+  const [st, setSt] = useState(null);
+  const [locs, setLocs] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = async () => { try { setSt(await seoGbpStatus()); } catch (e) { setErr(e.message); } };
+  useEffect(() => { load(); }, []);
+
+  const connect = async () => { setBusy('connect'); setErr(''); try { const d = await seoGbpConnect(); location.href = d.url; } catch (e) { setErr(e.message); setBusy(''); } };
+  const disconnect = async () => { if (!confirm('Disconnect Google Business Profile?')) return; setBusy('disc'); try { await seoGbpDisconnect(); setLocs(null); await load(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const pickLocations = async () => { setBusy('locs'); setErr(''); try { const d = await seoGbpLocations(); setLocs(d.locations || []); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const choose = async (l) => { setBusy('sel'); setErr(''); try { await seoGbpSelectLocation({ locationId: l.id, title: l.title, address: l.address }); setLocs(null); await load(); await refresh(); } catch (e) { setErr(e.message); setBusy(''); } };
+  const refresh = async () => { setBusy('metrics'); setErr(''); try { const d = await seoGbpMetrics(); setSt((s) => ({ ...s, metrics: d.metrics, search_keywords: d.search_keywords, metrics_at: d.metrics_at })); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+
+  if (!st) return null;
+
+  // Not connected — invite / gated note.
+  if (!st.connected) {
+    return html`<${Card}><div class="p-4 flex flex-wrap items-center gap-3 justify-between">
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800">Connect Google Business Profile <span class="text-xs font-normal text-slate-400">— private metrics</span></div>
+        <div class="text-xs text-slate-500 mt-0.5">Sign in with the Google account that manages the profile to see impressions, calls, direction requests, website clicks, and the exact search terms customers used.</div>
+      </div>
+      ${canRun ? html`<${Btn} size="sm" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Connect'}</${Btn}>` : html`<span class="text-xs text-slate-400">Ask an admin to connect.</span>`}
+      ${err && html`<div class="w-full text-sm text-rose-600">${err}</div>`}
+    </div></${Card}>`;
+  }
+
+  // Connected but no location chosen — pick one.
+  if (!st.location) {
+    return html`<${Card}><div class="p-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <div class="text-sm text-slate-600">Connected as <span class="font-medium text-slate-800">${st.email}</span></div>
+        <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+      </div>
+      ${!locs ? html`<${Btn} size="sm" onClick=${pickLocations} disabled=${busy === 'locs'}>${busy === 'locs' ? 'Loading…' : 'Choose your business location'}</${Btn}>`
+        : locs.length === 0 ? html`<div class="text-sm text-slate-500">No locations found on this Google account. Make sure it manages a verified profile.</div>`
+          : html`<div class="space-y-1">${locs.map((l) => html`<button onClick=${() => choose(l)} disabled=${busy === 'sel'} class="w-full text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40">
+              <div class="text-sm font-medium text-slate-800">${l.title}</div><div class="text-xs text-slate-400">${l.address || l.id}</div>
+            </button>`)}</div>`}
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+    </div></${Card}>`;
+  }
+
+  // Connected + location — metrics.
+  const m = st.metrics, T = (m && m.totals) || {};
+  const impr = ['BUSINESS_IMPRESSIONS_DESKTOP_MAPS', 'BUSINESS_IMPRESSIONS_DESKTOP_SEARCH', 'BUSINESS_IMPRESSIONS_MOBILE_MAPS', 'BUSINESS_IMPRESSIONS_MOBILE_SEARCH'].reduce((a, k) => a + (T[k] || 0), 0);
+  const maps = (T.BUSINESS_IMPRESSIONS_DESKTOP_MAPS || 0) + (T.BUSINESS_IMPRESSIONS_MOBILE_MAPS || 0);
+  const search = (T.BUSINESS_IMPRESSIONS_DESKTOP_SEARCH || 0) + (T.BUSINESS_IMPRESSIONS_MOBILE_SEARCH || 0);
+  const mobile = (T.BUSINESS_IMPRESSIONS_MOBILE_MAPS || 0) + (T.BUSINESS_IMPRESSIONS_MOBILE_SEARCH || 0);
+  const tiles = [['Impressions', impr], ['Calls', T.CALL_CLICKS || 0], ['Website clicks', T.WEBSITE_CLICKS || 0], ['Directions', T.BUSINESS_DIRECTION_REQUESTS || 0], ['Messages', T.BUSINESS_CONVERSATIONS || 0], ['Bookings', T.BUSINESS_BOOKINGS || 0]];
+  const kws = st.search_keywords || [];
+
+  return html`<${Card}><div class="p-4 space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800 flex items-center gap-2">${st.location.title} <span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">● Live</span></div>
+        <div class="text-xs text-slate-400">${st.location.address || ''} · ${st.email}${m ? ` · last 90 days` : ''}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${canRun && html`<${Btn} size="sm" variant="secondary" onClick=${refresh} disabled=${busy === 'metrics'}>${busy === 'metrics' ? 'Loading…' : (m ? '↻ Refresh' : 'Load metrics')}</${Btn}>`}
+        <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+      </div>
+    </div>
+    ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+
+    ${!m ? html`<div class="text-sm text-slate-400">Click “Load metrics” to pull the last 90 days.</div>` : html`
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        ${tiles.map(([k, v]) => html`<div class="rounded-lg bg-slate-50 border border-slate-100 p-2.5"><div class="text-[11px] text-slate-400">${k}</div><div class="text-lg font-bold text-slate-800 tabular-nums">${nfmt(v)}</div></div>`)}
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mb-0.5"><span>Daily impressions</span><span>Search ${nfmt(search)} · Maps ${nfmt(maps)} · Mobile ${impr ? Math.round((mobile / impr) * 100) : 0}%</span></div>
+          <${Sparkline} values=${(m.daily || []).map((d) => d.impressions)} />
+        </div>
+        <div>
+          <div class="text-[11px] text-slate-400 mb-1">Top search terms customers used <span class="text-slate-300">(Google's own data)</span></div>
+          ${kws.length === 0 ? html`<div class="text-xs text-slate-400">No keyword data yet.</div>`
+            : html`<div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">${kws.slice(0, 24).map((k) => html`<span class="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100">${k.keyword}${k.value ? html` <span class="text-brand-400">${k.isThreshold ? '<' : ''}${nfmt(k.value)}</span>` : ''}</span>`)}</div>`}
+        </div>
+      </div>
+      ${st.metrics_at && html`<div class="text-[11px] text-slate-400">Updated ${new Date(st.metrics_at).toLocaleString()}</div>`}
+    `}
+  </div></${Card}>`;
+}
+
 export function ProfileAudit({ siteId, defaultName = '', domain, canRun = true }) {
   const [report, setReport] = useState(null);
   const [name, setName] = useState('');
@@ -97,6 +196,7 @@ export function ProfileAudit({ siteId, defaultName = '', domain, canRun = true }
   const ex = report?.extracted;
 
   return html`<div class="space-y-4">
+    <${GbpLive} canRun=${canRun} />
     <${Card}><div class="p-3 space-y-2">
       <div class="flex flex-wrap items-end gap-2">
         <div class="flex-1 min-w-[200px]">

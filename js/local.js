@@ -74,6 +74,8 @@ export function Local() {
   const [view, setView] = useState('grid');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
+  // Returned from the Google Business Profile OAuth flow → open Profile Audit.
+  useEffect(() => { const q = new URLSearchParams(location.search); if (q.get('gbp')) { setView('profile'); history.replaceState(null, '', location.pathname + location.hash); } }, []);
   const load = async (sid) => { const g = await seoLoadGeogrids(sid); setGrids(g); setCurrent(g[0] || null); if (g[0]) { setKw(g[0].keyword); setAddress(g[0].location_label || ''); } };
   useEffect(() => { if (site) load(site); else { setGrids([]); setCurrent(null); } }, [site]);
 
