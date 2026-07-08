@@ -76,12 +76,13 @@ function Sparkline({ values, color = '#6366f1', h = 40 }) {
 }
 
 // Accept "locations/123", a bare numeric id, or a pasted Business Profile URL.
+// From a URL we take the LONGEST digit run (GBP location IDs are ~15-21 digits).
 function normLocId(raw) {
   const s = String(raw || '').trim();
   const m = s.match(/locations\/(\d+)/);
   if (m) return `locations/${m[1]}`;
-  const d = (s.match(/\d{6,}/) || [])[0];
-  return d ? `locations/${d}` : null;
+  const runs = (s.match(/\d{6,}/g) || []).sort((a, b) => b.length - a.length);
+  return runs.length ? `locations/${runs[0]}` : null;
 }
 
 function GbpLive({ canRun }) {
