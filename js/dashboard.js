@@ -12,7 +12,7 @@ const money = (n) => '$' + Math.round(n || 0).toLocaleString();
 const posf = (n) => (n ? n.toFixed(1) : '—');
 const scoreColor = (s) => (s >= 70 ? '#10b981' : s >= 45 ? '#f59e0b' : '#f43f5e');
 const priColor = (p) => (p >= 80 ? 'bg-rose-100 text-rose-700' : p >= 65 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600');
-const recIcon = { optimize: '🎯', technical: '🩺', content: '✍️', competitor: '⚔️', ctr: '🔤', authority: '🔗' };
+const recIcon = { optimize: '🎯', technical: '🩺', content: '✍️', competitor: '⚔️', ctr: '🔤', authority: '🔗', local: '📍' };
 
 function Gauge({ score }) {
   const r = 46, c = 2 * Math.PI * r, off = c * (1 - (score || 0) / 100), col = scoreColor(score || 0);
@@ -64,7 +64,7 @@ export function Dashboard({ navigate }) {
           <${Gauge} score=${ov.visibility} />
           <div>
             <div class="text-xs font-semibold text-slate-400 uppercase">Organic visibility</div>
-            <div class="text-sm text-slate-600 mt-1">Blends rankings, reach, technical health &amp; authority into one score for <span class="font-medium">${ov.site}</span>.</div>
+            <div class="text-sm text-slate-600 mt-1">Blends rankings, reach, technical health, authority &amp; local presence into one score for <span class="font-medium">${ov.site}</span>.</div>
           </div>
         </div></${Card}>
         <div class="lg:col-span-2"><${Card}><div class="p-4">
@@ -84,6 +84,10 @@ export function Dashboard({ navigate }) {
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         ${[
           ['audit', '🩺', 'Technical health', s.avgTech != null ? `${s.avgTech}/100` : '—', `${num(s.criticals)} critical · ${num(s.auditPages)} pages`],
+          ['seo', '🚦', 'Site Health (Lighthouse)', s.lhPerf != null ? `${s.lhPerf}/100 perf` : '—', s.lhPerf != null ? `SEO ${s.lhSeo ?? '—'} · mobile${s.lhPerfDesk != null ? ` · desktop ${s.lhPerfDesk}` : ''}` : 'run in SEO → Site Health'],
+          ['local', '🏢', 'Google profile', s.gbpScore != null ? `${s.gbpScore}/100` : '—', s.gbpScore != null ? `${num(s.gbpIssues)} findings` : 'audit in Local → Profile'],
+          ['local', '📍', 'Map pack', s.geoAvgRank != null ? `avg ${s.geoAvgRank.toFixed(1)}` : '—', s.geoTotal ? `top-3 in ${num(s.geoTop3)}/${num(s.geoTotal)} zones` : 'run a geo-grid in Local'],
+          ['local', '📑', 'Citations', s.citTotal ? `${num(s.citConsistent)}/${num(s.citFound)} consistent` : '—', s.citTotal ? (s.citStale ? `⚠ ${num(s.citStale)} former-name listing(s)` : `${num(s.citTotal - s.citFound)} directories missing`) : 'scan in Local → Citations'],
           ['backlinks', '🔗', 'Authority', s.domainRank != null ? `rank ${s.domainRank}` : '—', `${num(s.refDomains)} referring domains`],
           ['competitors', '⚔️', 'Competitors', num(s.competitors), `${num(s.gap)} gap keywords`],
           ['keywords', '✍️', 'Content', `${num(s.briefs)} briefs`, `${num(s.striking)} striking-distance kw`],
