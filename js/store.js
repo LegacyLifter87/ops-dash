@@ -317,6 +317,21 @@ async function seoInvokeKw(action, extra = {}) {
   return data;
 }
 
+// --- Team / user control panel (seo-team fn) ---------------------------------
+async function seoInvokeTeam(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-team', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoTeamList = () => seoInvokeTeam('list_members', {});
+export const seoTeamAdd = (email, role) => seoInvokeTeam('add_member', { email, role });
+export const seoTeamSetRole = (userId, role) => seoInvokeTeam('set_role', { userId, role });
+export const seoTeamRemove = (userId) => seoInvokeTeam('remove_member', { userId });
+export const seoAgencyList = () => seoInvokeTeam('agency_list', {});
+export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email });
+export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('jt-bridge', { body: { action, accountId: getActiveAccountId(), ...extra } });

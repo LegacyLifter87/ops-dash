@@ -13,6 +13,7 @@ import { Local } from './local.js';
 import { Audit } from './audit.js';
 import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
+import { Team } from './team.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
 const NAV = [
@@ -25,6 +26,7 @@ const NAV = [
   { id: 'audit', label: 'Audit', icon: '🩺' },
   { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'jt', label: 'Business', icon: '📊' },
+  { id: 'team', label: 'Team', icon: '👥' },
 ];
 
 function parseHash() {
@@ -118,6 +120,7 @@ function App() {
           ${view === 'audit' && html`<${Audit} />`}
           ${view === 'backlinks' && html`<${Backlinks} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
+          ${view === 'team' && html`<${Team} />`}
         </main>
       </div>
 
