@@ -327,7 +327,8 @@ async function seoInvokeBrief(action, extra = {}) {
   if (data?.error) throw new Error(data.error);
   return data;
 }
-export const seoBriefGenerate = (siteId, cluster, format) => seoInvokeBrief('generate', { siteId, cluster, format });
+// target = { cluster } for a topic cluster, or { keyword } for a single keyword.
+export const seoBriefGenerate = (siteId, target, format) => seoInvokeBrief('generate', { siteId, ...target, format });
 export async function seoLoadBriefs(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_briefs').select('*').eq('site_id', siteId).order('created_at', { ascending: false });

@@ -34,6 +34,7 @@ export function Keywords() {
   const [brand, setBrand] = useState('');
   const [briefs, setBriefs] = useState([]);
   const [openCluster, setOpenCluster] = useState(null);
+  const [openKind, setOpenKind] = useState('cluster'); // 'cluster' | 'keyword' — what openCluster refers to
   const [briefBusy, setBriefBusy] = useState('');
   const [econ, setEcon] = useState(null);
   const [marginPct, setMarginPct] = useState(45);
@@ -77,12 +78,13 @@ export function Keywords() {
       await loadKw(site);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
-  const genBrief = async (cl, format) => {
-    setBriefBusy(cl); setErr('');
-    try { await seoBriefGenerate(site, cl, format); setBriefs(await seoLoadBriefs(site)); }
+  const genBrief = async (key, kind, format) => {
+    setBriefBusy(key); setErr('');
+    try { await seoBriefGenerate(site, kind === 'keyword' ? { keyword: key } : { cluster: key }, format); setBriefs(await seoLoadBriefs(site)); }
     catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
+  const openContent = (key, kind) => { setOpenKind(kind); setOpenCluster(key); };
 
   const clusters = useMemo(() => {
     const m = new Map();
@@ -163,7 +165,7 @@ export function Keywords() {
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
                 <${SortTh} k="opportunity" label="Opp." sort=${sortKw} /><${SortTh} k="keyword" label="Keyword" sort=${sortKw} /><${SortTh} k="intent" label="Intent" sort=${sortKw} /><${SortTh} k="cluster" label="Cluster" sort=${sortKw} />
-                <${SortTh} k="impressions" label="Impr." sort=${sortKw} right=${true} /><${SortTh} k="volume" label="Vol." sort=${sortKw} right=${true} /><${SortTh} k="cpc" label="CPC" sort=${sortKw} right=${true} /><${SortTh} k="difficulty" label="Diff." sort=${sortKw} right=${true} /><${SortTh} k="position" label="Pos." sort=${sortKw} right=${true} /><${SortTh} k="est_value" label="$/mo" sort=${sortKw} right=${true} /><${SortTh} k="recommended_action" label="Recommended action" sort=${sortKw} /></tr></thead>
+                <${SortTh} k="impressions" label="Impr." sort=${sortKw} right=${true} /><${SortTh} k="volume" label="Vol." sort=${sortKw} right=${true} /><${SortTh} k="cpc" label="CPC" sort=${sortKw} right=${true} /><${SortTh} k="difficulty" label="Diff." sort=${sortKw} right=${true} /><${SortTh} k="position" label="Pos." sort=${sortKw} right=${true} /><${SortTh} k="est_value" label="$/mo" sort=${sortKw} right=${true} /><${SortTh} k="recommended_action" label="Recommended action" sort=${sortKw} /><th class="py-1.5 pr-3"></th></tr></thead>
               <tbody>${sortKw.sort(filtered).slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
                 <td class="py-1.5 pr-3"><${Pill} cls=${oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
                 <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${k.keyword}</td>
@@ -176,6 +178,7 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right tabular-nums">${posf(k.position)}</td>
                 <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', k.est_value > 0 ? 'text-emerald-700' : 'text-slate-300')}>${k.est_value > 0 ? money(k.est_value) : '—'}</td>
                 <td class="py-1.5 pr-3 text-slate-600">${k.recommended_action}</td>
+                <td class="py-1.5 pr-1 text-right"><button title=${briefFor(k.keyword) ? 'View the content written for this keyword' : 'Write a blog post or page targeting this keyword'} onClick=${() => openContent(k.keyword, 'keyword')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(k.keyword) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>${briefFor(k.keyword) ? 'View' : '✨'}</button></td>
               </tr>`)}</tbody>
             </table>
             ${filtered.length > 250 && html`<div class="text-xs text-slate-400 pt-2">Showing top 250 of ${num(filtered.length)}.</div>`}
@@ -190,19 +193,19 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(c.impressions)}</td>
                 <td class="py-1.5 pr-3 text-right"><${Pill} cls=${oppColor(c.avgOpp)}>${c.avgOpp}</${Pill}></td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[c.topIntent] || 'bg-slate-100 text-slate-600'}>${c.topIntent}</${Pill}></td>
-                <td class="py-1.5 pr-3 text-right"><button onClick=${() => setOpenCluster(c.cluster)} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
+                <td class="py-1.5 pr-3 text-right"><button onClick=${() => openContent(c.cluster, 'cluster')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
               </tr>`)}</tbody>
             </table></div></${Card}>`
           : html`<${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
-                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => setOpenCluster(b.cluster)} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
+                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => openContent(b.cluster, clusters.some((c) => c.cluster === b.cluster) ? 'cluster' : 'keyword')} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
                     <div class="min-w-0"><div class="font-medium text-slate-800">${b.cluster}</div><div class="text-xs text-slate-500 truncate">${b.title}</div></div>
                     <${Pill} cls="bg-slate-100 text-slate-600 shrink-0">${(b.format || b.page_type || '').replace('_', ' ')}</${Pill}>
                   </button>`)}</div>`}
             </div></${Card}>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, fmt)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} />`}
   </div>`;
 }
 
