@@ -7,11 +7,61 @@
 //     future ones (DB trigger) — list, revoke.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke } from './store.js';
-import { Card, Btn, Input, Select } from './ui.js';
+import { useStore, getActiveAccountId, activeAccount, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs } from './store.js';
+import { Card, Btn, Input, Select, Modal, Field } from './ui.js';
 
 const ROLE_OPTS = [{ value: 'member', label: 'Member' }, { value: 'admin', label: 'Admin' }, { value: 'owner', label: 'Owner' }];
 const roleTone = (r) => r === 'owner' ? 'bg-violet-100 text-violet-700' : r === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600';
+const TAB_OPTS = [['dashboard', '▣ Dashboard'], ['seo', '🔍 SEO'], ['keywords', '🔑 Keywords'], ['competitors', '⚔️ Competitors'], ['ranks', '📈 Ranks'], ['local', '📍 Local'], ['audit', '🩺 Audit'], ['backlinks', '🔗 Backlinks'], ['jt', '📊 Business'], ['team', '👥 Team']];
+
+// Per-member tab access editor. null / all-checked = full access.
+function TabsModal({ m, onClose, onSave }) {
+  const [sel, setSel] = useState(new Set(m.tabAccess || TAB_OPTS.map(([id]) => id)));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const toggle = (id) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); n.add('dashboard'); return n; });
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { const tabs = sel.size >= TAB_OPTS.length ? null : [...sel]; await onSave(tabs); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Tab access — ${m.email || 'user'}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <p class="text-xs text-slate-500">Choose which tabs this user sees in this account. Dashboard is always included.</p>
+      <div class="grid grid-cols-2 gap-1.5">
+        ${TAB_OPTS.map(([id, label]) => html`<label class=${cx('flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer', sel.has(id) ? 'border-brand-300 bg-brand-50/50 text-slate-800' : 'border-slate-200 text-slate-400')}>
+          <input type="checkbox" checked=${sel.has(id)} disabled=${id === 'dashboard'} onChange=${() => toggle(id)} class="accent-brand-600" />${label}
+        </label>`)}
+      </div>
+      <div class="flex items-center justify-between">
+        <button onClick=${() => setSel(new Set(TAB_OPTS.map(([id]) => id)))} class="text-xs text-slate-400 underline hover:text-slate-600">Select all</button>
+        <div class="text-xs text-slate-400">${sel.size >= TAB_OPTS.length ? 'Full access' : `${sel.size} of ${TAB_OPTS.length} tabs`}</div>
+      </div>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save tab access'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+// Agency-only: directly set a member's password.
+function PwModal({ m, onClose, onSave }) {
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    if (pw.length < 8) { setErr('Use at least 8 characters.'); return; }
+    setBusy(true); setErr('');
+    try { await onSave(pw); onClose(); } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Set password — ${m.email || 'user'}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <${Field} label="New password"><${Input} type="text" value=${pw} onInput=${setPw} placeholder="min. 8 characters" /></${Field}>
+      <p class="text-xs text-slate-400">They can sign in with this immediately. Prefer “send reset email” when possible — then only they ever know the password.</p>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Set password'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
 
 function TempPw({ cred, onClose }) {
   const copy = () => { try { navigator.clipboard.writeText(`${cred.email} / ${cred.password}`); } catch { /* ignore */ } };
@@ -35,6 +85,9 @@ export function Team() {
   const [role, setRole] = useState('member');
   const [aEmail, setAEmail] = useState('');
   const [cred, setCred] = useState(null);
+  const [banner, setBanner] = useState('');
+  const [tabsFor, setTabsFor] = useState(null);
+  const [pwFor, setPwFor] = useState(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
@@ -66,6 +119,21 @@ export function Team() {
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const revoke = async (s) => { if (!confirm(`Revoke agency access for ${s.email || 'this user'}? They will be removed from ALL accounts.`)) return; setErr(''); try { await seoAgencyRevoke(s.userId); const a = await seoAgencyList(); setStaff(a.staff || []); await load(); } catch (e) { setErr(e.message); } };
+  const sendReset = async (m) => { setErr(''); setBanner(''); try { const r = await seoTeamSendReset(m.userId); setBanner(`✉ Password-reset email sent to ${r.email || m.email}.`); } catch (e) { setErr(e.message); } };
+  const copyResetLink = async (m) => {
+    setErr(''); setBanner('');
+    try {
+      const r = await seoTeamSendReset(m.userId, 'link');
+      if (!r.link) { setErr('No link returned.'); return; }
+      try { await navigator.clipboard.writeText(r.link); setBanner(`🔗 Reset link copied for ${m.email} — send it to them however you like. It's single-use.`); }
+      catch { setBanner(`Reset link for ${m.email}: ${r.link}`); }
+    } catch (e) { setErr(e.message); }
+  };
+  const delUser = async (m) => {
+    if (!confirm(`Permanently DELETE the login for ${m.email || 'this user'}?\n\nThis removes them from EVERY account and cannot be undone.`)) return;
+    setErr(''); setBanner('');
+    try { await seoTeamDeleteUser(m.userId); setBanner(`Deleted ${m.email}.`); await load(); } catch (e) { setErr(e.message); }
+  };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (!data) return html`<div class="p-8 text-sm text-slate-400">Loading team…</div>`;
@@ -76,22 +144,33 @@ export function Team() {
       <p class="text-sm text-slate-500">Who can access <span class="font-medium">${acct?.name || 'this account'}</span>${data.agency ? ' — plus agency-wide staff.' : '.'}</p>
     </div>
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
+    ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800 flex items-center justify-between"><span class="break-all">${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 hover:opacity-100 ml-2">✕</button></div>`}
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}
 
     <${Card}><div class="p-4">
       <div class="font-semibold text-slate-800 mb-1">This account's team</div>
       <p class="text-xs text-slate-400 mb-3">Members see data; admins can run tools and connect integrations; owners can also manage the team.</p>
       <div class="divide-y divide-slate-50">
-        ${(data.members || []).map((m) => html`<div class="flex items-center gap-3 py-2.5">
+        ${(data.members || []).map((m) => html`<div class="flex items-center gap-3 py-2.5 flex-wrap">
           <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm text-slate-500 shrink-0">${(m.email || '?')[0].toUpperCase()}</div>
           <div class="flex-1 min-w-0">
             <div class="text-sm text-slate-800 truncate">${m.email || m.userId}${m.you ? html`<span class="text-xs text-slate-400"> (you)</span>` : ''}</div>
-            ${m.isAgency && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">AGENCY — all accounts</span>`}
+            <div class="flex items-center gap-1.5">
+              ${m.isAgency && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">AGENCY — all accounts</span>`}
+              ${m.tabAccess && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${m.tabAccess.length} tabs</span>`}
+            </div>
           </div>
           ${data.admin && !m.you && !m.isAgency
             ? html`<${Select} value=${m.role} onChange=${(v) => setMemberRole(m, v)} options=${ROLE_OPTS} />`
             : html`<span class=${cx('text-[11px] font-semibold px-2 py-0.5 rounded-full', roleTone(m.role))}>${m.role}</span>`}
-          ${data.admin && !m.you && !m.isAgency && html`<button onClick=${() => remove(m)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>`}
+          ${data.admin && !m.you && !m.isAgency && html`<div class="flex items-center gap-2 text-sm">
+            <button title="Tab access" onClick=${() => setTabsFor(m)} class="text-slate-400 hover:text-slate-700">🗂</button>
+            <button title="Send password-reset email" onClick=${() => sendReset(m)} class="text-slate-400 hover:text-slate-700">✉</button>
+            <button title="Copy a reset link" onClick=${() => copyResetLink(m)} class="text-slate-400 hover:text-slate-700">🔗</button>
+            ${data.agency && html`<button title="Set password directly" onClick=${() => setPwFor(m)} class="text-slate-400 hover:text-slate-700">🔑</button>`}
+            <button title="Remove from this account" onClick=${() => remove(m)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>
+            ${data.agency && html`<button title="Delete login entirely (all accounts)" onClick=${() => delUser(m)} class="text-slate-300 hover:text-rose-600">🗑</button>`}
+          </div>`}
         </div>`)}
       </div>
       ${data.admin && html`<div class="flex flex-wrap items-end gap-2 mt-3 pt-3 border-t border-slate-100">
@@ -126,5 +205,8 @@ export function Team() {
         </div>
       `}
     </div></${Card}>`}
+
+    ${tabsFor && html`<${TabsModal} m=${tabsFor} onClose=${() => setTabsFor(null)} onSave=${async (tabs) => { await seoTeamSetTabs(tabsFor.userId, tabs); await load(); }} />`}
+    ${pwFor && html`<${PwModal} m=${pwFor} onClose=${() => setPwFor(null)} onSave=${async (pw) => { await seoTeamSetPassword(pwFor.userId, pw); setBanner(`🔑 Password updated for ${pwFor.email}.`); }} />`}
   </div>`;
 }

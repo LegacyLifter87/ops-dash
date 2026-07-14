@@ -2,7 +2,7 @@
 // app.js — Ops Dash shell: auth gate, sidebar nav, account switcher, router.
 // ---------------------------------------------------------------------------
 import { html, render, useState, useEffect, cx } from './lib.js';
-import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount } from './store.js';
+import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount, completeRecovery } from './store.js';
 import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
 import { Dashboard } from './dashboard.js';
 import { SEO } from './seo.js';
@@ -33,6 +33,30 @@ function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
   const [view, id] = raw.split('/');
   return { view: view || 'dashboard', id };
+}
+
+// Landing screen for password-recovery links (from reset emails).
+function RecoveryScreen() {
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    if (pw.length < 8) { setErr('Use at least 8 characters.'); return; }
+    if (pw !== pw2) { setErr("Passwords don't match."); return; }
+    setBusy(true); setErr('');
+    try { await completeRecovery(pw); } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<div class="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-slate-100 p-6 space-y-3">
+      <div class="text-lg font-bold text-slate-800">Set a new password</div>
+      <p class="text-sm text-slate-500">You followed a password-reset link — choose a new password for your account.</p>
+      <${Field} label="New password"><${Input} type="password" value=${pw} onInput=${setPw} placeholder="••••••••" /></${Field}>
+      <${Field} label="Confirm password"><${Input} type="password" value=${pw2} onInput=${setPw2} placeholder="••••••••" /></${Field}>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save new password'}</${Btn}>
+    </div>
+  </div>`;
 }
 
 function NewAccountModal({ onClose }) {
@@ -67,11 +91,14 @@ function App() {
   }, []);
 
   if (s.phase === 'loading') return html`<${LoadingScreen} />`;
+  if (s.recovery) return html`<${RecoveryScreen} />`;
   if (s.phase === 'login') return html`<${AuthScreen} />`;
   if (s.phase === 'app' && s.accounts.length === 0) return html`<${Onboarding} />`;
 
   const navigate = (view) => { location.hash = `/${view}`; setMobileOpen(false); };
-  const view = NAV.some((n) => n.id === route.view) ? route.view : 'dashboard';
+  // Per-member tab access (null = all). Dashboard is always available.
+  const nav = s.myTabs ? NAV.filter((n) => s.myTabs.includes(n.id) || n.id === 'dashboard') : NAV;
+  const view = nav.some((n) => n.id === route.view) ? route.view : 'dashboard';
   const acct = activeAccount();
 
   return html`
@@ -91,7 +118,7 @@ function App() {
         </div>
 
         <nav class="flex-1 p-3 space-y-1">
-          ${NAV.map((n) => html`
+          ${nav.map((n) => html`
             <button onClick=${() => navigate(n.id)}
               class=${cx('w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition', view === n.id ? 'bg-brand-600 text-white' : 'hover:bg-slate-800 text-slate-300')}>
               <span class="w-5 text-center">${n.icon}</span>${n.label}</button>`)}

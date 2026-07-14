@@ -2,7 +2,7 @@
 // auth.js — Ops Dash login / signup, loading, and first-account onboarding.
 // ---------------------------------------------------------------------------
 import { html, useState, cx } from './lib.js';
-import { signIn, signUp, createAccount } from './store.js';
+import { signIn, signUp, createAccount, forgotPassword } from './store.js';
 import { Card, Btn, Input, Field } from './ui.js';
 
 function Shell({ children }) {
@@ -59,6 +59,11 @@ export function AuthScreen() {
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
       ${msg && html`<div class="text-sm text-emerald-600">${msg}</div>`}
       <${Btn} type="submit" class="w-full" disabled=${busy}>${busy ? 'Please wait…' : (mode === 'login' ? 'Sign in' : 'Create account')}</${Btn}>
+      ${mode === 'login' && html`<button type="button" onClick=${async () => {
+        if (!email.trim()) { setErr('Enter your email above first, then click “Forgot password?”.'); return; }
+        setErr(''); setMsg('');
+        try { await forgotPassword(email); setMsg('Reset link sent — check your email.'); } catch (e) { setErr(e.message); }
+      }} class="w-full text-center text-xs text-slate-400 hover:text-slate-600 underline">Forgot password?</button>`}
     </form>
   </${Shell}>`;
 }

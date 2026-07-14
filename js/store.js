@@ -12,7 +12,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- tiny pub/sub store -----------------------------------------------------
 const listeners = new Set();
-let state = { phase: 'loading', session: null, user: null, accounts: [], activeAccountId: null, error: '' };
+let state = { phase: 'loading', session: null, user: null, accounts: [], activeAccountId: null, error: '', myTabs: null, recovery: false };
 function set(patch) { state = { ...state, ...patch }; listeners.forEach((l) => l()); }
 export function getState() { return state; }
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -25,13 +25,35 @@ export function useStore() {
 // --- active account ---------------------------------------------------------
 export function getActiveAccountId() { return state.activeAccountId; }
 export function activeAccount() { return state.accounts.find((a) => a.id === state.activeAccountId) || null; }
-export function setActiveAccount(id) { try { localStorage.setItem('ops_active_account', id); } catch { /* ignore */ } set({ activeAccountId: id }); }
+export function setActiveAccount(id) { try { localStorage.setItem('ops_active_account', id); } catch { /* ignore */ } set({ activeAccountId: id }); loadMyTabs(id); }
+// Per-member tab access for the active account (null = all tabs). UI-level
+// gating only — data access is still enforced by RLS/membership server-side.
+export async function loadMyTabs(aid) {
+  if (!aid || !state.user) { set({ myTabs: null }); return; }
+  try {
+    const { data } = await supabase.from('seo_members').select('tab_access').eq('account_id', aid).eq('user_id', state.user.id).maybeSingle();
+    set({ myTabs: data?.tab_access || null });
+  } catch { set({ myTabs: null }); }
+}
 
 // --- auth / session ---------------------------------------------------------
 export async function initAuth() {
   const { data: { session } } = await supabase.auth.getSession();
   await applySession(session);
-  supabase.auth.onAuthStateChange((_e, s) => { applySession(s); });
+  supabase.auth.onAuthStateChange((e, s) => {
+    if (e === 'PASSWORD_RECOVERY') { set({ recovery: true }); }
+    applySession(s);
+  });
+}
+// Recovery-link landing: user arrived via a reset email — set the new password.
+export async function completeRecovery(password) {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw new Error(error.message);
+  set({ recovery: false });
+}
+export async function forgotPassword(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail((email || '').trim(), { redirectTo: 'https://ops.legacybuilder.app' });
+  if (error) throw new Error(error.message);
 }
 async function applySession(session) {
   if (!session) { set({ phase: 'login', session: null, user: null, accounts: [], activeAccountId: null }); return; }
@@ -46,6 +68,7 @@ export async function loadAccounts() {
   try { active = localStorage.getItem('ops_active_account'); } catch { /* ignore */ }
   if (!accounts.some((a) => a.id === active)) active = accounts[0]?.id || null;
   set({ phase: 'app', accounts, activeAccountId: active, error: '' });
+  loadMyTabs(active);
 }
 export async function signIn(email, password) {
   const { error } = await supabase.auth.signInWithPassword({ email: (email || '').trim(), password });
@@ -331,6 +354,10 @@ export const seoTeamRemove = (userId) => seoInvokeTeam('remove_member', { userId
 export const seoAgencyList = () => seoInvokeTeam('agency_list', {});
 export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email });
 export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
+export const seoTeamSetPassword = (userId, password) => seoInvokeTeam('set_password', { userId, password });
+export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { userId, mode });
+export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
+export const seoTeamSetTabs = (userId, tabs) => seoInvokeTeam('set_tabs', { userId, tabs });
 
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
