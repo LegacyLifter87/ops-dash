@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -81,17 +81,14 @@ export function Keywords() {
   const genBrief = async (key, kind, format) => {
     setBriefBusy(key); setErr('');
     try {
-      const startedAt = Date.now();
+      // Pass 1: research + write the draft (saved server-side immediately).
       const r = await seoBriefGenerate(site, kind === 'keyword' ? { keyword: key } : { cluster: key }, format);
-      if (r?.brief) { setBriefs(await seoLoadBriefs(site)); return; } // sync path
-      // Background path: the writer researches + writes server-side; poll for the result.
-      for (let i = 0; i < 40; i++) {
-        await new Promise((res) => setTimeout(res, 6000));
-        const bs = await seoLoadBriefs(site);
-        const b = bs.find((x) => x.cluster === key && x.created_at && new Date(x.created_at).getTime() >= startedAt - 60000);
-        if (b) { setBriefs(bs); return; }
+      if (r?.brief) setBriefs(await seoLoadBriefs(site));
+      // Pass 2: only when the draft misses a hard requirement — separate fast request.
+      if (r?.issues?.length) {
+        try { await seoBriefRefine(site, key); setBriefs(await seoLoadBriefs(site)); }
+        catch (_) { /* draft is already saved and shown — quality pass is best-effort */ }
       }
-      setErr('The writer is taking unusually long — check the Briefs tab in a couple of minutes, or try again.');
     } catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
