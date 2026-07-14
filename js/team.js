@@ -171,6 +171,10 @@ export function Team() {
             <button title="Remove from this account" onClick=${() => remove(m)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>
             ${data.agency && html`<button title="Delete login entirely (all accounts)" onClick=${() => delUser(m)} class="text-slate-300 hover:text-rose-600">🗑</button>`}
           </div>`}
+          ${data.agency && !m.you && m.isAgency && html`<div class="flex items-center gap-2">
+            <button title="Send password-reset email" onClick=${() => sendReset(m)} class="text-slate-400 hover:text-slate-700 text-sm">✉</button>
+            <span class="text-[11px] text-slate-400" title="Agency staff have full access everywhere — role, tabs, and removal are managed in the Agency staff section below.">managed in Agency staff ↓</span>
+          </div>`}
         </div>`)}
       </div>
       ${data.admin && html`<div class="flex flex-wrap items-end gap-2 mt-3 pt-3 border-t border-slate-100">
