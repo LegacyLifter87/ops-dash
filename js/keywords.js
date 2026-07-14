@@ -220,13 +220,27 @@ function mdInline(s) {
   return parts;
 }
 function mdRender(md) {
-  const out = []; let list = null;
-  const flush = () => { if (list) { out.push(html`<ul class="list-disc ml-5 space-y-1 text-slate-700">${list}</ul>`); list = null; } };
+  const out = []; let list = null; let table = null;
+  const flushList = () => { if (list) { out.push(html`<ul class="list-disc ml-5 space-y-1 text-slate-700">${list}</ul>`); list = null; } };
+  const flushTable = () => {
+    if (!table) return;
+    const rows = table.map((l) => l.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim()))
+      .filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c) || c === ''));
+    table = null;
+    if (!rows.length) return;
+    const [head, ...rest] = rows;
+    out.push(html`<div class="overflow-x-auto my-2"><table class="w-full text-sm border border-slate-200 rounded-lg">
+      <thead><tr class="bg-slate-50">${head.map((c) => html`<th class="text-left px-3 py-1.5 font-semibold text-slate-700 border-b border-slate-200">${mdInline(c)}</th>`)}</tr></thead>
+      <tbody>${rest.map((r) => html`<tr class="border-b border-slate-100 last:border-0">${r.map((c) => html`<td class="px-3 py-1.5 text-slate-700 align-top">${mdInline(c)}</td>`)}</tr>`)}</tbody>
+    </table></div>`);
+  };
+  const flush = () => { flushList(); flushTable(); };
   for (const ln of (md || '').split(/\r?\n/)) {
-    if (/^\s*###\s+/.test(ln)) { flush(); out.push(html`<h3 class="font-semibold text-slate-800 mt-3">${mdInline(ln.replace(/^\s*###\s+/, ''))}</h3>`); }
+    if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); if (!table) table = []; table.push(ln); }
+    else if (/^\s*###\s+/.test(ln)) { flush(); out.push(html`<h3 class="font-semibold text-slate-800 mt-3">${mdInline(ln.replace(/^\s*###\s+/, ''))}</h3>`); }
     else if (/^\s*##\s+/.test(ln)) { flush(); out.push(html`<h2 class="text-lg font-bold text-slate-800 mt-4">${mdInline(ln.replace(/^\s*##\s+/, ''))}</h2>`); }
     else if (/^\s*#\s+/.test(ln)) { flush(); out.push(html`<h1 class="text-xl font-bold text-slate-900 mt-1">${mdInline(ln.replace(/^\s*#\s+/, ''))}</h1>`); }
-    else if (/^\s*[-*]\s+/.test(ln)) { if (!list) list = []; list.push(html`<li>${mdInline(ln.replace(/^\s*[-*]\s+/, ''))}</li>`); }
+    else if (/^\s*[-*]\s+/.test(ln)) { flushTable(); if (!list) list = []; list.push(html`<li>${mdInline(ln.replace(/^\s*[-*]\s+/, ''))}</li>`); }
     else if (ln.trim() === '') { flush(); }
     else { flush(); out.push(html`<p class="text-slate-700">${mdInline(ln)}</p>`); }
   }
