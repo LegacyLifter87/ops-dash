@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -80,13 +80,18 @@ export function Keywords() {
   };
   const genBrief = async (key, kind, format) => {
     setBriefBusy(key); setErr('');
+    const target = kind === 'keyword' ? { keyword: key } : { cluster: key };
     try {
-      // Pass 1: research + write the draft (saved server-side immediately).
-      const r = await seoBriefGenerate(site, kind === 'keyword' ? { keyword: key } : { cluster: key }, format);
+      // Pass 1: research authority sources (web search lives in its own fast request).
+      let sources = [];
+      try { const res = await seoBriefResearch(site, target); sources = res?.sources || []; }
+      catch (_) { /* research is best-effort — generate falls back to official-homepage citations */ }
+      // Pass 2: write the draft with verified sources injected (saved server-side immediately).
+      const r = await seoBriefGenerate(site, target, format, sources);
       if (r?.brief) setBriefs(await seoLoadBriefs(site));
-      // Pass 2: only when the draft misses a hard requirement — separate fast request.
+      // Pass 3: only when the draft misses a hard requirement — separate fast request.
       if (r?.issues?.length) {
-        try { await seoBriefRefine(site, key); setBriefs(await seoLoadBriefs(site)); }
+        try { await seoBriefRefine(site, key, sources); setBriefs(await seoLoadBriefs(site)); }
         catch (_) { /* draft is already saved and shown — quality pass is best-effort */ }
       }
     } catch (e) { setErr(e.message); } finally { setBriefBusy(''); }

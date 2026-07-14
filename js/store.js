@@ -328,8 +328,9 @@ async function seoInvokeBrief(action, extra = {}) {
   return data;
 }
 // target = { cluster } for a topic cluster, or { keyword } for a single keyword.
-export const seoBriefGenerate = (siteId, target, format) => seoInvokeBrief('generate', { siteId, ...target, format });
-export const seoBriefRefine = (siteId, key) => seoInvokeBrief('refine', { siteId, key });
+export const seoBriefResearch = (siteId, target) => seoInvokeBrief('research', { siteId, ...target });
+export const seoBriefGenerate = (siteId, target, format, sources) => seoInvokeBrief('generate', { siteId, ...target, format, sources });
+export const seoBriefRefine = (siteId, key, sources) => seoInvokeBrief('refine', { siteId, key, sources });
 export async function seoLoadBriefs(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_briefs').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
