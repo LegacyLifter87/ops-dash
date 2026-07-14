@@ -80,8 +80,19 @@ export function Keywords() {
   };
   const genBrief = async (key, kind, format) => {
     setBriefBusy(key); setErr('');
-    try { await seoBriefGenerate(site, kind === 'keyword' ? { keyword: key } : { cluster: key }, format); setBriefs(await seoLoadBriefs(site)); }
-    catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
+    try {
+      const startedAt = Date.now();
+      const r = await seoBriefGenerate(site, kind === 'keyword' ? { keyword: key } : { cluster: key }, format);
+      if (r?.brief) { setBriefs(await seoLoadBriefs(site)); return; } // sync path
+      // Background path: the writer researches + writes server-side; poll for the result.
+      for (let i = 0; i < 40; i++) {
+        await new Promise((res) => setTimeout(res, 6000));
+        const bs = await seoLoadBriefs(site);
+        const b = bs.find((x) => x.cluster === key && x.created_at && new Date(x.created_at).getTime() >= startedAt - 60000);
+        if (b) { setBriefs(bs); return; }
+      }
+      setErr('The writer is taking unusually long — check the Briefs tab in a couple of minutes, or try again.');
+    } catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
   const openContent = (key, kind) => { setOpenKind(kind); setOpenCluster(key); };
@@ -205,7 +216,7 @@ export function Keywords() {
                   </button>`)}</div>`}
             </div></${Card}>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} />`}
   </div>`;
 }
 
@@ -251,7 +262,7 @@ function mdRender(md) {
   return out;
 }
 
-function ContentModal({ cluster, brief, busy, onClose, onGen }) {
+function ContentModal({ cluster, brief, busy, error, onClose, onGen }) {
   const [copied, setCopied] = useState(false);
   const has = brief && brief.content;
   const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
@@ -269,6 +280,8 @@ function ContentModal({ cluster, brief, busy, onClose, onGen }) {
           <${Btn} onClick=${() => onGen('blog')} disabled=${busy}>${busy ? 'Writing…' : '📝 Blog post'}</${Btn}>
           <${Btn} onClick=${() => onGen('service')} disabled=${busy}>${busy ? 'Writing…' : '🧰 Service page'}</${Btn}>
         </div>
+        ${busy && html`<div class="text-xs text-slate-500 animate-pulse">Researching authorities, writing, and quality-checking — usually 1–3 minutes. You can close this and check the Briefs tab later.</div>`}
+        ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
         <div class="text-xs text-slate-400">Includes SEO title/meta, internal links to your existing pages, and researched citations of industry authorities (licensing boards, governing bodies, supporting sources).</div>
       </div>`
       : html`<div class="space-y-4 text-sm">
