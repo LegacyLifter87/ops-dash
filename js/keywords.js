@@ -252,7 +252,7 @@ function ContentModal({ cluster, brief, busy, onClose, onGen }) {
           <${Btn} onClick=${() => onGen('blog')} disabled=${busy}>${busy ? 'Writing…' : '📝 Blog post'}</${Btn}>
           <${Btn} onClick=${() => onGen('service')} disabled=${busy}>${busy ? 'Writing…' : '🧰 Service page'}</${Btn}>
         </div>
-        <div class="text-xs text-slate-400">Includes SEO title/meta + internal links to your existing pages.</div>
+        <div class="text-xs text-slate-400">Includes SEO title/meta, internal links to your existing pages, and researched citations of industry authorities (licensing boards, governing bodies, supporting sources).</div>
       </div>`
       : html`<div class="space-y-4 text-sm">
         <div class="flex flex-wrap gap-2 items-center">
@@ -268,6 +268,13 @@ function ContentModal({ cluster, brief, busy, onClose, onGen }) {
         ${(brief.internal_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100">
           <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Internal links used</div>
           <ul class="list-disc ml-5 text-slate-600">${brief.internal_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
+        </div>`}
+        ${(brief.external_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100">
+          <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Authority citations <span class="font-normal normal-case text-slate-400">— researched &amp; verified external sources</span></div>
+          <ul class="list-disc ml-5 text-slate-600">${brief.external_links.map((l) => html`<li>
+            <a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a>
+            ${l.source_type && html`<span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">${String(l.source_type).replace('_', ' ')}</span>`}
+          </li>`)}</ul>
         </div>`}
       </div>`}
   </${Modal}>`;
