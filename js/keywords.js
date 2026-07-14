@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -39,6 +39,10 @@ export function Keywords() {
   const [econ, setEcon] = useState(null);
   const [marginPct, setMarginPct] = useState(45);
   const [leadPct, setLeadPct] = useState(3);
+  const [wp, setWp] = useState(null);
+  const [wpBusy, setWpBusy] = useState(false);
+  const [wpNotice, setWpNotice] = useState('');
+  const [wpErr, setWpErr] = useState('');
   const sortKw = useSort('opportunity', 'desc');
   const sortCl = useSort('count', 'desc');
 
@@ -98,6 +102,24 @@ export function Keywords() {
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
   const openContent = (key, kind) => { setOpenKind(kind); setOpenCluster(key); };
+
+  // --- WordPress publishing (Ops Dash Connector plugin) ---
+  const loadWp = async (sid) => { try { setWp(await seoWpStatus(sid)); } catch (_) { setWp(null); } };
+  useEffect(() => { if (site) { setWp(null); loadWp(site); } }, [site]);
+  const wpConnect = async (url) => {
+    setWpBusy(true); setWpErr(''); setWpNotice('');
+    try { await seoWpConnect(site, url); await loadWp(site); setWpNotice('Connection key ready — install the plugin on the site, paste the key, then hit ↻.'); }
+    catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
+  };
+  const wpDisconnect = async () => {
+    setWpBusy(true); setWpErr(''); setWpNotice('');
+    try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
+  };
+  const wpPublish = async (key) => {
+    setWpBusy(true);
+    try { const r = await seoWpPublish(site, key, 'draft'); setBriefs(await seoLoadBriefs(site)); return r; }
+    finally { setWpBusy(false); }
+  };
 
   const clusters = useMemo(() => {
     const m = new Map();
@@ -209,16 +231,22 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right"><button onClick=${() => openContent(c.cluster, 'cluster')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
               </tr>`)}</tbody>
             </table></div></${Card}>`
-          : html`<${Card}><div class="p-3">
+          : html`<div class="space-y-3">
+            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${() => loadWp(site)} onDisconnect=${wpDisconnect} />
+            <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
                 : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => openContent(b.cluster, clusters.some((c) => c.cluster === b.cluster) ? 'cluster' : 'keyword')} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
                     <div class="min-w-0"><div class="font-medium text-slate-800">${b.cluster}</div><div class="text-xs text-slate-500 truncate">${b.title}</div></div>
-                    <${Pill} cls="bg-slate-100 text-slate-600 shrink-0">${(b.format || b.page_type || '').replace('_', ' ')}</${Pill}>
+                    <div class="flex items-center gap-2 shrink-0">
+                      ${b.wp_post_id && html`<${Pill} cls="bg-sky-100 text-sky-700">WP ✓</${Pill}>`}
+                      <${Pill} cls="bg-slate-100 text-slate-600">${(b.format || b.page_type || '').replace('_', ' ')}</${Pill}>
+                    </div>
                   </button>`)}</div>`}
-            </div></${Card}>`}
+            </div></${Card}>
+          </div>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${() => wpPublish(openCluster)} />`}
   </div>`;
 }
 
@@ -278,14 +306,57 @@ function mdRender(md) {
   return out;
 }
 
-function ContentModal({ cluster, brief, busy, error, onClose, onGen }) {
+// Per-site WordPress connection card (Ops Dash Connector plugin handshake).
+function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect }) {
+  const [url, setUrl] = useState(wp?.wp_url || '');
+  useEffect(() => { setUrl(wp?.wp_url || ''); }, [wp?.wp_url]);
   const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(wp.token); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
+  return html`<${Card}><div class="p-4 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <div class="font-semibold text-slate-800">WordPress publishing</div>
+        <div class="text-xs text-slate-500">Send finished articles straight to the client's WordPress site as ready-to-review drafts — SEO title, meta description, slug, and schema included.</div>
+      </div>
+      ${wp?.connected && html`<div class="flex items-center gap-2 flex-wrap">
+        <${Pill} cls=${wp.live ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>${wp.live ? '● Connected' : '● Plugin not reachable'}</${Pill}>
+        ${wp.info?.seo_plugin && html`<${Pill} cls="bg-slate-100 text-slate-600">SEO plugin: ${wp.info.seo_plugin}</${Pill}>`}
+        ${wp.info?.plugin_version && html`<${Pill} cls="bg-slate-100 text-slate-600">v${wp.info.plugin_version}</${Pill}>`}
+        <${Btn} size="sm" onClick=${onRecheck} disabled=${wpBusy}>↻</${Btn}>
+        <${Btn} size="sm" onClick=${onDisconnect} disabled=${wpBusy}>Disconnect</${Btn}>
+      </div>`}
+    </div>
+    <div class="flex gap-2 items-center flex-wrap">
+      <div class="w-72"><${Input} value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="https://clientsite.com" /></div>
+      <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
+      <a href="/opsdash-connector.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
+    </div>
+    ${wp?.connected && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
+      <div class="font-semibold text-slate-400 uppercase">Connection key</div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
+        <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy'}</${Btn}>
+      </div>
+      <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click ↻ here.</div>
+      ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
+    </div>`}
+    ${notice && html`<div class="text-sm text-emerald-700">${notice}</div>`}
+    ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
+  </div></${Card}>`;
+}
+
+function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected, wpBusy, onWp }) {
+  const [copied, setCopied] = useState(false);
+  const [wpRes, setWpRes] = useState(null);
+  const [wpSendErr, setWpSendErr] = useState('');
   const has = brief && brief.content;
   const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
-  const footer = has ? html`<div class="flex justify-between items-center w-full gap-2">
-    <div class="flex gap-2">
+  const sendWp = async () => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp()); } catch (e) { setWpSendErr(e.message); } };
+  const footer = has ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
+    <div class="flex gap-2 flex-wrap">
       <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
       <${Btn} size="sm" onClick=${() => onGen('service')} disabled=${busy}>${busy ? '…' : 'Rewrite as page'}</${Btn}>
+      ${wpConnected && html`<${Btn} size="sm" onClick=${sendWp} disabled=${wpBusy}>${wpBusy ? 'Sending…' : brief.wp_post_id ? '↻ Update WordPress draft' : '→ Send to WordPress'}</${Btn}>`}
     </div>
     <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy markdown'}</${Btn}>
   </div>` : null;
@@ -301,10 +372,18 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen }) {
         <div class="text-xs text-slate-400">Rank Math-style structure: SEO title + distinct H1, answer-first intro, Key Takeaways, quick-answer sections, tables + FAQ, internal links to your pages, and researched authority citations.</div>
       </div>`
       : html`<div class="space-y-4 text-sm">
+        ${wpRes && html`<div class="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800">
+          ${wpRes.updated ? 'WordPress draft updated.' : 'Sent to WordPress as a draft.'}
+          ${wpRes.edit_link && html` <a href=${wpRes.edit_link} target="_blank" rel="noopener" class="underline font-medium">Open in WP editor</a>`}
+          ${wpRes.link && html` · <a href=${wpRes.link} target="_blank" rel="noopener" class="underline">Preview</a>`}
+          <span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>
+        </div>`}
+        ${wpSendErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${wpSendErr}</div>`}
         <div class="flex flex-wrap gap-2 items-center">
           <${Pill} cls="bg-brand-100 text-brand-700">${(brief.format || brief.page_type || '').replace('_', ' ')}</${Pill}>
           <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>
           ${brief.slug && html`<span class="text-xs text-slate-400">/${brief.slug}</span>`}
+          ${!wpRes && brief.wp_link && html`<a href=${brief.wp_link} target="_blank" rel="noopener" class="text-xs text-sky-700 underline">On WordPress ↗</a>`}
         </div>
         <div class="rounded-lg bg-slate-50 p-3 space-y-1">
           <div><span class="text-xs font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>

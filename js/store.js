@@ -331,6 +331,18 @@ async function seoInvokeBrief(action, extra = {}) {
 export const seoBriefResearch = (siteId, target) => seoInvokeBrief('research', { siteId, ...target });
 export const seoBriefGenerate = (siteId, target, format, sources) => seoInvokeBrief('generate', { siteId, ...target, format, sources });
 export const seoBriefRefine = (siteId, key, sources) => seoInvokeBrief('refine', { siteId, key, sources });
+// --- WordPress execution engine (Ops Dash Connector plugin on client sites) ---
+async function seoInvokeWp(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-wp', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoWpConnect = (siteId, wpUrl) => seoInvokeWp('connect', { siteId, wpUrl });
+export const seoWpStatus = (siteId) => seoInvokeWp('status', { siteId });
+export const seoWpPublish = (siteId, key, mode) => seoInvokeWp('publish', { siteId, key, mode });
+export const seoWpUpdateSeo = (siteId, target) => seoInvokeWp('update_seo', { siteId, ...target });
+export const seoWpDisconnect = (siteId) => seoInvokeWp('disconnect', { siteId });
 export async function seoLoadBriefs(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_briefs').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
