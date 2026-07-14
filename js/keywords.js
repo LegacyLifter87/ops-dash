@@ -231,8 +231,21 @@ function mdInline(s) {
   return parts;
 }
 function mdRender(md) {
-  const out = []; let list = null; let table = null;
+  const out = []; let list = null; let table = null; let quote = null;
   const flushList = () => { if (list) { out.push(html`<ul class="list-disc ml-5 space-y-1 text-slate-700">${list}</ul>`); list = null; } };
+  const flushQuote = () => {
+    if (!quote) return;
+    const lines = quote; quote = null;
+    const inner = []; let qlist = null;
+    const qFlush = () => { if (qlist) { inner.push(html`<ul class="list-disc ml-5 space-y-1">${qlist}</ul>`); qlist = null; } };
+    for (const q of lines) {
+      if (/^\s*[-*]\s+/.test(q)) { if (!qlist) qlist = []; qlist.push(html`<li>${mdInline(q.replace(/^\s*[-*]\s+/, ''))}</li>`); }
+      else if (q.trim() === '') qFlush();
+      else { qFlush(); inner.push(html`<p>${mdInline(q)}</p>`); }
+    }
+    qFlush();
+    if (inner.length) out.push(html`<div class="border-l-4 border-brand-300 bg-brand-50/50 rounded-r-lg px-3 py-2 my-2 space-y-1 text-slate-700">${inner}</div>`);
+  };
   const flushTable = () => {
     if (!table) return;
     const rows = table.map((l) => l.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim()))
@@ -245,13 +258,14 @@ function mdRender(md) {
       <tbody>${rest.map((r) => html`<tr class="border-b border-slate-100 last:border-0">${r.map((c) => html`<td class="px-3 py-1.5 text-slate-700 align-top">${mdInline(c)}</td>`)}</tr>`)}</tbody>
     </table></div>`);
   };
-  const flush = () => { flushList(); flushTable(); };
+  const flush = () => { flushList(); flushTable(); flushQuote(); };
   for (const ln of (md || '').split(/\r?\n/)) {
-    if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); if (!table) table = []; table.push(ln); }
+    if (/^\s*>\s?/.test(ln)) { flushList(); flushTable(); if (!quote) quote = []; quote.push(ln.replace(/^\s*>\s?/, '')); }
+    else if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); flushQuote(); if (!table) table = []; table.push(ln); }
     else if (/^\s*###\s+/.test(ln)) { flush(); out.push(html`<h3 class="font-semibold text-slate-800 mt-3">${mdInline(ln.replace(/^\s*###\s+/, ''))}</h3>`); }
     else if (/^\s*##\s+/.test(ln)) { flush(); out.push(html`<h2 class="text-lg font-bold text-slate-800 mt-4">${mdInline(ln.replace(/^\s*##\s+/, ''))}</h2>`); }
     else if (/^\s*#\s+/.test(ln)) { flush(); out.push(html`<h1 class="text-xl font-bold text-slate-900 mt-1">${mdInline(ln.replace(/^\s*#\s+/, ''))}</h1>`); }
-    else if (/^\s*[-*]\s+/.test(ln)) { flushTable(); if (!list) list = []; list.push(html`<li>${mdInline(ln.replace(/^\s*[-*]\s+/, ''))}</li>`); }
+    else if (/^\s*[-*]\s+/.test(ln)) { flushTable(); flushQuote(); if (!list) list = []; list.push(html`<li>${mdInline(ln.replace(/^\s*[-*]\s+/, ''))}</li>`); }
     else if (ln.trim() === '') { flush(); }
     else { flush(); out.push(html`<p class="text-slate-700">${mdInline(ln)}</p>`); }
   }
@@ -279,7 +293,7 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen }) {
         </div>
         ${busy && html`<div class="text-xs text-slate-500 animate-pulse">Researching authorities, writing, and quality-checking — usually 1–3 minutes. You can close this and check the Briefs tab later.</div>`}
         ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
-        <div class="text-xs text-slate-400">Includes SEO title/meta, internal links to your existing pages, and researched citations of industry authorities (licensing boards, governing bodies, supporting sources).</div>
+        <div class="text-xs text-slate-400">Rank Math-style structure: SEO title + distinct H1, answer-first intro, Key Takeaways, quick-answer sections, tables + FAQ, internal links to your pages, and researched authority citations.</div>
       </div>`
       : html`<div class="space-y-4 text-sm">
         <div class="flex flex-wrap gap-2 items-center">
@@ -288,7 +302,8 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen }) {
           ${brief.slug && html`<span class="text-xs text-slate-400">/${brief.slug}</span>`}
         </div>
         <div class="rounded-lg bg-slate-50 p-3 space-y-1">
-          <div><span class="text-xs font-semibold text-slate-400 uppercase">Title</span> <span class="text-slate-800">${brief.title}</span></div>
+          <div><span class="text-xs font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>
+          ${brief.h1 && html`<div><span class="text-xs font-semibold text-slate-400 uppercase">H1</span> <span class="text-slate-800">${brief.h1}</span></div>`}
           <div><span class="text-xs font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
         </div>
         <article class="space-y-2">${mdRender(brief.content)}</article>
