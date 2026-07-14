@@ -115,9 +115,9 @@ export function Keywords() {
     setWpBusy(true); setWpErr(''); setWpNotice('');
     try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
-  const wpPublish = async (key) => {
+  const wpPublish = async (key, mode, imgUrl) => {
     setWpBusy(true);
-    try { const r = await seoWpPublish(site, key, 'draft'); setBriefs(await seoLoadBriefs(site)); return r; }
+    try { const r = await seoWpPublish(site, key, mode, imgUrl); setBriefs(await seoLoadBriefs(site)); return r; }
     finally { setWpBusy(false); }
   };
 
@@ -246,7 +246,7 @@ export function Keywords() {
             </div></${Card}>
           </div>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${() => wpPublish(openCluster)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl) => wpPublish(openCluster, mode, imgUrl)} />`}
   </div>`;
 }
 
@@ -349,14 +349,17 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
   const [copied, setCopied] = useState(false);
   const [wpRes, setWpRes] = useState(null);
   const [wpSendErr, setWpSendErr] = useState('');
+  const [imgUrl, setImgUrl] = useState('');
   const has = brief && brief.content;
   const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
-  const sendWp = async () => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp()); } catch (e) { setWpSendErr(e.message); } };
+  const sendWp = async (mode) => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp(mode, imgUrl.trim())); } catch (e) { setWpSendErr(e.message); } };
   const footer = has ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
-    <div class="flex gap-2 flex-wrap">
+    <div class="flex gap-2 flex-wrap items-center">
       <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
       <${Btn} size="sm" onClick=${() => onGen('service')} disabled=${busy}>${busy ? '…' : 'Rewrite as page'}</${Btn}>
-      ${wpConnected && html`<${Btn} size="sm" onClick=${sendWp} disabled=${wpBusy}>${wpBusy ? 'Sending…' : brief.wp_post_id ? '↻ Update WordPress draft' : '→ Send to WordPress'}</${Btn}>`}
+      ${wpConnected && html`
+        <${Btn} size="sm" onClick=${() => sendWp('draft')} disabled=${wpBusy}>${wpBusy ? 'Sending…' : brief.wp_post_id ? '↻ Update WP draft' : '→ WP draft'}</${Btn}>
+        <${Btn} size="sm" onClick=${() => sendWp('publish')} disabled=${wpBusy}>${wpBusy ? '…' : '🚀 Publish live'}</${Btn}>`}
     </div>
     <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy markdown'}</${Btn}>
   </div>` : null;
@@ -373,12 +376,17 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
       </div>`
       : html`<div class="space-y-4 text-sm">
         ${wpRes && html`<div class="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800">
-          ${wpRes.updated ? 'WordPress draft updated.' : 'Sent to WordPress as a draft.'}
+          ${wpRes.status === 'publish' ? '🚀 Published live on WordPress.' : wpRes.updated ? 'WordPress draft updated.' : 'Sent to WordPress as a draft.'}
           ${wpRes.edit_link && html` <a href=${wpRes.edit_link} target="_blank" rel="noopener" class="underline font-medium">Open in WP editor</a>`}
-          ${wpRes.link && html` · <a href=${wpRes.link} target="_blank" rel="noopener" class="underline">Preview</a>`}
-          <span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>
+          ${wpRes.link && html` · <a href=${wpRes.link} target="_blank" rel="noopener" class="underline">${wpRes.status === 'publish' ? 'View live' : 'Preview'}</a>`}
+          ${wpRes.featured_image?.error && html`<span class="block text-xs text-amber-700 mt-1">Featured image failed: ${wpRes.featured_image.error}</span>`}
+          ${wpRes.status !== 'publish' && html`<span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>`}
         </div>`}
         ${wpSendErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${wpSendErr}</div>`}
+        ${wpConnected && html`<div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400 shrink-0">Featured image URL (optional)</span>
+          <div class="flex-1"><${Input} value=${imgUrl} onInput=${(e) => setImgUrl(e.target.value)} placeholder="https://… — downloaded into the WP media library and set as the featured image" /></div>
+        </div>`}
         <div class="flex flex-wrap gap-2 items-center">
           <${Pill} cls="bg-brand-100 text-brand-700">${(brief.format || brief.page_type || '').replace('_', ' ')}</${Pill}>
           <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>

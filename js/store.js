@@ -340,7 +340,8 @@ async function seoInvokeWp(action, extra = {}) {
 }
 export const seoWpConnect = (siteId, wpUrl) => seoInvokeWp('connect', { siteId, wpUrl });
 export const seoWpStatus = (siteId) => seoInvokeWp('status', { siteId });
-export const seoWpPublish = (siteId, key, mode) => seoInvokeWp('publish', { siteId, key, mode });
+export const seoWpPublish = (siteId, key, mode, featuredImageUrl) => seoInvokeWp('publish', { siteId, key, mode, featuredImageUrl });
+export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { siteId, url });
 export const seoWpUpdateSeo = (siteId, target) => seoInvokeWp('update_seo', { siteId, ...target });
 export const seoWpDisconnect = (siteId) => seoInvokeWp('disconnect', { siteId });
 export async function seoLoadBriefs(siteId) {

@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.0.0');
+define('OPSDASH_VERSION', '1.1.0');
 
 // ---------------------------------------------------------------------------
 // Settings page: paste the connection key generated in the Ops Dash portal.
@@ -178,13 +178,33 @@ function opsdash_publish(WP_REST_Request $req) {
 	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);
 
+	$featured = null;
+	if (!empty($p['featured_image_url'])) {
+		$img = opsdash_sideload_featured($post_id, $p['featured_image_url'], $p['featured_image_alt'] ?? '');
+		$featured = is_wp_error($img) ? ['error' => $img->get_error_message()] : ['attachment_id' => $img];
+	}
+
 	return [
 		'ok' => true,
 		'post_id' => $post_id,
 		'status' => $status,
 		'link' => get_permalink($post_id),
 		'edit_link' => admin_url('post.php?post=' . $post_id . '&action=edit'),
+		'featured_image' => $featured,
 	];
+}
+
+// Download an image from a URL into the media library and set it as the
+// post's featured image. Failures here never fail the publish itself.
+function opsdash_sideload_featured($post_id, $url, $alt) {
+	require_once ABSPATH . 'wp-admin/includes/media.php';
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/image.php';
+	$att_id = media_sideload_image(esc_url_raw($url), $post_id, null, 'id');
+	if (is_wp_error($att_id)) return $att_id;
+	set_post_thumbnail($post_id, $att_id);
+	if ($alt !== '') update_post_meta($att_id, '_wp_attachment_image_alt', sanitize_text_field($alt));
+	return $att_id;
 }
 
 function opsdash_update_seo(WP_REST_Request $req) {

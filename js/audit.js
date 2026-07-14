@@ -4,8 +4,8 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditRun, seoAuditAi, seoAuditSpeed } from './store.js';
-import { Card, Btn, Select, Modal } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo } from './store.js';
+import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
 const num = (n) => (n || 0).toLocaleString();
@@ -24,11 +24,13 @@ export function Audit() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
   const [openUrl, setOpenUrl] = useState(null);
+  const [wpConnected, setWpConnected] = useState(false);
   const sort = useSort('technical_score', 'asc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (sid) => setPages(await seoLoadAudit(sid));
   useEffect(() => { if (site) load(site); else setPages([]); }, [site]);
+  useEffect(() => { setWpConnected(false); if (site) seoWpStatus(site).then((w) => setWpConnected(!!w?.connected)).catch(() => {}); }, [site]);
 
   const runAudit = async () => {
     setBusy('crawl'); setErr(''); setBanner('');
@@ -129,11 +131,60 @@ export function Audit() {
           </table></div></${Card}>
         `}
 
-    ${openPage && html`<${DetailModal} page=${openPage} busyAi=${busy === 'ai:' + openPage.url} busyPsi=${busy === 'psi:' + openPage.url} onClose=${() => setOpenUrl(null)} onAi=${() => analyzeAi(openPage.url)} onSpeed=${() => analyzeSpeed(openPage.url)} />`}
+    ${openPage && html`<${DetailModal} page=${openPage} site=${site} wpConnected=${wpConnected} busyAi=${busy === 'ai:' + openPage.url} busyPsi=${busy === 'psi:' + openPage.url} onClose=${() => setOpenUrl(null)} onAi=${() => analyzeAi(openPage.url)} onSpeed=${() => analyzeSpeed(openPage.url)} onPushed=${() => load(site)} />`}
   </div>`;
 }
 
-function DetailModal({ page, busyAi, busyPsi, onClose, onAi, onSpeed }) {
+// SEO editor: draft (or AI-suggest) a title tag + meta description and push
+// them to the live WordPress page via the Ops Dash Connector plugin.
+function SeoPush({ page, site, onPushed }) {
+  const c = page.checks || {};
+  const [title, setTitle] = useState(c.title || '');
+  const [desc, setDesc] = useState(c.metaDesc || '');
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => { setTitle(c.title || ''); setDesc(c.metaDesc || ''); setMsg(''); setErr(''); }, [page.url]);
+  const suggest = async () => {
+    setBusy('suggest'); setErr(''); setMsg('');
+    try {
+      const r = await seoWpSuggestMeta(site, page.url);
+      setTitle(r.seo_title || ''); setDesc(r.meta_description || '');
+      setMsg(r.keyword ? `Suggested around "${r.keyword}" — edit freely, then push.` : 'Suggestion ready — edit freely, then push.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const push = async () => {
+    setBusy('push'); setErr(''); setMsg('');
+    try {
+      await seoWpUpdateSeo(site, { url: page.url, seoTitle: title.trim(), metaDescription: desc.trim() });
+      setMsg('Pushed to WordPress ✓ — the live page now carries this title and description.');
+      onPushed && onPushed();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const lenPill = (n, lo, hi) => html`<span class=${cx('tabular-nums', n === 0 ? 'text-slate-300' : n >= lo && n <= hi ? 'text-emerald-600' : 'text-amber-600')}>${n}</span>`;
+  return html`<div class="border-t border-slate-100 pt-3 space-y-2">
+    <div class="flex items-center justify-between gap-2">
+      <div class="text-xs font-semibold text-slate-400 uppercase">SEO editor — push to WordPress</div>
+      ${page.seo_pushed_at && html`<span class="text-[11px] text-sky-600">last pushed ${new Date(page.seo_pushed_at).toLocaleString()}</span>`}
+    </div>
+    <div class="space-y-1">
+      <div class="flex justify-between text-[11px] text-slate-400"><span>SEO title (50–60 chars)</span>${lenPill(title.length, 50, 60)}</div>
+      <${Input} value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="Title tag for this page" />
+    </div>
+    <div class="space-y-1">
+      <div class="flex justify-between text-[11px] text-slate-400"><span>Meta description (150–155 chars)</span>${lenPill(desc.length, 150, 155)}</div>
+      <textarea value=${desc} onInput=${(e) => setDesc(e.target.value)} rows="2" placeholder="Meta description for this page" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"></textarea>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <${Btn} size="sm" onClick=${suggest} disabled=${!!busy}>${busy === 'suggest' ? 'Thinking…' : '✨ Suggest'}</${Btn}>
+      <${Btn} size="sm" onClick=${push} disabled=${!!busy || (!title.trim() && !desc.trim())}>${busy === 'push' ? 'Pushing…' : '→ Push to live page'}</${Btn}>
+    </div>
+    ${msg && html`<div class="text-xs text-emerald-700">${msg}</div>`}
+    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
+  </div>`;
+}
+
+function DetailModal({ page, site, wpConnected, busyAi, busyPsi, onClose, onAi, onSpeed, onPushed }) {
   const ai = page.ai_insights, c = page.checks || {}, cwv = page.cwv;
   const kv = (label, val) => html`<div class="flex justify-between gap-3 py-0.5 border-b border-slate-50"><span class="text-slate-400 shrink-0">${label}</span><span class="text-slate-700 text-right truncate">${val}</span></div>`;
   const yn = (b) => (b ? '✅' : '—');
@@ -182,6 +233,8 @@ function DetailModal({ page, busyAi, busyPsi, onClose, onAi, onSpeed }) {
           ${kv('Images', `${c.imgs || 0} (${c.imgNoAlt || 0} missing alt)`)}
         </div>
       </div>
+
+      ${wpConnected && html`<${SeoPush} page=${page} site=${site} onPushed=${onPushed} />`}
 
       ${ai ? html`<div class="border-t border-slate-100 pt-3 space-y-3">
         <div class="text-xs font-semibold text-slate-400 uppercase">AI / Answer-engine readiness</div>
