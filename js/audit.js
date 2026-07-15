@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -34,8 +34,22 @@ export function Audit() {
 
   const runAudit = async () => {
     setBusy('crawl'); setErr(''); setBanner('');
-    try { const r = await seoAuditRun(site); setBanner(`Audited ${num(r.audited)} of ${num(r.pages)} pages.`); await load(site); }
-    catch (e) { setErr(e.message); } finally { setBusy(''); }
+    try {
+      // Full-site discovery: sitemap(s) + Search Console pages, then crawl in chunks.
+      setBanner('Discovering pages (sitemap + Search Console)…');
+      const d = await seoAuditDiscover(site);
+      const urls = d.urls || [];
+      if (!urls.length) throw new Error('No pages found to audit — connect Search Console or check the site has a sitemap.');
+      let done = 0;
+      const CHUNK = 15;
+      for (let i = 0; i < urls.length; i += CHUNK) {
+        setBanner(`Auditing pages ${num(i + 1)}–${num(Math.min(i + CHUNK, urls.length))} of ${num(urls.length)}…`);
+        const r = await seoAuditRun(site, urls.slice(i, i + CHUNK));
+        done += r.audited || 0;
+        await load(site); // table fills in progressively
+      }
+      setBanner(`Audited ${num(done)} of ${num(urls.length)} pages${d.from_sitemap ? ` — full site via sitemap (${num(d.from_sitemap)} pages) + Search Console (${num(d.from_gsc)})` : ' — Search Console pages only (no readable sitemap found)'}.`);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const analyzeAi = async (url) => {
     setBusy('ai:' + url); setErr('');

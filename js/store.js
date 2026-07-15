@@ -153,7 +153,8 @@ async function seoInvokeAudit(action, extra = {}) {
   if (data?.error) throw new Error(data.error);
   return data;
 }
-export const seoAuditRun = (siteId) => seoInvokeAudit('crawl', { siteId });
+export const seoAuditDiscover = (siteId) => seoInvokeAudit('discover', { siteId });
+export const seoAuditRun = (siteId, urls) => seoInvokeAudit('crawl', { siteId, urls });
 export const seoAuditAi = (siteId, url) => seoInvokeAudit('ai_analyze', { siteId, url });
 export const seoAuditSpeed = (siteId, url) => seoInvokeAudit('speed', { siteId, url });
 export async function seoLoadAudit(siteId) {
