@@ -115,9 +115,9 @@ export function Keywords() {
     setWpBusy(true); setWpErr(''); setWpNotice('');
     try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
-  const wpPublish = async (key, mode, imgUrl) => {
+  const wpPublish = async (key, mode, imgUrl, imageSource) => {
     setWpBusy(true);
-    try { const r = await seoWpPublish(site, key, mode, imgUrl); setBriefs(await seoLoadBriefs(site)); return r; }
+    try { const r = await seoWpPublish(site, key, mode, imgUrl, imageSource); setBriefs(await seoLoadBriefs(site)); return r; }
     finally { setWpBusy(false); }
   };
 
@@ -246,7 +246,7 @@ export function Keywords() {
             </div></${Card}>
           </div>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl) => wpPublish(openCluster, mode, imgUrl)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl, imageSource) => wpPublish(openCluster, mode, imgUrl, imageSource)} />`}
   </div>`;
 }
 
@@ -329,7 +329,7 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect 
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.1.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
+      <a href="/opsdash-connector-1.2.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
     </div>
     ${wp?.connected && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
       <div class="font-semibold text-slate-400 uppercase">Connection key</div>
@@ -350,9 +350,10 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
   const [wpRes, setWpRes] = useState(null);
   const [wpSendErr, setWpSendErr] = useState('');
   const [imgUrl, setImgUrl] = useState('');
+  const [imgSource, setImgSource] = useState('stock');
   const has = brief && brief.content;
   const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
-  const sendWp = async (mode) => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp(mode, imgUrl.trim())); } catch (e) { setWpSendErr(e.message); } };
+  const sendWp = async (mode) => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp(mode, imgUrl.trim(), imgSource)); } catch (e) { setWpSendErr(e.message); } };
   const footer = has ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
     <div class="flex gap-2 flex-wrap items-center">
       <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
@@ -379,13 +380,26 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
           ${wpRes.status === 'publish' ? '🚀 Published live on WordPress.' : wpRes.updated ? 'WordPress draft updated.' : 'Sent to WordPress as a draft.'}
           ${wpRes.edit_link && html` <a href=${wpRes.edit_link} target="_blank" rel="noopener" class="underline font-medium">Open in WP editor</a>`}
           ${wpRes.link && html` · <a href=${wpRes.link} target="_blank" rel="noopener" class="underline">${wpRes.status === 'publish' ? 'View live' : 'Preview'}</a>`}
+          ${wpRes.images_added > 0 && html`<span class="block text-xs text-emerald-700 mt-1">${wpRes.images_added} image${wpRes.images_added === 1 ? '' : 's'} added to the article + featured image set.</span>`}
+          ${wpRes.image_note && html`<span class="block text-xs text-amber-700 mt-1">${wpRes.image_note}</span>`}
           ${wpRes.featured_image?.error && html`<span class="block text-xs text-amber-700 mt-1">Featured image failed: ${wpRes.featured_image.error}</span>`}
-          ${wpRes.status !== 'publish' && html`<span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>`}
+          ${wpRes.status !== 'publish' && !wpRes.images_added && html`<span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>`}
         </div>`}
         ${wpSendErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${wpSendErr}</div>`}
-        ${wpConnected && html`<div class="flex items-center gap-2">
-          <span class="text-xs text-slate-400 shrink-0">Featured image URL (optional)</span>
-          <div class="flex-1"><${Input} value=${imgUrl} onInput=${(e) => setImgUrl(e.target.value)} placeholder="https://… — downloaded into the WP media library and set as the featured image" /></div>
+        ${wpConnected && html`<div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400 shrink-0">Article images</span>
+            <${Select} value=${imgSource} onChange=${setImgSource} options=${[
+              { value: 'stock', label: '📷 Stock photos (Pexels)' },
+              { value: 'ai', label: '🎨 AI-generated' },
+              { value: 'client', label: '🏗 Client job photos' },
+              { value: 'none', label: 'None — keep placeholders' },
+            ]} />
+          </div>
+          <div class="flex items-center gap-2 flex-1 min-w-48">
+            <span class="text-xs text-slate-400 shrink-0">Featured image URL (optional override)</span>
+            <div class="flex-1"><${Input} value=${imgUrl} onInput=${(e) => setImgUrl(e.target.value)} placeholder="https://…" /></div>
+          </div>
         </div>`}
         <div class="flex flex-wrap gap-2 items-center">
           <${Pill} cls="bg-brand-100 text-brand-700">${(brief.format || brief.page_type || '').replace('_', ' ')}</${Pill}>

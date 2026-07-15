@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.1.0');
+define('OPSDASH_VERSION', '1.2.0');
 
 // ---------------------------------------------------------------------------
 // Settings page: paste the connection key generated in the Ops Dash portal.
@@ -184,6 +184,30 @@ function opsdash_publish(WP_REST_Request $req) {
 		$featured = is_wp_error($img) ? ['error' => $img->get_error_message()] : ['attachment_id' => $img];
 	}
 
+	// Inline article images: each {marker, alt, url | data_base64+mime}. The marker
+	// token is replaced in the post content with proper figure markup; the first
+	// image becomes the featured image when none was set explicitly.
+	$img_results = [];
+	if (!empty($p['images']) && is_array($p['images'])) {
+		$content2 = get_post_field('post_content', $post_id);
+		$first_att = 0;
+		foreach (array_slice($p['images'], 0, 8) as $img) {
+			if (!is_array($img)) continue;
+			$att = opsdash_attach_image($post_id, $img);
+			if (is_wp_error($att)) { $img_results[] = ['marker' => $img['marker'] ?? '', 'error' => $att->get_error_message()]; continue; }
+			$src = wp_get_attachment_image_url($att, 'large');
+			if (!$src) $src = wp_get_attachment_url($att);
+			$fig = '<figure class="wp-block-image size-large"><img src="' . esc_url($src) . '" alt="' . esc_attr($img['alt'] ?? '') . '" /></figure>';
+			if (!empty($img['marker']) && strpos($content2, $img['marker']) !== false) {
+				$content2 = str_replace($img['marker'], $fig, $content2);
+			}
+			if (!$first_att) $first_att = $att;
+			$img_results[] = ['marker' => $img['marker'] ?? '', 'attachment_id' => $att];
+		}
+		wp_update_post(['ID' => $post_id, 'post_content' => $content2]);
+		if ($first_att && !has_post_thumbnail($post_id)) set_post_thumbnail($post_id, $first_att);
+	}
+
 	return [
 		'ok' => true,
 		'post_id' => $post_id,
@@ -191,7 +215,38 @@ function opsdash_publish(WP_REST_Request $req) {
 		'link' => get_permalink($post_id),
 		'edit_link' => admin_url('post.php?post=' . $post_id . '&action=edit'),
 		'featured_image' => $featured,
+		'images' => $img_results,
 	];
+}
+
+// Attach one image (remote URL or base64 payload) to the media library.
+function opsdash_attach_image($post_id, $img) {
+	require_once ABSPATH . 'wp-admin/includes/media.php';
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/image.php';
+	$att = null;
+	if (!empty($img['url'])) {
+		$att = media_sideload_image(esc_url_raw($img['url']), $post_id, sanitize_text_field($img['alt'] ?? ''), 'id');
+		if (is_wp_error($att)) return $att;
+	} elseif (!empty($img['data_base64'])) {
+		$bits = base64_decode($img['data_base64'], true);
+		if ($bits === false) return new WP_Error('opsdash_b64', 'invalid base64 image data');
+		$mime = in_array($img['mime'] ?? '', ['image/png', 'image/jpeg', 'image/webp'], true) ? $img['mime'] : 'image/jpeg';
+		$ext = $mime === 'image/png' ? 'png' : ($mime === 'image/webp' ? 'webp' : 'jpg');
+		$up = wp_upload_bits('opsdash-' . substr(md5($img['data_base64']), 0, 10) . '.' . $ext, null, $bits);
+		if (!empty($up['error'])) return new WP_Error('opsdash_upload', $up['error']);
+		$att = wp_insert_attachment([
+			'post_mime_type' => $mime,
+			'post_title' => sanitize_text_field($img['alt'] ?? 'Image'),
+			'post_status' => 'inherit',
+		], $up['file'], $post_id);
+		if (is_wp_error($att)) return $att;
+		wp_update_attachment_metadata($att, wp_generate_attachment_metadata($att, $up['file']));
+	} else {
+		return new WP_Error('opsdash_noimg', 'image needs url or data_base64');
+	}
+	if (!empty($img['alt'])) update_post_meta($att, '_wp_attachment_image_alt', sanitize_text_field($img['alt']));
+	return $att;
 }
 
 // Download an image from a URL into the media library and set it as the
