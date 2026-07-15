@@ -2,14 +2,18 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.3.0
+ * Version: 1.4.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.3.0');
+define('OPSDASH_VERSION', '1.4.0');
+
+// Post types this plugin is ever allowed to create or modify. Everything else
+// on the site (products, templates, attachments, menu items) is off limits.
+function opsdash_allowed_types() { return ['post', 'page']; }
 
 // ---------------------------------------------------------------------------
 // Settings page: paste the connection key generated in the Ops Dash portal.
@@ -26,12 +30,13 @@ function opsdash_settings_page() { ?>
 		<p>Paste the connection key from your Ops Dash portal (Keywords &rarr; Briefs &rarr; WordPress publishing).</p>
 		<form method="post" action="options.php">
 			<?php settings_fields('opsdash'); ?>
-			<input type="text" name="opsdash_key" value="<?php echo esc_attr(get_option('opsdash_key', '')); ?>" style="width:440px" placeholder="opsd_..." autocomplete="off" />
+			<input type="password" name="opsdash_key" value="<?php echo esc_attr(get_option('opsdash_key', '')); ?>" style="width:440px" placeholder="opsd_..." autocomplete="off" />
 			<?php submit_button('Save key'); ?>
 		</form>
 		<p>Status: <?php echo get_option('opsdash_key')
 			? '<strong style="color:green">Key saved.</strong> Finish connecting from the Ops Dash portal (it will show &ldquo;Connected&rdquo; once it can reach this site).'
 			: '<em>No key saved yet.</em>'; ?></p>
+		<p style="color:#666">This key lets Ops Dash create and edit <strong>posts and pages only</strong>. It cannot add users, change settings, install plugins, or touch anything else on the site. If it is ever exposed, click <em>Regenerate key</em> in the Ops Dash portal and paste the new one here &mdash; the old key stops working immediately.</p>
 		<p style="color:#666">Detected SEO plugin: <strong><?php echo esc_html(opsdash_seo_plugin()); ?></strong>
 			<?php if (opsdash_seo_plugin() === 'none') echo ' &mdash; Ops Dash will output SEO titles, meta descriptions, and schema itself.'; ?></p>
 	</div>
@@ -76,14 +81,25 @@ function opsdash_set_seo_meta($post_id, $seo_title, $meta_desc) {
 function opsdash_set_schema($post_id, $schema) {
 	// Accept a JSON string or an already-decoded structure; store re-encoded JSON only.
 	$decoded = is_string($schema) ? json_decode($schema, true) : $schema;
-	if ($decoded) update_post_meta($post_id, '_opsdash_schema', wp_json_encode($decoded));
+	if ($decoded) update_post_meta($post_id, '_opsdash_schema', opsdash_json($decoded));
+}
+
+// JSON encoded for safe embedding inside a <script> block. Without JSON_HEX_TAG
+// the only thing preventing a `</script>` break-out is PHP's default escaping of
+// forward slashes — one flag away from stored XSS on every page view. These
+// flags encode < > & ' " as \uXXXX so the payload can never close the tag.
+function opsdash_json($data) {
+	return wp_json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
 }
 
 // Fallback head output when no SEO plugin is installed, plus JSON-LD for all setups.
 add_filter('pre_get_document_title', function ($title) {
 	if (is_singular() && opsdash_seo_plugin() === 'none') {
 		$t = get_post_meta(get_queried_object_id(), '_opsdash_seo_title', true);
-		if ($t) return $t;
+		// esc_html here is deliberate: wp_get_document_title() returns as soon as
+		// this filter is non-empty, skipping the esc_html() it would otherwise
+		// apply, and _wp_render_title_tag() echoes the result unescaped.
+		if ($t) return esc_html($t);
 	}
 	return $title;
 }, 20);
@@ -98,7 +114,7 @@ add_action('wp_head', function () {
 	$schema = get_post_meta($pid, '_opsdash_schema', true);
 	if ($schema) {
 		$decoded = json_decode($schema, true);
-		if ($decoded) echo '<script type="application/ld+json">' . wp_json_encode($decoded) . '</script>' . "\n";
+		if ($decoded) echo '<script type="application/ld+json">' . opsdash_json($decoded) . '</script>' . "\n";
 	}
 	// Canonical fix: only set for pages the audit flagged as missing one.
 	$canon = get_post_meta($pid, '_opsdash_canonical', true);
@@ -168,11 +184,16 @@ add_action('rest_api_init', function () {
 	]);
 });
 
+// Resolve a target post from {post_id|url}, refusing anything that isn't a
+// post/page so no endpoint can touch products, templates or attachments.
 function opsdash_resolve_post($p) {
 	$id = 0;
 	if (!empty($p['post_id'])) $id = (int) $p['post_id'];
 	elseif (!empty($p['url'])) $id = url_to_postid(esc_url_raw($p['url']));
-	return ($id && get_post($id)) ? $id : 0;
+	if (!$id) return 0;
+	$post = get_post($id);
+	if (!$post || !in_array($post->post_type, opsdash_allowed_types(), true)) return 0;
+	return $id;
 }
 
 // Resolve an image URL to its attachment ID, tolerating -300x200 size suffixes.
@@ -187,6 +208,7 @@ function opsdash_attachment_from_src($src) {
 function opsdash_fix_alts(WP_REST_Request $req) {
 	$p = $req->get_json_params();
 	$post_id = opsdash_resolve_post($p);
+	if (!$post_id) return new WP_Error('opsdash_not_found', 'no post or page found for that id/url', ['status' => 404]);
 	$alts = is_array($p['alts'] ?? null) ? $p['alts'] : [];
 	if (!$alts) return new WP_Error('opsdash_bad_request', 'alts[] required', ['status' => 400]);
 	$attachments = 0; $content_hits = 0;
@@ -246,7 +268,13 @@ function opsdash_publish(WP_REST_Request $req) {
 	if (!empty($p['excerpt'])) $args['post_excerpt'] = sanitize_text_field($p['excerpt']);
 	if (!empty($p['update_id'])) {
 		$existing = get_post((int) $p['update_id']);
-		if ($existing) $args['ID'] = (int) $p['update_id'];
+		// Only ever update a post/page. Without this, an update_id pointing at a
+		// product, builder template, attachment or menu item would be silently
+		// CONVERTED into a post by wp_insert_post — destroying it.
+		if (!$existing || !in_array($existing->post_type, opsdash_allowed_types(), true)) {
+			return new WP_Error('opsdash_bad_target', 'update_id must reference a post or page', ['status' => 400]);
+		}
+		$args['ID'] = (int) $p['update_id'];
 	}
 
 	$post_id = wp_insert_post($args, true);
@@ -341,10 +369,8 @@ function opsdash_sideload_featured($post_id, $url, $alt) {
 
 function opsdash_update_seo(WP_REST_Request $req) {
 	$p = $req->get_json_params();
-	$post_id = 0;
-	if (!empty($p['post_id']))  $post_id = (int) $p['post_id'];
-	elseif (!empty($p['url']))  $post_id = url_to_postid(esc_url_raw($p['url']));
-	if (!$post_id || !get_post($post_id)) return new WP_Error('opsdash_not_found', 'post not found for that id/url', ['status' => 404]);
+	$post_id = opsdash_resolve_post($p);
+	if (!$post_id) return new WP_Error('opsdash_not_found', 'no post or page found for that id/url', ['status' => 404]);
 
 	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);

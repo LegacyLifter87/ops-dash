@@ -116,6 +116,20 @@ export function Keywords() {
     setWpBusy(true); setWpErr(''); setWpNotice('');
     try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
+  // Rotate a leaked/stale key: dropping the connection and reconnecting mints a
+  // fresh token, and the old one stops working the moment the row is deleted.
+  const wpRotate = async () => {
+    const url = wp?.wp_url;
+    if (!url) return;
+    if (!confirm('Regenerate the connection key?\n\nThe current key stops working immediately. Publishing stays broken until you paste the new key into WP Admin → Settings → Ops Dash.')) return;
+    setWpBusy(true); setWpErr(''); setWpNotice('');
+    try {
+      await seoWpDisconnect(site);
+      await seoWpConnect(site, url);
+      await loadWp(site);
+      setWpNotice('New key generated — the old one is dead. Copy it below into WP Admin → Settings → Ops Dash → Save, then hit ↻.');
+    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
+  };
   const wpPublish = async (key, mode, imgUrl, imageSource) => {
     setWpBusy(true);
     try { const r = await seoWpPublish(site, key, mode, imgUrl, imageSource); setBriefs(await seoLoadBriefs(site)); return r; }
@@ -233,7 +247,7 @@ export function Keywords() {
               </tr>`)}</tbody>
             </table></div></${Card}>`
           : html`<div class="space-y-3">
-            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${() => loadWp(site)} onDisconnect=${wpDisconnect} />
+            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${() => loadWp(site)} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
             <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
@@ -310,7 +324,7 @@ function mdRender(md) {
 }
 
 // Per-site WordPress connection card (Ops Dash Connector plugin handshake).
-function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect }) {
+function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect, onRotate }) {
   const [url, setUrl] = useState(wp?.wp_url || '');
   useEffect(() => { setUrl(wp?.wp_url || ''); }, [wp?.wp_url]);
   const [copied, setCopied] = useState(false);
@@ -332,15 +346,17 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect 
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.2.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
+      <a href="/opsdash-connector-1.4.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
     </div>
     ${wp?.connected && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
       <div class="font-semibold text-slate-400 uppercase">Connection key</div>
       <div class="flex items-center gap-2 flex-wrap">
         <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
         <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy'}</${Btn}>
+        <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
       </div>
       <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click ↻ here.</div>
+      <div class="text-slate-400">Treat this key like a password — it can create and edit posts and pages on the site (nothing else). If it's ever exposed, hit <span class="font-medium">Regenerate</span> and re-paste.</div>
       ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
     </div>`}
     ${notice && html`<div class="text-sm text-emerald-700">${notice}</div>`}
