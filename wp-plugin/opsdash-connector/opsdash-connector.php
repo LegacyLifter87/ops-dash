@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.2.0');
+define('OPSDASH_VERSION', '1.3.0');
 
 // ---------------------------------------------------------------------------
 // Settings page: paste the connection key generated in the Ops Dash portal.
@@ -100,6 +100,9 @@ add_action('wp_head', function () {
 		$decoded = json_decode($schema, true);
 		if ($decoded) echo '<script type="application/ld+json">' . wp_json_encode($decoded) . '</script>' . "\n";
 	}
+	// Canonical fix: only set for pages the audit flagged as missing one.
+	$canon = get_post_meta($pid, '_opsdash_canonical', true);
+	if ($canon) echo '<link rel="canonical" href="' . esc_url($canon) . '" />' . "\n";
 });
 
 // ---------------------------------------------------------------------------
@@ -148,7 +151,81 @@ add_action('rest_api_init', function () {
 		'permission_callback' => 'opsdash_auth',
 		'callback' => 'opsdash_update_seo',
 	]);
+
+	// Apply alt text to images: sets attachment alt meta (which Elementor and
+	// most builders read) and patches inline alt attributes in post_content.
+	register_rest_route('opsdash/v1', '/fix-alts', [
+		'methods' => 'POST',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => 'opsdash_fix_alts',
+	]);
+
+	// Demote extra H1s in post_content to H2 (skips builder-managed pages).
+	register_rest_route('opsdash/v1', '/fix-h1', [
+		'methods' => 'POST',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => 'opsdash_fix_h1',
+	]);
 });
+
+function opsdash_resolve_post($p) {
+	$id = 0;
+	if (!empty($p['post_id'])) $id = (int) $p['post_id'];
+	elseif (!empty($p['url'])) $id = url_to_postid(esc_url_raw($p['url']));
+	return ($id && get_post($id)) ? $id : 0;
+}
+
+// Resolve an image URL to its attachment ID, tolerating -300x200 size suffixes.
+function opsdash_attachment_from_src($src) {
+	$id = attachment_url_to_postid($src);
+	if ($id) return $id;
+	$stripped = preg_replace('/-\d+x\d+(\.[a-z]{3,4})(\?.*)?$/i', '$1', $src);
+	if ($stripped !== $src) { $id = attachment_url_to_postid($stripped); if ($id) return $id; }
+	return 0;
+}
+
+function opsdash_fix_alts(WP_REST_Request $req) {
+	$p = $req->get_json_params();
+	$post_id = opsdash_resolve_post($p);
+	$alts = is_array($p['alts'] ?? null) ? $p['alts'] : [];
+	if (!$alts) return new WP_Error('opsdash_bad_request', 'alts[] required', ['status' => 400]);
+	$attachments = 0; $content_hits = 0;
+	$content = $post_id ? get_post_field('post_content', $post_id) : '';
+	foreach (array_slice($alts, 0, 30) as $a) {
+		$src = esc_url_raw($a['src'] ?? '');
+		$alt = sanitize_text_field($a['alt'] ?? '');
+		if (!$src || $alt === '') continue;
+		$att = opsdash_attachment_from_src($src);
+		if ($att) { update_post_meta($att, '_wp_attachment_image_alt', $alt); $attachments++; }
+		if ($content) {
+			$content = preg_replace_callback('/<img\b[^>]*>/i', function ($m) use ($src, $alt, &$content_hits) {
+				$tag = $m[0];
+				if (strpos($tag, esc_url($src)) === false && strpos($tag, $src) === false) return $tag;
+				$content_hits++;
+				if (preg_match('/\balt=["\'][^"\']*["\']/i', $tag)) return preg_replace('/\balt=["\'][^"\']*["\']/i', 'alt="' . esc_attr($alt) . '"', $tag);
+				return preg_replace('/<img\b/i', '<img alt="' . esc_attr($alt) . '"', $tag, 1);
+			}, $content);
+		}
+	}
+	if ($post_id && $content_hits) wp_update_post(['ID' => $post_id, 'post_content' => $content]);
+	return ['ok' => true, 'post_id' => $post_id, 'attachments_updated' => $attachments, 'content_imgs_updated' => $content_hits];
+}
+
+function opsdash_fix_h1(WP_REST_Request $req) {
+	$p = $req->get_json_params();
+	$post_id = opsdash_resolve_post($p);
+	if (!$post_id) return new WP_Error('opsdash_not_found', 'post not found for that id/url', ['status' => 404]);
+	if (get_post_meta($post_id, '_elementor_data', true)) return ['ok' => true, 'skipped' => 'elementor', 'note' => 'Page is built with Elementor — extra H1s live in the builder and must be demoted there.'];
+	$content = get_post_field('post_content', $post_id);
+	$seen = 0;
+	$new = preg_replace_callback('/<(\/?)h1(\b[^>]*)>/i', function ($m) use (&$seen) {
+		if ($m[1] === '') { $seen++; return $seen > 1 ? '<h2' . $m[2] . '>' : $m[0]; }
+		return $seen > 1 ? '</h2>' : $m[0];
+	}, $content);
+	$changed = ($new !== $content);
+	if ($changed) wp_update_post(['ID' => $post_id, 'post_content' => $new]);
+	return ['ok' => true, 'post_id' => $post_id, 'changed' => $changed, 'h1_found' => $seen];
+}
 
 function opsdash_publish(WP_REST_Request $req) {
 	$p = $req->get_json_params();
@@ -271,6 +348,7 @@ function opsdash_update_seo(WP_REST_Request $req) {
 
 	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);
+	if (!empty($p['canonical'])) update_post_meta($post_id, '_opsdash_canonical', esc_url_raw($p['canonical']));
 
 	return ['ok' => true, 'post_id' => $post_id, 'link' => get_permalink($post_id)];
 }

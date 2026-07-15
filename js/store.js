@@ -343,6 +343,8 @@ export const seoWpConnect = (siteId, wpUrl) => seoInvokeWp('connect', { siteId, 
 export const seoWpStatus = (siteId) => seoInvokeWp('status', { siteId });
 export const seoWpPublish = (siteId, key, mode, featuredImageUrl, imageSource) => seoInvokeWp('publish', { siteId, key, mode, featuredImageUrl, imageSource });
 export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { siteId, url });
+// action ∈ fix_meta | fix_schema | fix_alts | fix_h1 | fix_canonical — one page per call.
+export const seoWpFix = (siteId, action, url) => seoInvokeWp(action, { siteId, url });
 export const seoWpUpdateSeo = (siteId, target) => seoInvokeWp('update_seo', { siteId, ...target });
 export const seoWpDisconnect = (siteId) => seoInvokeWp('disconnect', { siteId });
 export async function seoLoadBriefs(siteId) {

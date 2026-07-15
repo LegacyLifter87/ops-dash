@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -127,6 +127,8 @@ export function Audit() {
             </div></${Card}>
           </div>
 
+          ${wpConnected && html`<${AiFixes} pages=${pages} site=${site} onDone=${() => load(site)} />`}
+
           <${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
             <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
               <${SortTh} k="url" label="Page" sort=${sort} /><${SortTh} k="status_code" label="HTTP" sort=${sort} right=${true} /><${SortTh} k="technical_score" label="Tech" sort=${sort} right=${true} /><th class="py-1.5 pr-3 text-right">Issues</th><${SortTh} k="word_count" label="Words" sort=${sort} right=${true} /><${SortTh} k="ai_score" label="AI" sort=${sort} right=${true} /><th class="py-1.5 pr-3"></th></tr></thead>
@@ -147,6 +149,63 @@ export function Audit() {
 
     ${openPage && html`<${DetailModal} page=${openPage} site=${site} wpConnected=${wpConnected} busyAi=${busy === 'ai:' + openPage.url} busyPsi=${busy === 'psi:' + openPage.url} onClose=${() => setOpenUrl(null)} onAi=${() => analyzeAi(openPage.url)} onSpeed=${() => analyzeSpeed(openPage.url)} onPushed=${() => load(site)} />`}
   </div>`;
+}
+
+// Bulk AI fixes: deploy fixes for audit issues to the live site, page by page,
+// through the Ops Dash Connector plugin (needs plugin v1.3+).
+const FIXES = [
+  { key: 'meta', action: 'fix_meta', icon: '🏷', label: 'Titles & meta descriptions', desc: 'AI writes a keyword-matched title tag and meta description and pushes them into the SEO plugin.', match: (i) => (i.type === 'title' || i.type === 'meta') && /^Missing/.test(i.message) },
+  { key: 'schema', action: 'fix_schema', icon: '🧩', label: 'Structured data (schema)', desc: 'AI builds page-appropriate JSON-LD (LocalBusiness, Service, Article…) from your business facts.', match: (i) => i.type === 'schema' },
+  { key: 'alts', action: 'fix_alts', icon: '🖼', label: 'Image alt text', desc: 'AI looks at each image and writes descriptive alt text (up to 6 images per page).', match: (i) => i.type === 'alt' },
+  { key: 'h1', action: 'fix_h1', icon: '#', label: 'Multiple H1 headings', desc: 'Extra H1s demoted to H2. Elementor-built pages are skipped (fix those in the builder).', match: (i) => i.type === 'h1' && /^Multiple/.test(i.message) },
+  { key: 'canonical', action: 'fix_canonical', icon: '🔗', label: 'Canonical tags', desc: 'Adds a self-referencing canonical tag to pages missing one.', match: (i) => i.type === 'canonical' },
+];
+function AiFixes({ pages, site, onDone }) {
+  const [busyKey, setBusyKey] = useState('');
+  const [prog, setProg] = useState('');
+  const [results, setResults] = useState({});
+  const cats = useMemo(() => {
+    const m = {};
+    for (const f of FIXES) m[f.key] = pages.filter((p) => p.status_code > 0 && p.status_code < 400 && (p.issues || []).some(f.match)).map((p) => p.url);
+    return m;
+  }, [pages]);
+  const total = FIXES.reduce((s, f) => s + cats[f.key].length, 0);
+  if (!total) return null;
+  const run = async (f) => {
+    const urls = cats[f.key];
+    setBusyKey(f.key);
+    let ok = 0, fail = 0, skipped = 0;
+    for (let i = 0; i < urls.length; i++) {
+      setProg(`${f.label}: page ${i + 1} of ${urls.length}…`);
+      try { const r = await seoWpFix(site, f.action, urls[i]); if (r?.skipped) skipped++; else ok++; }
+      catch (_) { fail++; }
+    }
+    setResults((r) => ({ ...r, [f.key]: { ok, fail, skipped } }));
+    setBusyKey(''); setProg('');
+    onDone && onDone();
+  };
+  return html`<${Card}><div class="p-4 space-y-3">
+    <div>
+      <div class="font-semibold text-slate-800">🪄 AI fixes — deploy to WordPress</div>
+      <div class="text-xs text-slate-500">Fixes are written by AI per page and pushed live through the Ops Dash Connector plugin. Pages that couldn't be crawled (HTTP 403 / errors) are excluded.</div>
+    </div>
+    <div class="space-y-2">
+      ${FIXES.map((f) => {
+        const n = cats[f.key].length;
+        const res = results[f.key];
+        return html`<div class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-slate-800">${f.icon} ${f.label} <span class="text-slate-400 font-normal">— ${num(n)} page${n === 1 ? '' : 's'}</span></div>
+            <div class="text-xs text-slate-500">${f.desc}</div>
+            ${res && html`<div class="text-xs mt-0.5 ${res.fail ? 'text-amber-700' : 'text-emerald-700'}">Done: ${res.ok} fixed${res.skipped ? `, ${res.skipped} skipped` : ''}${res.fail ? `, ${res.fail} failed` : ''}.</div>`}
+          </div>
+          <${Btn} size="sm" onClick=${() => run(f)} disabled=${!!busyKey || n === 0}>${busyKey === f.key ? 'Fixing…' : res ? '↻ Re-run' : `Fix ${num(n)}`}</${Btn}>
+        </div>`;
+      })}
+    </div>
+    ${prog && html`<div class="text-xs text-brand-700 animate-pulse">${prog}</div>`}
+    <div class="text-[11px] text-slate-400">Tip: if the site uses a page cache, flush it after fixing to see changes on the live pages immediately. Re-run the audit afterwards to confirm scores improved.</div>
+  </div></${Card}>`;
 }
 
 // SEO editor: draft (or AI-suggest) a title tag + meta description and push
