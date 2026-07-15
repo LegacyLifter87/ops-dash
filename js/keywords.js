@@ -251,7 +251,9 @@ export function Keywords() {
 }
 
 // Minimal, safe Markdown -> preact vnodes (headings, bold, links, lists, paragraphs).
-function mdInline(s) {
+function mdInline(raw) {
+  // `{#anchor-id}` sets a heading's id when published — never show it as text.
+  const s = String(raw).replace(/\{#[^}]*\}/g, '');
   const parts = []; const re = /(\*\*([^*]+)\*\*)|(\[([^\]]+)\]\(([^)]+)\))/g;
   let m, last = 0;
   while ((m = re.exec(s))) {
