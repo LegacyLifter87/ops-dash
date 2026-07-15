@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -102,6 +102,7 @@ export function Keywords() {
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
   const openContent = (key, kind) => { setOpenKind(kind); setOpenCluster(key); };
+  const saveBrief = async (key, patch) => { await seoBriefSave(site, key, patch); setBriefs(await seoLoadBriefs(site)); };
 
   // --- WordPress publishing (Ops Dash Connector plugin) ---
   const loadWp = async (sid) => { try { setWp(await seoWpStatus(sid)); } catch (_) { setWp(null); } };
@@ -246,7 +247,7 @@ export function Keywords() {
             </div></${Card}>
           </div>`}
       `}
-    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl, imageSource) => wpPublish(openCluster, mode, imgUrl, imageSource)} />`}
+    ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl, imageSource) => wpPublish(openCluster, mode, imgUrl, imageSource)} onSave=${(patch) => saveBrief(openCluster, patch)} />`}
   </div>`;
 }
 
@@ -347,17 +348,60 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect 
   </div></${Card}>`;
 }
 
-function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected, wpBusy, onWp }) {
+// Mirrors the generator's server-side counter: strips markdown syntax so link
+// URLs, table pipes and image placeholders don't inflate the number. The count
+// shown here is the same one the quality checker enforces.
+function proseWordCount(md) {
+  let t = String(md || '');
+  t = t.replace(/```[\s\S]*?```/g, ' ');
+  t = t.replace(/^[^\S\n]*\*?[^\S\n]*\[IMAGE:[^\]]*\][^\S\n]*\*?[^\S\n]*$/gim, ' ');
+  t = t.replace(/\{#[^}]*\}/g, ' ');
+  t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+  t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  t = t.replace(/^[^\S\n]*\|[\s:|-]+\|[^\S\n]*$/gm, ' ');
+  t = t.replace(/\|/g, ' ');
+  t = t.replace(/^[^\S\n]{0,3}#{1,6}[^\S\n]+/gm, ' ');
+  t = t.replace(/^[^\S\n]*>[^\S\n]?/gm, ' ');
+  t = t.replace(/^[^\S\n]*(?:[-*+]|\d+\.)[^\S\n]+/gm, ' ');
+  t = t.replace(/[*_`~]/g, ' ');
+  t = t.replace(/\s+/g, ' ').trim();
+  return t ? t.split(' ').length : 0;
+}
+const Counter = ({ n, lo, hi, unit }) => html`<span class=${cx('tabular-nums text-[11px]', !n ? 'text-slate-300' : n >= lo && n <= hi ? 'text-emerald-600' : 'text-amber-600')}>${n}${unit || ''}</span>`;
+
+function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected, wpBusy, onWp, onSave }) {
   const [copied, setCopied] = useState(false);
   const [wpRes, setWpRes] = useState(null);
   const [wpSendErr, setWpSendErr] = useState('');
   const [imgUrl, setImgUrl] = useState('');
   const [imgSource, setImgSource] = useState('stock');
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState('');
+  const [savedNote, setSavedNote] = useState('');
   const has = brief && brief.content;
+  const fields = (b) => ({ title: b.title || '', h1: b.h1 || '', meta: b.meta || '', slug: b.slug || '', content: b.content || '' });
+  const dirty = editing && draft && brief && JSON.stringify(draft) !== JSON.stringify(fields(brief));
+  const startEdit = () => { setDraft(fields(brief)); setSaveErr(''); setSavedNote(''); setEditing(true); };
+  const cancelEdit = () => { if (dirty && !confirm('Discard your unsaved edits?')) return; setEditing(false); setDraft(null); setSaveErr(''); };
+  const save = async () => {
+    setSaving(true); setSaveErr(''); setSavedNote('');
+    try { await onSave(draft); setEditing(false); setDraft(null); setSavedNote('Saved. Send it to WordPress when you\'re ready.'); }
+    catch (e) { setSaveErr(e.message); } finally { setSaving(false); }
+  };
+  const close = () => { if (dirty && !confirm('You have unsaved edits. Close anyway?')) return; onClose(); };
   const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
   const sendWp = async (mode) => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp(mode, imgUrl.trim(), imgSource)); } catch (e) { setWpSendErr(e.message); } };
-  const footer = has ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
+  const footer = !has ? null : editing ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
+    <span class="text-xs text-slate-400">${dirty ? 'Unsaved changes' : 'No changes yet'}</span>
+    <div class="flex gap-2">
+      <${Btn} size="sm" onClick=${cancelEdit} disabled=${saving}>Cancel</${Btn}>
+      <${Btn} size="sm" onClick=${save} disabled=${saving || !dirty}>${saving ? 'Saving…' : '💾 Save changes'}</${Btn}>
+    </div>
+  </div>` : html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
     <div class="flex gap-2 flex-wrap items-center">
+      <${Btn} size="sm" onClick=${startEdit}>✏️ Edit</${Btn}>
       <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
       <${Btn} size="sm" onClick=${() => onGen('service')} disabled=${busy}>${busy ? '…' : 'Rewrite as page'}</${Btn}>
       ${wpConnected && html`
@@ -365,8 +409,42 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
         <${Btn} size="sm" onClick=${() => sendWp('publish')} disabled=${wpBusy}>${wpBusy ? '…' : '🚀 Publish live'}</${Btn}>`}
     </div>
     <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy markdown'}</${Btn}>
-  </div>` : null;
-  return html`<${Modal} title=${`Content — ${cluster}`} wide onClose=${onClose} footer=${footer}>
+  </div>`;
+  if (has && editing && draft) {
+    const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
+    const words = proseWordCount(draft.content);
+    const ta = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200';
+    return html`<${Modal} title=${`Edit — ${cluster}`} wide onClose=${close} footer=${footer}>
+      <div class="space-y-3 text-sm">
+        ${saveErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${saveErr}</div>`}
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400"><span>SEO title (50–60 chars)</span><${Counter} n=${draft.title.length} lo=${50} hi=${60} /></div>
+          <${Input} value=${draft.title} onInput=${set('title')} placeholder="Shown in Google results" />
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400"><span>H1 — on-page headline (must differ from the SEO title)</span><span class=${cx('text-[11px]', draft.h1.trim() && draft.h1.trim().toLowerCase() === draft.title.trim().toLowerCase() ? 'text-amber-600' : 'text-slate-300')}>${draft.h1.trim() && draft.h1.trim().toLowerCase() === draft.title.trim().toLowerCase() ? 'identical to title' : ''}</span></div>
+          <${Input} value=${draft.h1} onInput=${set('h1')} placeholder="Becomes the post title in WordPress" />
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400"><span>Meta description (150–155 chars)</span><${Counter} n=${draft.meta.length} lo=${150} hi=${155} /></div>
+          <textarea value=${draft.meta} onInput=${set('meta')} rows="2" class=${ta}></textarea>
+        </div>
+        <div class="space-y-1">
+          <div class="text-[11px] text-slate-400">URL slug</div>
+          <${Input} value=${draft.slug} onInput=${set('slug')} placeholder="lawn-mowing-ocala-fl" />
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span>Article (Markdown) — <span class="text-slate-500">## Heading {#anchor}</span> sets a heading's link target; <span class="text-slate-500">*[IMAGE: …]*</span> lines become photos on publish</span>
+            <span>body prose <${Counter} n=${words} lo=${1500} hi=${2000} /> words</span>
+          </div>
+          <textarea value=${draft.content} onInput=${set('content')} rows="22" spellcheck="true" class=${cx(ta, 'font-mono text-xs leading-relaxed')}></textarea>
+        </div>
+        <div class="text-[11px] text-slate-400">Word count ignores headings, table cells and link URLs — it counts what a reader actually reads, same as the quality checker.</div>
+      </div>
+    </${Modal}>`;
+  }
+  return html`<${Modal} title=${`Content — ${cluster}`} wide onClose=${close} footer=${footer}>
     ${!has ? html`<div class="text-center space-y-4 py-4">
         <div class="text-sm text-slate-600">Generate publish-ready copy for <span class="font-medium">${cluster}</span>. Pick the format:</div>
         <div class="flex justify-center gap-3">
@@ -388,6 +466,7 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
           ${wpRes.status !== 'publish' && !wpRes.images_added && html`<span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>`}
         </div>`}
         ${wpSendErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${wpSendErr}</div>`}
+        ${savedNote && html`<div class="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800">${savedNote}</div>`}
         ${wpConnected && html`<div class="flex items-center gap-3 flex-wrap">
           <div class="flex items-center gap-2">
             <span class="text-xs text-slate-400 shrink-0">Article images</span>

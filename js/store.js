@@ -347,6 +347,11 @@ export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { s
 export const seoWpFix = (siteId, action, url) => seoInvokeWp(action, { siteId, url });
 export const seoWpUpdateSeo = (siteId, target) => seoInvokeWp('update_seo', { siteId, ...target });
 export const seoWpDisconnect = (siteId) => seoInvokeWp('disconnect', { siteId });
+// Edit a generated article before it goes to WordPress (RLS: admins/agency).
+export async function seoBriefSave(siteId, key, patch) {
+  const { error } = await supabase.from('seo_briefs').update(patch).eq('site_id', siteId).eq('cluster', key);
+  if (error) throw new Error(error.message);
+}
 export async function seoLoadBriefs(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_briefs').select('*').eq('site_id', siteId).order('created_at', { ascending: false });
