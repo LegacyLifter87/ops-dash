@@ -4,7 +4,7 @@
 // and top events. Account-scoped (no site selector). No dev-token gate.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaInsights, seoGaDisconnect } from './store.js';
+import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaSetRange, seoGaInsights, seoGaDisconnect } from './store.js';
 import { Card, Btn, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -12,6 +12,12 @@ const Pill = ({ children, cls }) => html`<span class=${cx('inline-block px-2 py-
 const num = (n) => Math.round(n || 0).toLocaleString();
 const pct = (n, d = 1) => (n == null ? '—' : (n * 100).toFixed(d) + '%');
 const dur = (sec) => { const s = Math.round(sec || 0); const m = Math.floor(s / 60); return m ? `${m}m ${s % 60}s` : `${s}s`; };
+
+// Selectable reporting window (mirrors the edge fn's ALLOWED_RANGES).
+const RANGE_OPTS = [[30, '30 days'], [90, '90 days'], [365, '12 months']];
+const rangeDaysOf = (st) => ([30, 90, 365].includes(st?.range_days) ? st.range_days : 365);
+const rangeLabel = (d) => (d >= 365 ? 'Last 12 months' : d >= 90 ? 'Last 90 days' : `Last ${d} days`);
+const rangeNoun = (d) => (d >= 365 ? '12-month' : d >= 90 ? '90-day' : `${d}-day`);
 const shortUrl = (u) => { try { const x = new URL(u); return x.pathname + (x.search || ''); } catch { return u || '/'; } };
 
 export function Analytics() {
@@ -44,11 +50,12 @@ export function Analytics() {
     try { await seoGaSelectProperty({ propertyId: p.id, name: p.name }); setPicker(null); await load(); await sync(); }
     catch (e) { setErr(e.message); setBusy(''); }
   };
-  const sync = async () => {
+  const sync = async (rangeDays) => {
     setBusy('sync'); setErr(''); setBanner('');
-    try { const r = await seoGaSync(); setBanner(`Synced — ${num(r.summary?.sessions)} sessions across ${num(r.counts?.channels)} channels, ${num(r.counts?.landing_pages)} landing pages.`); await load(); }
+    try { const r = await seoGaSync(rangeDays ? { rangeDays } : undefined); setBanner(`Synced ${r.summary?.range || 'data'} — ${num(r.summary?.sessions)} sessions across ${num(r.counts?.channels)} channels, ${num(r.counts?.landing_pages)} landing pages.`); await load(); }
     catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
+  const setRange = async (d) => { if (d === rangeDaysOf(st) || busy) return; await sync(d); };
   const disconnect = async () => {
     if (!confirm('Disconnect Google Analytics for this account? Stored report data is removed.')) return;
     setBusy('disc'); setErr('');
@@ -67,11 +74,15 @@ export function Analytics() {
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 class="text-xl font-bold text-slate-800">Analytics (GA4)</h1>
-        <p class="text-sm text-slate-500">On-site behavior — traffic by channel, top landing pages, conversions, and engagement. Last 30 days.</p>
+        <p class="text-sm text-slate-500">On-site behavior — traffic by channel, top landing pages, conversions, and engagement. ${rangeLabel(rangeDaysOf(st))}.</p>
       </div>
       ${st?.connected && st?.property && html`<div class="flex items-center gap-2 flex-wrap">
         <${Pill} cls="bg-slate-100 text-slate-600">${st.property.name || st.property.id}</${Pill}>
-        <${Btn} onClick=${sync} disabled=${!!busy}>${busy === 'sync' ? 'Syncing…' : '↻ Sync'}</${Btn}>
+        <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+          ${RANGE_OPTS.map(([d, label]) => html`<button onClick=${() => setRange(d)} disabled=${!!busy}
+            class=${cx('px-2.5 py-1.5', rangeDaysOf(st) === d ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>${label}</button>`)}
+        </div>
+        <${Btn} onClick=${() => sync()} disabled=${!!busy}>${busy === 'sync' ? 'Syncing…' : '↻ Sync'}</${Btn}>
         <${Btn} size="sm" onClick=${disconnect} disabled=${!!busy}>Disconnect</${Btn}>
       </div>`}
     </div>
@@ -105,12 +116,12 @@ export function Analytics() {
   ];
 
   return wrap(html`
-    ${!st.last_sync ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">Property selected. Click <span class="font-medium">↻ Sync</span> to pull the last 30 days.</div></${Card}>`
+    ${!st.last_sync ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">Property selected. Click <span class="font-medium">↻ Sync</span> to pull the ${rangeLabel(rangeDaysOf(st)).toLowerCase()}.</div></${Card}>`
       : html`
       <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         ${tiles.map(([k, v]) => html`<${Card}><div class="p-3"><div class="text-[11px] text-slate-400">${k}</div><div class="text-base font-semibold text-slate-800 tabular-nums">${v}</div></div></${Card}>`)}
       </div>
-      ${daily.length > 1 && html`<${Card}><div class="p-4"><${TrendChart} daily=${daily} /></div></${Card}>`}
+      ${daily.length > 1 && html`<${Card}><div class="p-4"><${TrendChart} daily=${daily} rangeDays=${rangeDaysOf(st)} /></div></${Card}>`}
 
       <${InsightsCard} insights=${st.insights} insightsAt=${st.insights_at} busy=${aiBusy} onGen=${genInsights} />
 
@@ -143,7 +154,7 @@ function PropertyPicker({ properties, busy, onPick, onClose }) {
   </${Modal}>`;
 }
 
-function TrendChart({ daily }) {
+function TrendChart({ daily, rangeDays }) {
   const [metric, setMetric] = useState('sessions');
   const opts = [['sessions', 'Sessions'], ['users', 'Users'], ['pageviews', 'Pageviews'], ['conversions', 'Conversions']];
   const vals = daily.map((d) => Number(d[metric] || 0));
@@ -155,7 +166,7 @@ function TrendChart({ daily }) {
   return html`<div>
     <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
       <div class="flex gap-1">${opts.map(([id, label]) => html`<button onClick=${() => setMetric(id)} class=${cx('text-xs px-2 py-1 rounded', metric === id ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:bg-slate-100')}>${label}</button>`)}</div>
-      <div class="text-xs text-slate-400">30-day total: <span class="font-semibold text-slate-700">${num(total)}</span></div>
+      <div class="text-xs text-slate-400">${rangeNoun(rangeDays || 30)} total: <span class="font-semibold text-slate-700">${num(total)}</span></div>
     </div>
     <svg viewBox=${`0 0 ${W} ${H}`} class="w-full" preserveAspectRatio="none" style="height:120px">
       <polyline fill="none" stroke="#0d9488" stroke-width="2" points=${pts} />
@@ -245,7 +256,7 @@ function AiSearchPanel({ rows }) {
   return html`<div class="space-y-3">
     <p class="text-xs text-slate-500">Referrals from AI assistants and answer engines — visitors who found the business through <span class="font-medium">ChatGPT, Perplexity, Gemini, Copilot, Claude</span> and similar. This traffic normally hides inside "Referral"; here it's pulled out and named.</p>
     ${list.length === 0
-      ? html`<div class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No AI-engine referrals detected in the last 30 days. As AI search grows this is worth watching — being cited by ChatGPT or Perplexity is the new "ranking #1."</div>`
+      ? html`<div class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No AI-engine referrals detected in this window. As AI search grows this is worth watching — being cited by ChatGPT or Perplexity is the new "ranking #1."</div>`
       : html`<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           ${list.map((e) => html`<div class="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
             <div class="flex items-center justify-between"><span class="font-semibold text-slate-800">${e.engine}</span><${Pill} cls="bg-violet-100 text-violet-700">${total ? Math.round((e.sessions / total) * 100) : 0}%</${Pill}></div>

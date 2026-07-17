@@ -366,7 +366,8 @@ export const seoGaStatus = () => seoInvokeGa('ga_status');
 export const seoGaConnect = () => seoInvokeGa('ga_connect');
 export const seoGaProperties = () => seoInvokeGa('ga_properties');
 export const seoGaSelectProperty = (p) => seoInvokeGa('ga_select_property', p);
-export const seoGaSync = () => seoInvokeGa('ga_sync');
+export const seoGaSync = (extra) => seoInvokeGa('ga_sync', extra);
+export const seoGaSetRange = (rangeDays) => seoInvokeGa('ga_set_range', { rangeDays });
 export const seoGaInsights = () => seoInvokeGa('ga_insights');
 export const seoGaDisconnect = () => seoInvokeGa('ga_disconnect');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
