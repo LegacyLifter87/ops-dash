@@ -163,14 +163,6 @@ export async function seoLoadAudit(siteId) {
   return data || [];
 }
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
-async function seoInvokeAds(action, extra = {}) {
-  const { data, error } = await supabase.functions.invoke('seo-ads', { body: { action, accountId: getActiveAccountId(), ...extra } });
-  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
-  if (data?.error) throw new Error(data.error);
-  return data;
-}
-export const seoAdsStatus = () => seoInvokeAds('status');
-export const seoAdsEnrich = (siteId) => seoInvokeAds('enrich', siteId ? { siteId } : {});
 async function seoInvokeComp(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-competitors', { body: { action, accountId: getActiveAccountId(), ...extra } });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
@@ -347,6 +339,19 @@ export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { s
 export const seoWpFix = (siteId, action, url) => seoInvokeWp(action, { siteId, url });
 export const seoWpUpdateSeo = (siteId, target) => seoInvokeWp('update_seo', { siteId, ...target });
 export const seoWpDisconnect = (siteId) => seoInvokeWp('disconnect', { siteId });
+// --- Google Ads reporting (account-scoped; per-client OAuth) ---
+async function seoInvokeAds(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-ads', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoAdsStatus = () => seoInvokeAds('ads_status');
+export const seoAdsConnect = () => seoInvokeAds('ads_connect');
+export const seoAdsCustomers = () => seoInvokeAds('ads_customers');
+export const seoAdsSelectCustomer = (c) => seoInvokeAds('ads_select_customer', c);
+export const seoAdsSync = () => seoInvokeAds('ads_sync');
+export const seoAdsDisconnect = () => seoInvokeAds('ads_disconnect');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
 export async function seoBriefSave(siteId, key, patch) {
   const { error } = await supabase.from('seo_briefs').update(patch).eq('site_id', siteId).eq('cluster', key);
