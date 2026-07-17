@@ -4,7 +4,7 @@
 // and top events. Account-scoped (no site selector). No dev-token gate.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaDisconnect } from './store.js';
+import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaInsights, seoGaDisconnect } from './store.js';
 import { Card, Btn, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -22,7 +22,8 @@ export function Analytics() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
   const [picker, setPicker] = useState(null);
-  const [view, setView] = useState('channels');
+  const [view, setView] = useState('sources');
+  const [aiBusy, setAiBusy] = useState(false);
 
   const load = async () => { try { setSt(await seoGaStatus()); } catch (e) { setErr(e.message); } };
   useEffect(() => { if (accountId) { setSt(null); setErr(''); load(); } }, [accountId]);
@@ -52,6 +53,10 @@ export function Analytics() {
     if (!confirm('Disconnect Google Analytics for this account? Stored report data is removed.')) return;
     setBusy('disc'); setErr('');
     try { await seoGaDisconnect(); await load(); } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const genInsights = async () => {
+    setAiBusy(true); setErr('');
+    try { await seoGaInsights(); await load(); } catch (e) { setErr(e.message); } finally { setAiBusy(false); }
   };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
@@ -107,12 +112,18 @@ export function Analytics() {
       </div>
       ${daily.length > 1 && html`<${Card}><div class="p-4"><${TrendChart} daily=${daily} /></div></${Card}>`}
 
+      <${InsightsCard} insights=${st.insights} insightsAt=${st.insights_at} busy=${aiBusy} onGen=${genInsights} />
+
       <${Card}><div class="p-3">
         <div class="flex gap-1 border-b border-slate-100 mb-2 flex-wrap">
-          ${[['channels', `Channels (${(snaps.channels || []).length})`], ['landing_pages', `Landing pages (${(snaps.landing_pages || []).length})`], ['top_pages', `Top pages (${(snaps.top_pages || []).length})`], ['devices', `Devices (${(snaps.devices || []).length})`], ['events', `Events (${(snaps.events || []).length})`]]
-            .map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
+          ${[['sources', `Lead sources (${(snaps.source_medium || []).length})`], ['ai', `AI search (${(snaps.ai_referrals || []).length})`], ['channels', `Channels (${(snaps.channels || []).length})`], ['attribution', `Attribution (${(snaps.first_touch || []).length})`], ['geo', `Geography (${(snaps.geo || []).length})`], ['landing_pages', `Landing pages (${(snaps.landing_pages || []).length})`], ['top_pages', `Top pages (${(snaps.top_pages || []).length})`], ['devices', `Devices (${(snaps.devices || []).length})`], ['events', `Events (${(snaps.events || []).length})`]]
+            .map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2 whitespace-nowrap', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
         </div>
+        ${view === 'sources' && html`<${SourcesTable} rows=${snaps.source_medium || []} />`}
+        ${view === 'ai' && html`<${AiSearchPanel} rows=${snaps.ai_referrals || []} />`}
         ${view === 'channels' && html`<${ChannelsTable} rows=${snaps.channels || []} />`}
+        ${view === 'attribution' && html`<${AttributionTable} rows=${snaps.first_touch || []} />`}
+        ${view === 'geo' && html`<${GeoTable} rows=${snaps.geo || []} />`}
         ${view === 'landing_pages' && html`<${LandingTable} rows=${snaps.landing_pages || []} />`}
         ${view === 'top_pages' && html`<${TopPagesTable} rows=${snaps.top_pages || []} />`}
         ${view === 'devices' && html`<${DevicesTable} rows=${snaps.devices || []} />`}
@@ -154,6 +165,139 @@ function TrendChart({ daily }) {
 }
 
 function bar(v, max) { return html`<div class="h-1.5 rounded-full bg-brand-400" style=${`width:${Math.max(2, Math.round((v / Math.max(1, max)) * 100))}%`}></div>`; }
+const priCls = (p) => (p === 'high' ? 'bg-rose-100 text-rose-700' : p === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600');
+
+// AI analysis of the metrics — lead sourcing, AI-search visibility, actions.
+function InsightsCard({ insights, insightsAt, busy, onGen }) {
+  const [open, setOpen] = useState(true);
+  if (!insights) {
+    return html`<${Card}><div class="p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div><div class="font-semibold text-slate-800">✨ AI insights</div>
+        <div class="text-xs text-slate-500">Claude reads your traffic, lead sources and AI-search referrals and writes a plain-English analysis with prioritized actions.</div></div>
+      <${Btn} onClick=${onGen} disabled=${busy}>${busy ? 'Analyzing…' : 'Generate insights'}</${Btn}>
+    </div></${Card}>`;
+  }
+  const i = insights;
+  return html`<${Card}><div class="p-4 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="font-semibold text-slate-800">✨ AI insights</div>
+      <div class="flex items-center gap-2">
+        ${insightsAt && html`<span class="text-[11px] text-slate-400">${new Date(insightsAt).toLocaleString()}</span>`}
+        <${Btn} size="sm" onClick=${onGen} disabled=${busy}>${busy ? 'Analyzing…' : '↻ Refresh'}</${Btn}>
+        <button onClick=${() => setOpen(!open)} class="text-xs text-slate-500">${open ? 'Hide' : 'Show'}</button>
+      </div>
+    </div>
+    ${i.headline && html`<div class="text-sm text-slate-700 font-medium">${i.headline}</div>`}
+    ${open && html`<div class="space-y-3">
+      ${(i.lead_sources || []).length > 0 && html`<div>
+        <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Where the leads come from</div>
+        <ul class="list-disc ml-5 text-sm text-slate-700 space-y-0.5">${i.lead_sources.map((t) => html`<li>${t}</li>`)}</ul>
+      </div>`}
+      ${i.ai_search && html`<div class="rounded-lg bg-violet-50 border border-violet-100 p-3">
+        <div class="text-xs font-semibold text-violet-700 uppercase mb-1">AI search visibility ${i.ai_search.present ? '' : '— none detected yet'}</div>
+        <div class="text-sm text-slate-700">${i.ai_search.summary}</div>
+      </div>`}
+      ${(i.opportunities || []).length > 0 && html`<div>
+        <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Opportunities</div>
+        <div class="space-y-1.5">${i.opportunities.map((o) => html`<div class="flex gap-2 text-sm">
+          <${Pill} cls=${priCls(o.priority)}>${o.priority || 'med'}</${Pill}>
+          <span><span class="font-medium text-slate-800">${o.title}</span> <span class="text-slate-600">— ${o.detail}</span></span>
+        </div>`)}</div>
+      </div>`}
+      ${(i.watchouts || []).length > 0 && html`<div>
+        <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Watch-outs</div>
+        <ul class="list-disc ml-5 text-sm text-amber-700 space-y-0.5">${i.watchouts.map((t) => html`<li>${t}</li>`)}</ul>
+      </div>`}
+    </div>`}
+  </${Card}>`;
+}
+
+function SourcesTable({ rows }) {
+  const sort = useSort('sessions', 'desc');
+  if (!rows.length) return html`<div class="p-6 text-center text-sm text-slate-400">No source data.</div>`;
+  return html`<div class="overflow-x-auto">
+    <p class="text-xs text-slate-500 mb-2">Every traffic source and medium, ranked. This is the real lead-sourcing view — <span class="font-medium">google / organic</span>, <span class="font-medium">google / cpc</span>, direct, referrals, and each site that sends you visitors.</p>
+    <table class="w-full text-sm">
+    <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
+      <${SortTh} k="source_medium" label="Source / medium" sort=${sort} /><${SortTh} k="sessions" label="Sessions" sort=${sort} right=${true} />
+      <${SortTh} k="engaged" label="Engaged" sort=${sort} right=${true} /><${SortTh} k="engagement_rate" label="Engagement" sort=${sort} right=${true} />
+      <${SortTh} k="avg_sec" label="Avg. time" sort=${sort} right=${true} /><${SortTh} k="conversions" label="Conv." sort=${sort} right=${true} /></tr></thead>
+    <tbody>${sort.sort(rows).map((r) => html`<tr class="border-b border-slate-50">
+      <td class="py-1.5 pr-3 text-slate-800">${r.source_medium}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.sessions)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.engaged)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${pct(r.engagement_rate)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${dur(r.avg_sec)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums font-medium ${r.conversions > 0 ? 'text-emerald-600' : 'text-slate-400'}">${num(r.conversions)}</td>
+    </tr>`)}</tbody>
+  </table></div>`;
+}
+
+function AiSearchPanel({ rows }) {
+  // Group per-source rows into engines.
+  const engines = {};
+  for (const r of rows) {
+    const e = engines[r.engine] || (engines[r.engine] = { engine: r.engine, sessions: 0, engaged: 0, conversions: 0, sources: [] });
+    e.sessions += r.sessions; e.engaged += r.engaged; e.conversions += r.conversions; e.sources.push(r.source);
+  }
+  const list = Object.values(engines).sort((a, b) => b.sessions - a.sessions);
+  const total = list.reduce((a, e) => a + e.sessions, 0);
+  return html`<div class="space-y-3">
+    <p class="text-xs text-slate-500">Referrals from AI assistants and answer engines — visitors who found the business through <span class="font-medium">ChatGPT, Perplexity, Gemini, Copilot, Claude</span> and similar. This traffic normally hides inside "Referral"; here it's pulled out and named.</p>
+    ${list.length === 0
+      ? html`<div class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No AI-engine referrals detected in the last 30 days. As AI search grows this is worth watching — being cited by ChatGPT or Perplexity is the new "ranking #1."</div>`
+      : html`<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          ${list.map((e) => html`<div class="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+            <div class="flex items-center justify-between"><span class="font-semibold text-slate-800">${e.engine}</span><${Pill} cls="bg-violet-100 text-violet-700">${total ? Math.round((e.sessions / total) * 100) : 0}%</${Pill}></div>
+            <div class="mt-1 text-2xl font-bold text-slate-800 tabular-nums">${num(e.sessions)}</div>
+            <div class="text-xs text-slate-500">sessions · ${num(e.engaged)} engaged · ${num(e.conversions)} conv.</div>
+          </div>`)}
+        </div>`}
+    <div class="text-[11px] text-slate-400">Note: Google's <span class="font-medium">AI Overviews</span> and <span class="font-medium">AI Mode</span> clicks are reported by Google as ordinary <span class="font-medium">google / organic</span> — GA4 can't separate them, so they're counted under Organic Search, not here.</div>
+  </div>`;
+}
+
+function AttributionTable({ rows }) {
+  const sort = useSort('users', 'desc');
+  if (!rows.length) return html`<div class="p-6 text-center text-sm text-slate-400">No attribution data.</div>`;
+  const max = Math.max(...rows.map((r) => r.users || 0), 1);
+  return html`<div class="overflow-x-auto">
+    <p class="text-xs text-slate-500 mb-2">First-touch attribution — the channel that <span class="font-medium">first</span> brought each user to the site (vs. the Channels tab, which is the last-click session source). Shows what's actually <span class="font-medium">discovering</span> new customers.</p>
+    <table class="w-full text-sm">
+    <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
+      <${SortTh} k="channel" label="First-touch channel" sort=${sort} /><th class="py-1.5 pr-3 w-40"></th>
+      <${SortTh} k="users" label="Users" sort=${sort} right=${true} /><${SortTh} k="new_users" label="New users" sort=${sort} right=${true} />
+      <${SortTh} k="conversions" label="Conv." sort=${sort} right=${true} /></tr></thead>
+    <tbody>${sort.sort(rows).map((r) => html`<tr class="border-b border-slate-50">
+      <td class="py-1.5 pr-3 font-medium text-slate-800">${r.channel}</td>
+      <td class="py-1.5 pr-3">${bar(r.users, max)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.users)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.new_users)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.conversions)}</td>
+    </tr>`)}</tbody>
+  </table></div>`;
+}
+
+function GeoTable({ rows }) {
+  const sort = useSort('sessions', 'desc');
+  if (!rows.length) return html`<div class="p-6 text-center text-sm text-slate-400">No geographic data.</div>`;
+  const max = Math.max(...rows.map((r) => r.sessions || 0), 1);
+  return html`<div class="overflow-x-auto">
+    <p class="text-xs text-slate-500 mb-2">Where visitors are — for a local business, traffic clustering in the service area is a good sign; lots of out-of-area sessions can mean wasted spend or off-target content.</p>
+    <table class="w-full text-sm">
+    <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
+      <${SortTh} k="city" label="City" sort=${sort} /><th class="py-1.5 pr-3 w-40"></th>
+      <${SortTh} k="sessions" label="Sessions" sort=${sort} right=${true} /><${SortTh} k="users" label="Users" sort=${sort} right=${true} />
+      <${SortTh} k="conversions" label="Conv." sort=${sort} right=${true} /></tr></thead>
+    <tbody>${sort.sort(rows).map((r) => html`<tr class="border-b border-slate-50">
+      <td class="py-1.5 pr-3 text-slate-800">${r.city || '(not set)'}</td>
+      <td class="py-1.5 pr-3">${bar(r.sessions, max)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.sessions)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.users)}</td>
+      <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.conversions)}</td>
+    </tr>`)}</tbody>
+  </table></div>`;
+}
 
 function ChannelsTable({ rows }) {
   const sort = useSort('sessions', 'desc');

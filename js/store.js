@@ -367,6 +367,7 @@ export const seoGaConnect = () => seoInvokeGa('ga_connect');
 export const seoGaProperties = () => seoInvokeGa('ga_properties');
 export const seoGaSelectProperty = (p) => seoInvokeGa('ga_select_property', p);
 export const seoGaSync = () => seoInvokeGa('ga_sync');
+export const seoGaInsights = () => seoInvokeGa('ga_insights');
 export const seoGaDisconnect = () => seoInvokeGa('ga_disconnect');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
 export async function seoBriefSave(siteId, key, patch) {
