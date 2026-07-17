@@ -12,7 +12,8 @@ const money = (n) => '$' + Math.round(n || 0).toLocaleString();
 const posf = (n) => (n ? n.toFixed(1) : '—');
 const scoreColor = (s) => (s >= 70 ? '#10b981' : s >= 45 ? '#f59e0b' : '#f43f5e');
 const priColor = (p) => (p >= 80 ? 'bg-rose-100 text-rose-700' : p >= 65 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600');
-const recIcon = { optimize: '🎯', technical: '🩺', content: '✍️', competitor: '⚔️', ctr: '🔤', authority: '🔗', local: '📍' };
+const recIcon = { optimize: '🎯', technical: '🩺', content: '✍️', competitor: '⚔️', ctr: '🔤', authority: '🔗', local: '📍', analytics: '📶' };
+const pctInt = (n) => (n == null ? null : Math.round(n * 100) + '%');
 
 function Gauge({ score }) {
   const r = 46, c = 2 * Math.PI * r, off = c * (1 - (score || 0) / 100), col = scoreColor(score || 0);
@@ -41,6 +42,8 @@ export function Dashboard({ navigate }) {
   const genSummary = async () => { setBusy('ai'); setErr(''); try { const r = await seoOverviewAiSummary(site); setSummary(r.summary); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
 
   const s = ov?.stats;
+  const gaReady = !!(s && s.gaConnected && s.gaSessions != null);
+  const gaNote = s?.gaConnected ? 'sync in Analytics' : 'connect in Analytics';
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -91,6 +94,9 @@ export function Dashboard({ navigate }) {
           ['backlinks', '🔗', 'Authority', s.domainRank != null ? `rank ${s.domainRank}` : '—', `${num(s.refDomains)} referring domains`],
           ['competitors', '⚔️', 'Competitors', num(s.competitors), `${num(s.gap)} gap keywords`],
           ['keywords', '✍️', 'Content', `${num(s.briefs)} briefs`, `${num(s.striking)} striking-distance kw`],
+          ['analytics', '📶', 'Website traffic (GA4)', gaReady ? num(s.gaSessions) : '—', gaReady ? `${num(s.gaUsers)} users · ${pctInt(s.gaEngagement) || '—'} engaged${s.gaRange ? ` · ${s.gaRange}` : ''}` : gaNote],
+          ['analytics', '🤖', 'AI search', gaReady ? num(s.gaAiSessions) : '—', gaReady ? (s.gaAiSessions > 0 ? (s.gaAiEngines || []).join(', ') : 'no AI referrals yet') : gaNote],
+          ['analytics', '🎯', 'Conversions', gaReady ? num(s.gaConversions) : '—', gaReady ? (s.gaConversions > 0 ? 'key events tracked' : 'set up key events in GA4') : gaNote],
         ].map(([tab, icon, title, big, sub]) => html`<${Card}><button onClick=${() => navigate(tab)} class="w-full text-left p-4 hover:bg-slate-50">
             <div class="text-xl">${icon}</div>
             <div class="text-xs text-slate-400 mt-1">${title}</div>
