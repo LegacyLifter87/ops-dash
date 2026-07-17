@@ -401,6 +401,10 @@ export const seoTeamRemove = (userId) => seoInvokeTeam('remove_member', { userId
 export const seoAgencyList = () => seoInvokeTeam('agency_list', {});
 export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email });
 export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
+export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam('member_grant', { email, unrestricted, accountIds });
+export const seoMemberSetAccounts = (userId, accountIds) => seoInvokeTeam('member_set_accounts', { userId, accountIds });
+export const seoMemberSetTier = (userId, tier) => seoInvokeTeam('member_set_tier', { userId, tier });
+export const seoMemberRevoke = (userId) => seoInvokeTeam('member_revoke', { userId });
 export const seoTeamSetPassword = (userId, password) => seoInvokeTeam('set_password', { userId, password });
 export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { userId, mode });
 export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
