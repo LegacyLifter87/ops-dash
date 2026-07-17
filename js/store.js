@@ -352,6 +352,9 @@ export const seoAdsCustomers = () => seoInvokeAds('ads_customers');
 export const seoAdsSelectCustomer = (c) => seoInvokeAds('ads_select_customer', c);
 export const seoAdsSync = () => seoInvokeAds('ads_sync');
 export const seoAdsDisconnect = () => seoInvokeAds('ads_disconnect');
+// BYO developer token (agency only). Default is the shared platform token.
+export const seoAdsSetDevToken = (token, label) => seoInvokeAds('ads_set_dev_token', { token, label });
+export const seoAdsClearDevToken = () => seoInvokeAds('ads_clear_dev_token');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
 export async function seoBriefSave(siteId, key, patch) {
   const { error } = await supabase.from('seo_briefs').update(patch).eq('site_id', siteId).eq('cluster', key);

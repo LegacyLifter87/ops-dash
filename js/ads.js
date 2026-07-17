@@ -5,8 +5,8 @@
 // Live data needs app_secrets.google_ads_developer_token (Google-approved).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsDisconnect } from './store.js';
-import { Card, Btn, Select, Modal } from './ui.js';
+import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsDisconnect, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
+import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
 const Pill = ({ children, cls }) => html`<span class=${cx('inline-block px-2 py-0.5 rounded-full text-xs font-medium', cls)}>${children}</span>`;
@@ -87,6 +87,7 @@ export function Ads() {
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${inner}
+    ${st?.agency && html`<${DevTokenCard} st=${st} onChange=${load} />`}
     ${picker && html`<${CustomerPicker} customers=${picker} busy=${busy === 'pick'} onPick=${pick} onClose=${() => setPicker(null)} />`}
   </div>`;
 
@@ -141,6 +142,52 @@ export function Ads() {
         ${view === 'recommendations' && html`<${RecsTable} rows=${snaps.recommendations || []} />`}
       </div></${Card}>`}
   `);
+}
+
+// Agency-only. The default is ONE shared platform developer token covering every
+// connected client (Google's documented multi-user workflow) — this is the opt-in
+// override for a reseller who wants their own quota and API-terms accountability.
+function DevTokenCard({ st, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState('');
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const own = st.dev_token_own;
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await seoAdsSetDevToken(token.trim(), label.trim()); setToken(''); setLabel(''); setOpen(false); await onChange(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const clear = async () => {
+    if (!confirm('Remove this account\'s own developer token and fall back to the platform token?')) return;
+    setBusy(true); setErr('');
+    try { await seoAdsClearDevToken(); await onChange(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const srcPill = st.dev_token_source === 'account'
+    ? html`<${Pill} cls="bg-brand-100 text-brand-700">own token</${Pill}>`
+    : st.dev_token_source === 'platform'
+      ? html`<${Pill} cls="bg-slate-100 text-slate-600">platform token</${Pill}>`
+      : html`<${Pill} cls="bg-amber-100 text-amber-700">none configured</${Pill}>`;
+  return html`<${Card}><div class="p-4 space-y-2 text-sm">
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-2">
+        <span class="font-medium text-slate-700">Developer token</span>${srcPill}
+        ${own && html`<code class="text-xs text-slate-400">${own.masked}${own.label ? ' · ' + own.label : ''}</code>`}
+      </div>
+      <div class="flex gap-2">
+        ${own && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Use platform token</${Btn}>`}
+        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : own ? 'Replace' : 'Use own token'}</${Btn}>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500">One shared platform token covers every client that connects — clients never need their own. Override it here only if this account should bill against its own Google Ads API quota.</p>
+    ${open && html`<div class="space-y-2 pt-1">
+      <${Input} value=${token} onInput=${(e) => setToken(e.target.value)} placeholder="Developer token from Google Ads Manager → API Center" />
+      <${Input} value=${label} onInput=${(e) => setLabel(e.target.value)} placeholder="Label (e.g. Acme Agency MCC) — optional" />
+      <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save token'}</${Btn}>
+    </div>`}
+    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
+  </div></${Card}>`;
 }
 
 function CustomerPicker({ customers, busy, onPick, onClose }) {
