@@ -355,6 +355,19 @@ export const seoAdsDisconnect = () => seoInvokeAds('ads_disconnect');
 // BYO developer token (agency only). Default is the shared platform token.
 export const seoAdsSetDevToken = (token, label) => seoInvokeAds('ads_set_dev_token', { token, label });
 export const seoAdsClearDevToken = () => seoInvokeAds('ads_clear_dev_token');
+// --- Google Analytics 4 reporting (account-scoped; per-client OAuth) ---
+async function seoInvokeGa(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-ga', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoGaStatus = () => seoInvokeGa('ga_status');
+export const seoGaConnect = () => seoInvokeGa('ga_connect');
+export const seoGaProperties = () => seoInvokeGa('ga_properties');
+export const seoGaSelectProperty = (p) => seoInvokeGa('ga_select_property', p);
+export const seoGaSync = () => seoInvokeGa('ga_sync');
+export const seoGaDisconnect = () => seoInvokeGa('ga_disconnect');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
 export async function seoBriefSave(siteId, key, patch) {
   const { error } = await supabase.from('seo_briefs').update(patch).eq('site_id', siteId).eq('cluster', key);

@@ -14,6 +14,7 @@ import { Audit } from './audit.js';
 import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
 import { Ads } from './ads.js';
+import { Analytics } from './analytics.js';
 import { Team } from './team.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
@@ -27,6 +28,7 @@ const NAV = [
   { id: 'audit', label: 'Audit', icon: '🩺' },
   { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'ads', label: 'Google Ads', icon: '💰' },
+  { id: 'analytics', label: 'Analytics', icon: '📶' },
   { id: 'jt', label: 'Business', icon: '📊' },
   { id: 'team', label: 'Team', icon: '👥' },
 ];
@@ -149,6 +151,7 @@ function App() {
           ${view === 'audit' && html`<${Audit} />`}
           ${view === 'backlinks' && html`<${Backlinks} />`}
           ${view === 'ads' && html`<${Ads} />`}
+          ${view === 'analytics' && html`<${Analytics} />`}
           ${view === 'jt' && html`<${JobTracker} />`}
           ${view === 'team' && html`<${Team} />`}
         </main>
