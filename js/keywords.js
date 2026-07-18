@@ -280,7 +280,7 @@ function mdInline(raw) {
   if (last < s.length) parts.push(s.slice(last));
   return parts;
 }
-function mdRender(md) {
+export function mdRender(md) {
   const out = []; let list = null; let table = null; let quote = null;
   const flushList = () => { if (list) { out.push(html`<ul class="list-disc ml-5 space-y-1 text-slate-700">${list}</ul>`); list = null; } };
   const flushQuote = () => {

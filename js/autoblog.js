@@ -5,8 +5,9 @@
 // Approval ON: "Generate batch" → review → approve → auto-scheduled publishing.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove } from './store.js';
-import { Card, Btn, Select, Input } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove } from './store.js';
+import { Card, Btn, Select, Input, Modal } from './ui.js';
+import { mdRender } from './keywords.js';
 
 const CADENCE_OPTS = [[1, '1 / week'], [3, '3 / week'], [7, 'Daily'], [21, '3 / day']];
 const IMG_OPTS = [{ value: 'stock', label: 'Stock photos (Pexels, free)' }, { value: 'ai', label: 'AI-generated (uses credits)' }, { value: 'client', label: 'Client photos (Job Tracker)' }, { value: 'none', label: 'No images' }];
@@ -38,6 +39,9 @@ export function Autoblog() {
   const [banner, setBanner] = useState('');
   const [batchN, setBatchN] = useState(5);
   const [progress, setProgress] = useState('');
+  const [briefs, setBriefs] = useState(null);   // cached seo_briefs for this site
+  const [preview, setPreview] = useState(null);  // { row, brief }
+  const [pvBusy, setPvBusy] = useState(0);       // queueId being loaded/acted on
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }).catch((e) => setErr(e.message)); }, [accountId]);
 
@@ -51,9 +55,29 @@ export function Autoblog() {
       setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_source: s.image_source || 'stock' });
     } catch (e) { setErr(e.message); }
   };
-  useEffect(() => { if (site) { setSt(null); setCfg(null); load(site); } }, [site]);
+  useEffect(() => { if (site) { setSt(null); setCfg(null); setBriefs(null); setPreview(null); load(site); } }, [site]);
 
   const setC = (k, v) => setCfg((p) => ({ ...p, [k]: v }));
+
+  // Load & open the written draft for a queue row (brief cluster === its keyword).
+  const openPreview = async (row) => {
+    setPvBusy(row.id); setErr('');
+    try {
+      let bs = briefs;
+      if (!bs) { bs = await seoLoadBriefs(site); setBriefs(bs); }
+      const brief = (bs || []).find((b) => b.cluster === row.keyword);
+      if (!brief || !brief.content) { setErr('The written content for this post could not be loaded yet — try ↻ refresh.'); return; }
+      setPreview({ row, brief });
+    } catch (e) { setErr(e.message); } finally { setPvBusy(0); }
+  };
+  // Approve / reject / publish from inside the preview modal.
+  const pvAct = async (fn, label) => {
+    if (!preview) return;
+    const id = preview.row.id;
+    setPvBusy(id); setErr('');
+    try { const r = await fn(site, id); if (label) setBanner(label(r)); setPreview(null); await load(site); }
+    catch (e) { setErr(e.message); } finally { setPvBusy(0); }
+  };
 
   const save = async () => {
     // Live-publish + hands-free is the one combination worth confirming.
@@ -74,15 +98,15 @@ export function Autoblog() {
       for (let i = 0; i < planned.length; i++) {
         setProgress(`Writing ${i + 1} of ${planned.length}: “${planned[i].keyword}”…`);
         try { await seoAutoblogGenerateOne(site, planned[i].id); } catch (_) { /* row marked failed server-side */ }
-        await load(site);
+        setBriefs(null); await load(site);
       }
-      setBanner(`Generated ${planned.length} draft(s) — review and approve below.`);
+      setBanner(`Generated ${planned.length} draft(s) — click “read” to review, then approve.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); setProgress(''); }
   };
 
-  const rowAct = async (fn, id, label) => {
+  const rowAct = async (fn, id, label, invalidate) => {
     setRowBusy(id); setErr(''); setBanner('');
-    try { const r = await fn(site, id); if (label) setBanner(label(r)); await load(site); }
+    try { const r = await fn(site, id); if (label) setBanner(label(r)); if (invalidate) setBriefs(null); await load(site); }
     catch (e) { setErr(e.message); } finally { setRowBusy(0); }
   };
 
@@ -187,7 +211,8 @@ export function Autoblog() {
               </div>
               <div class="flex items-center gap-2 text-xs">
                 ${b && html`<span class="text-slate-400">working…</span>`}
-                ${!b && ['planned', 'failed'].includes(q.status) && html`<button onClick=${() => rowAct(q.status === 'failed' ? seoAutoblogRetry : seoAutoblogGenerateOne, q.id)} class="text-brand-700 hover:underline">${q.status === 'failed' ? 'retry' : 'write it'}</button>`}
+                ${!b && q.brief_id && html`<button onClick=${() => openPreview(q)} class="text-brand-700 hover:underline">${pvBusy === q.id ? '…' : '📖 read'}</button>`}
+                ${!b && ['planned', 'failed'].includes(q.status) && html`<button onClick=${() => rowAct(q.status === 'failed' ? seoAutoblogRetry : seoAutoblogGenerateOne, q.id, null, true)} class="text-brand-700 hover:underline">${q.status === 'failed' ? 'retry' : 'write it'}</button>`}
                 ${!b && ['pending_approval', 'drafted'].includes(q.status) && html`
                   <button onClick=${() => rowAct(seoAutoblogApprove, q.id, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)} class="text-emerald-700 font-medium hover:underline">approve</button>
                   <button onClick=${() => rowAct(seoAutoblogReject, q.id)} class="text-slate-400 hover:text-rose-600">reject</button>`}
@@ -200,5 +225,44 @@ export function Autoblog() {
           })}
         </div>`}
     </div></${Card}>`}
+
+    ${preview && html`<${PreviewModal} row=${preview.row} brief=${preview.brief} busy=${pvBusy === preview.row.id}
+      onClose=${() => setPreview(null)}
+      onApprove=${() => pvAct(seoAutoblogApprove, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)}
+      onReject=${() => pvAct(seoAutoblogReject)}
+      onPublish=${() => pvAct(seoAutoblogPublishOne, () => 'Published.')} />`}
   </div>`;
+}
+
+// Read-only preview of a generated draft, with approve/reject/publish inline.
+function PreviewModal({ row, brief, busy, onClose, onApprove, onReject, onPublish }) {
+  const st = row.status;
+  const footer = html`<div class="flex items-center justify-end gap-2 flex-wrap">
+    ${st === 'published' && brief.wp_link && html`<a href=${brief.wp_link} target="_blank" rel="noopener" class="text-sm text-brand-700 underline self-center mr-auto">view live ↗</a>`}
+    ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" onClick=${onReject} disabled=${busy}>Reject</${Btn}>`}
+    ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" variant="cta" onClick=${onApprove} disabled=${busy}>${busy ? 'Scheduling…' : '✓ Approve & schedule'}</${Btn}>`}
+    ${st === 'approved' && html`<${Btn} size="sm" variant="cta" onClick=${onPublish} disabled=${busy}>${busy ? 'Publishing…' : 'Publish now'}</${Btn}>`}
+    <${Btn} size="sm" onClick=${onClose}>Close</${Btn}>
+  </div>`;
+  return html`<${Modal} title=${brief.title || row.keyword} wide onClose=${onClose} footer=${footer}>
+    <div class="space-y-3 text-sm">
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <span class="px-2 py-0.5 rounded-full bg-brand-100 text-brand-700">${String(brief.format || brief.page_type || 'blog').replace('_', ' ')}</span>
+        ${brief.schema_type && html`<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</span>`}
+        ${brief.slug && html`<span class="text-slate-400">/${brief.slug}</span>`}
+        ${row.status === 'approved' && row.scheduled_for && html`<span class="text-emerald-700">🗓️ publishes ${new Date(row.scheduled_for).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>`}
+      </div>
+      <div class="rounded-lg bg-slate-50 p-3 space-y-1">
+        <div><span class="text-[11px] font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>
+        ${brief.h1 && html`<div><span class="text-[11px] font-semibold text-slate-400 uppercase">H1</span> <span class="text-slate-800">${brief.h1}</span></div>`}
+        <div><span class="text-[11px] font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
+      </div>
+      <div class="text-[11px] text-slate-400">📷 <span class="font-medium">[IMAGE: …]</span> markers below are filled with real photos at publish time, per your image setting.</div>
+      <article class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 border-t border-slate-100 pt-3">${mdRender(brief.content)}</article>
+      ${(brief.external_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100 text-xs">
+        <span class="font-semibold text-slate-400 uppercase">Authority sources</span>
+        <ul class="list-disc ml-5 text-slate-600 mt-1">${brief.external_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
+      </div>`}
+    </div>
+  </${Modal}>`;
 }
