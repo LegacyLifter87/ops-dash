@@ -4,7 +4,7 @@
 // active account changes. Admins connect/sync; members read.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, seoLoadPageHistory, getActiveAccountId } from './store.js';
+import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, seoLoadPageHistory, seoPageQueries, getActiveAccountId } from './store.js';
 import { Card, Btn, Select, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 import { SiteHealth } from './lighthouse.js';
@@ -220,7 +220,10 @@ function PTable({ rows, siteId }) {
 function PageHistoryModal({ siteId, page, onClose }) {
   const [rows, setRows] = useState(null);
   const [metric, setMetric] = useState('clicks');
+  const [qrows, setQrows] = useState(null);
+  const [qerr, setQerr] = useState('');
   useEffect(() => { setRows(null); seoLoadPageHistory(siteId, page).then(setRows).catch(() => setRows([])); }, [siteId, page]);
+  useEffect(() => { setQrows(null); setQerr(''); seoPageQueries(siteId, page).then((d) => setQrows(d.queries || [])).catch((e) => { setQrows([]); setQerr(e.message); }); }, [siteId, page]);
   const nowMk = new Date().toISOString().slice(0, 7);
   const partialMk = rows && rows.length && rows[rows.length - 1].month === nowMk ? nowMk : null;
   const footer = html`<div class="flex justify-end"><${Btn} size="sm" onClick=${onClose}>Close</${Btn}></div>`;
@@ -228,13 +231,13 @@ function PageHistoryModal({ siteId, page, onClose }) {
     <div class="space-y-3 text-sm">
       <a href=${page} target="_blank" rel="noopener" class="text-xs text-brand-700 underline break-all">${page}</a>
       ${rows === null ? html`<div class="p-6 text-center text-slate-400">Loading…</div>`
-        : rows.length === 0 ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">No monthly history for this page yet. Build (or rebuild) the 12-month history in the <span class="font-medium">Trends</span> tab — it now includes per-page data — then reopen this.</div></${Card}>`
+        : rows.length === 0 ? html`<${Card}><div class="p-4 text-center text-sm text-slate-500">No monthly history for this page yet. Build (or rebuild) the 12-month history in the <span class="font-medium">Trends</span> tab — it now includes per-page data — then reopen this.</div></${Card}>`
         : html`
           <div class="flex items-center gap-1 flex-wrap">
             ${HIST_METRICS.map(([id, label]) => html`<button onClick=${() => setMetric(id)} class=${cx('px-2.5 py-1 rounded-full text-xs border', metric === id ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>${label}</button>`)}
           </div>
           <${Chart} months=${rows} metric=${metric} partialMk=${partialMk} />
-          <div class="overflow-x-auto max-h-[40vh] overflow-y-auto"><table class="w-full text-sm">
+          <div class="overflow-x-auto max-h-[38vh] overflow-y-auto"><table class="w-full text-sm">
             <thead class="sticky top-0 bg-white"><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-1.5 pr-3">Month</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Clicks</th><th class="py-1.5 pr-3 text-right">CTR</th><th class="py-1.5 pr-3 text-right">Pos.</th></tr></thead>
             <tbody>${[...rows].reverse().map((m) => html`<tr class="border-b border-slate-50">
               <td class="py-1.5 pr-3">${m.month}${m.month === partialMk ? ' · in progress' : ''}</td>
@@ -244,6 +247,24 @@ function PageHistoryModal({ siteId, page, onClose }) {
               <td class="py-1.5 pr-3 text-right tabular-nums">${posf(m.position)}</td>
             </tr>`)}</tbody>
           </table></div>`}
+
+      <div class="pt-2 border-t border-slate-100">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Queries driving this page <span class="text-[11px] font-normal text-slate-400">last 90 days · Δ clicks vs prior 90</span></div>
+        ${qrows === null ? html`<div class="text-xs text-slate-400 py-3">Loading queries from Search Console…</div>`
+          : qerr ? html`<div class="text-xs text-rose-500">${qerr}</div>`
+          : qrows.length === 0 ? html`<div class="text-xs text-slate-400 py-2">No query data for this page in the last 90 days.</div>`
+          : html`<div class="overflow-x-auto max-h-[38vh] overflow-y-auto"><table class="w-full text-sm">
+            <thead class="sticky top-0 bg-white"><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-1.5 pr-3">Query</th><th class="py-1.5 pr-3 text-right">Clicks</th><th class="py-1.5 pr-3 text-right">Δ</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">CTR</th><th class="py-1.5 pr-3 text-right">Pos.</th></tr></thead>
+            <tbody>${qrows.map((r) => html`<tr class="border-b border-slate-50">
+              <td class="py-1.5 pr-3 max-w-xs truncate" title=${r.query}>${r.query}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.clicks)}</td>
+              <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-rose-600' : 'text-slate-300')}>${r.delta > 0 ? '+' : ''}${num(r.delta)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.impressions)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${pctf(r.ctr)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${posf(r.position)}</td>
+            </tr>`)}</tbody>
+          </table></div>`}
+      </div>
     </div>
   </${Modal}>`;
 }

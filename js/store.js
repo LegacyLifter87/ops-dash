@@ -129,6 +129,8 @@ export async function seoLoadPageHistory(siteId, page) {
   const { data } = await supabase.from('seo_monthly_pages').select('month,clicks,impressions,ctr,position').eq('site_id', siteId).eq('page', page).order('month');
   return data || [];
 }
+// Live: top queries driving one page (recent 90 days vs prior 90) via seo-gsc.
+export const seoPageQueries = (siteId, page) => seoInvoke('page_queries', { siteId, page });
 export async function seoLoadData(siteId) {
   if (!siteId) return { queries: [], pages: [] };
   // The SEO overview only uses the two most recent 28-day windows, but
