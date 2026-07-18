@@ -23,7 +23,7 @@ const DeltaBadge = ({ dd, label }) => dd == null
   ? html`<span class="text-[11px] text-slate-300">${label}: —</span>`
   : html`<span class=${cx('text-[11px] font-semibold', dd.good ? 'text-emerald-600' : 'text-rose-600')}>${label}: ${dd.d > 0 ? '▲' : '▼'}${Math.abs(dd.d).toFixed(0)}%</span>`;
 
-function Chart({ months, metric, partialMk }) {
+export function Chart({ months, metric, partialMk }) {
   const vals = months.map((m) => (metric === 'ctr' ? Number(m.ctr) * 100 : Number(m[metric])));
   const w = 640, h = 190, padB = 20, padL = 4;
   const bw = (w - padL * 2) / months.length;

@@ -4,11 +4,13 @@
 // active account changes. Admins connect/sync; members read.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, getActiveAccountId } from './store.js';
-import { Card, Btn, Select } from './ui.js';
+import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, seoLoadPageHistory, getActiveAccountId } from './store.js';
+import { Card, Btn, Select, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 import { SiteHealth } from './lighthouse.js';
-import { Trends } from './trends.js';
+import { Trends, Chart } from './trends.js';
+
+const HIST_METRICS = [['clicks', 'Clicks'], ['impressions', 'Impressions'], ['ctr', 'CTR'], ['position', 'Avg position']];
 
 const pctf = (n) => `${(n * 100).toFixed(1)}%`;
 const num = (n) => (n || 0).toLocaleString();
@@ -143,7 +145,7 @@ export function SEO() {
               ${tab === 'lowctr' && html`<${QTable} caption="Ranking well but under-earning clicks — rewrite the title/meta and add an FAQ to lift CTR." rows=${views.lowCtr} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
               ${tab === 'rising' && html`<${QTable} caption="Queries gaining impressions vs the prior 28 days (★ = new)." rows=${views.rising} cols=${['query', 'impressions', 'delta', 'clicks', 'position']} />`}
               ${tab === 'cannibal' && html`<${QTable} caption="One query spread across multiple pages — consolidate or differentiate to stop self-competition." rows=${views.cannibal} cols=${['query', 'pageCount', 'impressions', 'clicks', 'position']} />`}
-              ${tab === 'pages' && html`<${PTable} rows=${views.pages} />`}
+              ${tab === 'pages' && html`<${PTable} rows=${views.pages} siteId=${activeSite} />`}
             `}
       `}
   </div>`;
@@ -183,27 +185,65 @@ function QTable({ caption, rows, cols }) {
     </table></div>
   </div></${Card}>`;
 }
-function PTable({ rows }) {
+function PTable({ rows, siteId }) {
   const sort = useSort('clicks', 'desc');
   const [q, setQ] = useState('');
+  const [hist, setHist] = useState(null);
   const CAP = 500;
   const filtered = q ? rows.filter((r) => String(r.page).toLowerCase().includes(q.toLowerCase())) : rows;
   const sorted = sort.sort(filtered, { ctr: (r) => (r.impressions ? r.clicks / r.impressions : 0) });
   const shown = sorted.slice(0, CAP);
   return html`<${Card}><div class="p-3">
     <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
-      <p class="text-xs text-slate-500">Every page with Search impressions in the last 28 days (${num(rows.length)}). Click a column to sort.</p>
+      <p class="text-xs text-slate-500">Every page with Search impressions in the last 28 days (${num(rows.length)}). Click a column to sort, or 📈 for a page's 12-month history.</p>
       <input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder="Filter by URL…" class="text-sm px-2.5 py-1.5 border border-slate-200 rounded-lg w-full sm:w-56 focus:outline-none focus:border-brand-400" />
     </div>
     <div class="overflow-x-auto max-h-[70vh] overflow-y-auto"><table class="w-full text-sm">
       <thead class="sticky top-0 bg-white"><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><${SortTh} k="page" label="Page" sort=${sort} /><${SortTh} k="impressions" label="Impr." sort=${sort} right=${true} /><${SortTh} k="clicks" label="Clicks" sort=${sort} right=${true} /><${SortTh} k="ctr" label="CTR" sort=${sort} right=${true} /><${SortTh} k="position" label="Pos." sort=${sort} right=${true} /></tr></thead>
       <tbody>${shown.map((r) => html`<tr class="border-b border-slate-50">
-        <td class="py-1.5 pr-3 max-w-sm truncate"><a href=${r.page} target="_blank" rel="noopener" class="text-brand-700 hover:underline">${short(r.page)}</a></td>
+        <td class="py-1.5 pr-3 max-w-sm"><div class="flex items-center gap-1.5 min-w-0">
+          <button onClick=${() => setHist(r.page)} title="View 12-month history for this page" class="text-slate-400 hover:text-brand-600 shrink-0">📈</button>
+          <a href=${r.page} target="_blank" rel="noopener" class="text-brand-700 hover:underline truncate">${short(r.page)}</a>
+        </div></td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.impressions)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${num(r.clicks)}</td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${pctf(r.impressions ? r.clicks / r.impressions : 0)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${posf(r.position)}</td>
       </tr>`)}</tbody>
     </table></div>
     ${sorted.length > CAP && html`<p class="text-xs text-slate-400 pt-2">Showing the top ${CAP} of ${num(sorted.length)} — type in the filter to find a specific page.</p>`}
     ${q && sorted.length === 0 && html`<p class="text-xs text-slate-400 pt-2">No pages match “${q}”.</p>`}
+    ${hist && html`<${PageHistoryModal} siteId=${siteId} page=${hist} onClose=${() => setHist(null)} />`}
   </div></${Card}>`;
+}
+
+// Drill-in: one page's clicks/impressions/CTR/position charted across the
+// 12-month history (seo_monthly_pages), with a month-by-month table.
+function PageHistoryModal({ siteId, page, onClose }) {
+  const [rows, setRows] = useState(null);
+  const [metric, setMetric] = useState('clicks');
+  useEffect(() => { setRows(null); seoLoadPageHistory(siteId, page).then(setRows).catch(() => setRows([])); }, [siteId, page]);
+  const nowMk = new Date().toISOString().slice(0, 7);
+  const partialMk = rows && rows.length && rows[rows.length - 1].month === nowMk ? nowMk : null;
+  const footer = html`<div class="flex justify-end"><${Btn} size="sm" onClick=${onClose}>Close</${Btn}></div>`;
+  return html`<${Modal} title="Page history" wide onClose=${onClose} footer=${footer}>
+    <div class="space-y-3 text-sm">
+      <a href=${page} target="_blank" rel="noopener" class="text-xs text-brand-700 underline break-all">${page}</a>
+      ${rows === null ? html`<div class="p-6 text-center text-slate-400">Loading…</div>`
+        : rows.length === 0 ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">No monthly history for this page yet. Build (or rebuild) the 12-month history in the <span class="font-medium">Trends</span> tab — it now includes per-page data — then reopen this.</div></${Card}>`
+        : html`
+          <div class="flex items-center gap-1 flex-wrap">
+            ${HIST_METRICS.map(([id, label]) => html`<button onClick=${() => setMetric(id)} class=${cx('px-2.5 py-1 rounded-full text-xs border', metric === id ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300')}>${label}</button>`)}
+          </div>
+          <${Chart} months=${rows} metric=${metric} partialMk=${partialMk} />
+          <div class="overflow-x-auto max-h-[40vh] overflow-y-auto"><table class="w-full text-sm">
+            <thead class="sticky top-0 bg-white"><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-1.5 pr-3">Month</th><th class="py-1.5 pr-3 text-right">Impr.</th><th class="py-1.5 pr-3 text-right">Clicks</th><th class="py-1.5 pr-3 text-right">CTR</th><th class="py-1.5 pr-3 text-right">Pos.</th></tr></thead>
+            <tbody>${[...rows].reverse().map((m) => html`<tr class="border-b border-slate-50">
+              <td class="py-1.5 pr-3">${m.month}${m.month === partialMk ? ' · in progress' : ''}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${num(m.impressions)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${num(m.clicks)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${pctf(m.impressions ? m.clicks / m.impressions : 0)}</td>
+              <td class="py-1.5 pr-3 text-right tabular-nums">${posf(m.position)}</td>
+            </tr>`)}</tbody>
+          </table></div>`}
+    </div>
+  </${Modal}>`;
 }

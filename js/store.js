@@ -123,6 +123,12 @@ export async function seoLoadMonthlyQueries(siteId, sinceMonth) {
   const { data } = await q.limit(10000);
   return data || [];
 }
+// 12-month history for one specific page (seo_monthly_pages).
+export async function seoLoadPageHistory(siteId, page) {
+  if (!siteId || !page) return [];
+  const { data } = await supabase.from('seo_monthly_pages').select('month,clicks,impressions,ctr,position').eq('site_id', siteId).eq('page', page).order('month');
+  return data || [];
+}
 export async function seoLoadData(siteId) {
   if (!siteId) return { queries: [], pages: [] };
   // The SEO overview only uses the two most recent 28-day windows, but
