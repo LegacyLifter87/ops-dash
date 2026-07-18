@@ -91,11 +91,20 @@ export function SEO() {
       ${banner && html`<${Note} onClose=${() => setBanner('')}>${banner}</${Note}>`}
       ${err && html`<${Note} err>${err}</${Note}>`}
       <${Card}><div class="p-6 text-center space-y-3">
-        <div class="text-4xl">🔍</div>
-        <div class="font-semibold text-slate-800">Connect Google Search Console</div>
-        <p class="text-sm text-slate-500 max-w-md mx-auto">Pull the real queries this account's sites already rank for — impressions, clicks, CTR, and position — and surface the ranking opportunities hiding in the data.</p>
-        ${isAdmin ? html`<${Btn} onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Connect Google Search Console'}</${Btn}>`
-          : html`<p class="text-sm text-slate-400">Ask an account admin to connect Search Console.</p>`}
+        ${status.needs_reconnect
+          ? html`
+            <div class="text-4xl">🔌</div>
+            <div class="font-semibold text-slate-800">Reconnect Google Search Console</div>
+            <p class="text-sm text-amber-700 max-w-md mx-auto">${status.reconnect_hint || "Your Google connection expired and needs to be reconnected."}</p>
+            ${status.email && html`<p class="text-xs text-slate-400">Was connected as ${status.email}.</p>`}
+            ${isAdmin ? html`<${Btn} onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Reconnect Google'}</${Btn}>`
+              : html`<p class="text-sm text-slate-400">Ask an account admin to reconnect Search Console.</p>`}`
+          : html`
+            <div class="text-4xl">🔍</div>
+            <div class="font-semibold text-slate-800">Connect Google Search Console</div>
+            <p class="text-sm text-slate-500 max-w-md mx-auto">Pull the real queries this account's sites already rank for — impressions, clicks, CTR, and position — and surface the ranking opportunities hiding in the data.</p>
+            ${isAdmin ? html`<${Btn} onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Connect Google Search Console'}</${Btn}>`
+              : html`<p class="text-sm text-slate-400">Ask an account admin to connect Search Console.</p>`}`}
       </div></${Card}>
     </div>`;
   }
