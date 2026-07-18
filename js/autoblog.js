@@ -6,8 +6,10 @@
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove } from './store.js';
-import { Card, Btn, Select, Input, Modal } from './ui.js';
+import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
 import { mdRender } from './keywords.js';
+
+const REJECT_REASONS = ['Off-topic / wrong angle', 'Weak or generic writing', 'Wrong tone or voice', 'Factually off', 'Not worth targeting'];
 
 const CADENCE_OPTS = [[1, '1 / week'], [3, '3 / week'], [7, 'Daily'], [21, '3 / day']];
 const IMG_OPTS = [{ value: 'stock', label: 'Stock photos (Pexels, free)' }, { value: 'ai', label: 'AI-generated (uses credits)' }, { value: 'client', label: 'Client photos (Job Tracker)' }, { value: 'none', label: 'No images' }];
@@ -42,6 +44,7 @@ export function Autoblog() {
   const [briefs, setBriefs] = useState(null);   // cached seo_briefs for this site
   const [preview, setPreview] = useState(null);  // { row, brief }
   const [pvBusy, setPvBusy] = useState(0);       // queueId being loaded/acted on
+  const [reject, setReject] = useState(null);    // { id, keyword } — row being rejected
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }).catch((e) => setErr(e.message)); }, [accountId]);
 
@@ -108,6 +111,17 @@ export function Autoblog() {
     setRowBusy(id); setErr(''); setBanner('');
     try { const r = await fn(site, id); if (label) setBanner(label(r)); if (invalidate) setBriefs(null); await load(site); }
     catch (e) { setErr(e.message); } finally { setRowBusy(0); }
+  };
+
+  // Reject with a reason (feeds the generator's learning; optionally blocks the keyword).
+  const doReject = async (reason, markNeg) => {
+    const id = reject?.id; if (!id) return;
+    setReject(null); setPreview(null); setRowBusy(id); setErr(''); setBanner('');
+    try {
+      await seoAutoblogReject(site, id, reason, markNeg);
+      setBanner(markNeg ? 'Rejected — and that keyword is now blocked from future blogging.' : 'Rejected. The generator will learn from this.');
+      setBriefs(null); await load(site);
+    } catch (e) { setErr(e.message); } finally { setRowBusy(0); }
   };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
@@ -215,10 +229,10 @@ export function Autoblog() {
                 ${!b && ['planned', 'failed'].includes(q.status) && html`<button onClick=${() => rowAct(q.status === 'failed' ? seoAutoblogRetry : seoAutoblogGenerateOne, q.id, null, true)} class="text-brand-700 hover:underline">${q.status === 'failed' ? 'retry' : 'write it'}</button>`}
                 ${!b && ['pending_approval', 'drafted'].includes(q.status) && html`
                   <button onClick=${() => rowAct(seoAutoblogApprove, q.id, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)} class="text-emerald-700 font-medium hover:underline">approve</button>
-                  <button onClick=${() => rowAct(seoAutoblogReject, q.id)} class="text-slate-400 hover:text-rose-600">reject</button>`}
+                  <button onClick=${() => setReject({ id: q.id, keyword: q.keyword })} class="text-slate-400 hover:text-rose-600">reject</button>`}
                 ${!b && q.status === 'approved' && html`
                   <button onClick=${() => rowAct(seoAutoblogPublishOne, q.id, () => 'Published.')} class="text-emerald-700 hover:underline">publish now</button>
-                  <button onClick=${() => rowAct(seoAutoblogReject, q.id)} class="text-slate-400 hover:text-rose-600">cancel</button>`}
+                  <button onClick=${() => setReject({ id: q.id, keyword: q.keyword })} class="text-slate-400 hover:text-rose-600">cancel</button>`}
                 ${!b && ['planned', 'failed', 'rejected', 'drafted', 'pending_approval'].includes(q.status) && html`<button onClick=${() => rowAct(seoAutoblogRemove, q.id)} class="text-slate-300 hover:text-rose-600">✕</button>`}
               </div>
             </div>`;
@@ -229,9 +243,36 @@ export function Autoblog() {
     ${preview && html`<${PreviewModal} row=${preview.row} brief=${preview.brief} busy=${pvBusy === preview.row.id}
       onClose=${() => setPreview(null)}
       onApprove=${() => pvAct(seoAutoblogApprove, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)}
-      onReject=${() => pvAct(seoAutoblogReject)}
+      onReject=${() => setReject({ id: preview.row.id, keyword: preview.row.keyword })}
       onPublish=${() => pvAct(seoAutoblogPublishOne, () => 'Published.')} />`}
+
+    ${reject && html`<${RejectModal} keyword=${reject.keyword} onClose=${() => setReject(null)} onConfirm=${doReject} />`}
   </div>`;
+}
+
+// Capture WHY a draft was rejected — the reason trains the generator, and the
+// optional toggle blocks the keyword from ever being written/auto-pulled again.
+function RejectModal({ keyword, onClose, onConfirm }) {
+  const [sel, setSel] = useState('');
+  const [note, setNote] = useState('');
+  const [neg, setNeg] = useState(false);
+  const pick = (r) => { setSel(r); if (r === 'Not worth targeting') setNeg(true); };
+  const reason = [sel, note.trim()].filter(Boolean).join(' — ') || null;
+  const footer = html`<div class="flex items-center justify-end gap-2">
+    <${Btn} size="sm" onClick=${onClose}>Cancel</${Btn}>
+    <${Btn} size="sm" variant="cta" onClick=${() => onConfirm(reason, neg)} disabled=${!sel && !note.trim()}>Reject</${Btn}>
+  </div>`;
+  return html`<${Modal} title="Reject this draft" onClose=${onClose} footer=${footer}>
+    <div class="space-y-3 text-sm">
+      <p class="text-xs text-slate-500">Tell the generator why — it learns from your reasons and stops repeating what you reject.</p>
+      <div class="flex flex-wrap gap-2">${REJECT_REASONS.map((r) => html`<button onClick=${() => pick(r)} class=${cx('px-3 py-1.5 rounded-lg border text-sm', sel === r ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}>${r}</button>`)}</div>
+      <${Textarea} value=${note} onInput=${setNote} rows=${2} placeholder="Optional: a specific note on what to fix or avoid…" />
+      ${keyword && html`<label class="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 p-2.5">
+        <input type="checkbox" checked=${neg} onChange=${(e) => setNeg(e.target.checked)} class="accent-rose-600 w-4 h-4 mt-0.5" />
+        <span><span class="font-medium text-slate-800">Also block “${keyword}” from future blogging</span><span class="block text-xs text-slate-500">Adds it to negative keywords — never auto-pulled or written again, at any opportunity score. Queues as a Google Ads negative too.</span></span>
+      </label>`}
+    </div>
+  </${Modal}>`;
 }
 
 // Read-only preview of a generated draft, with approve/reject/publish inline.

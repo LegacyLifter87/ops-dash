@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -43,12 +43,16 @@ export function Keywords() {
   const [wpBusy, setWpBusy] = useState(false);
   const [wpNotice, setWpNotice] = useState('');
   const [wpErr, setWpErr] = useState('');
+  const [negatives, setNegatives] = useState([]);
+  const [adsConn, setAdsConn] = useState(false);
+  const [negBusy, setNegBusy] = useState('');
   const sortKw = useSort('opportunity', 'desc');
   const sortCl = useSort('count', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const loadKw = async (sid) => { setRows(await seoLoadKeywords(sid)); };
-  useEffect(() => { if (site) { loadKw(site); seoLoadBriefs(site).then(setBriefs); } else { setRows([]); setBriefs([]); } }, [site]);
+  const loadNegs = async (sid) => { try { const r = await seoListNegatives(sid); setNegatives(r.negatives || []); setAdsConn(!!r.ads_connected); } catch (_) { setNegatives([]); setAdsConn(false); } };
+  useEffect(() => { if (site) { loadKw(site); seoLoadBriefs(site).then(setBriefs); loadNegs(site); } else { setRows([]); setBriefs([]); setNegatives([]); } }, [site]);
   useEffect(() => { const s = (sites || []).find((x) => x.id === site); setBrand((s?.brand_terms || []).join(', ')); }, [site, sites]);
   useEffect(() => { const a = activeAccount(); if (a) { if (a.assumed_margin != null) setMarginPct(Math.round(a.assumed_margin * 100)); if (a.lead_rate != null) setLeadPct(+(a.lead_rate * 100).toFixed(1)); } }, [accountId]);
 
@@ -103,6 +107,18 @@ export function Keywords() {
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
   const openContent = (key, kind) => { setOpenKind(kind); setOpenCluster(key); };
   const saveBrief = async (key, patch) => { await seoBriefSave(site, key, patch); setBriefs(await seoLoadBriefs(site)); };
+
+  // --- Negative keywords: block from blogging (any opportunity) + queue for Ads ---
+  const negWords = useMemo(() => negatives.map((n) => String(n.keyword || '').toLowerCase().trim()).filter(Boolean), [negatives]);
+  const isNegExact = (kw) => negWords.includes(String(kw).toLowerCase().trim());
+  // phrase-level: a keyword is blocked if any negative phrase appears as a whole word-run inside it
+  const blockedBy = (kw) => { const s = ' ' + String(kw).toLowerCase() + ' '; return negatives.find((n) => s.includes(' ' + String(n.keyword).toLowerCase().trim() + ' ')); };
+  const toggleNeg = async (kw) => {
+    setNegBusy(kw); setErr('');
+    try { if (isNegExact(kw)) await seoClearNegative(site, kw); else await seoSetNegative(site, kw); await loadNegs(site); }
+    catch (e) { setErr(e.message); } finally { setNegBusy(''); }
+  };
+  const removeNeg = async (kw) => { setNegBusy(kw); setErr(''); try { await seoClearNegative(site, kw); await loadNegs(site); } catch (e) { setErr(e.message); } finally { setNegBusy(''); } };
 
   // --- WordPress publishing (Ops Dash Connector plugin) ---
   const loadWp = async (sid) => { try { setWp(await seoWpStatus(sid)); } catch (_) { setWp(null); } };
@@ -202,7 +218,7 @@ export function Keywords() {
 
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex gap-1 border-b border-slate-200">
-            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['briefs', `Briefs (${briefs.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
+            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['briefs', `Briefs (${briefs.length})`], ['negatives', `Negatives (${negatives.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
           </div>
           ${view === 'keywords' && html`<div class="ml-auto flex flex-wrap items-center gap-2">
             <${Input} value=${q} onInput=${setQ} placeholder="Search…" class="w-40" />
@@ -216,9 +232,9 @@ export function Keywords() {
               <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
                 <${SortTh} k="opportunity" label="Opp." sort=${sortKw} /><${SortTh} k="keyword" label="Keyword" sort=${sortKw} /><${SortTh} k="intent" label="Intent" sort=${sortKw} /><${SortTh} k="cluster" label="Cluster" sort=${sortKw} />
                 <${SortTh} k="impressions" label="Impr." sort=${sortKw} right=${true} /><${SortTh} k="volume" label="Vol." sort=${sortKw} right=${true} /><${SortTh} k="cpc" label="CPC" sort=${sortKw} right=${true} /><${SortTh} k="difficulty" label="Diff." sort=${sortKw} right=${true} /><${SortTh} k="position" label="Pos." sort=${sortKw} right=${true} /><${SortTh} k="est_value" label="$/mo" sort=${sortKw} right=${true} /><${SortTh} k="recommended_action" label="Recommended action" sort=${sortKw} /><th class="py-1.5 pr-3"></th></tr></thead>
-              <tbody>${sortKw.sort(filtered).slice(0, 250).map((k) => html`<tr class="border-b border-slate-50">
-                <td class="py-1.5 pr-3"><${Pill} cls=${oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
-                <td class="py-1.5 pr-3 font-medium text-slate-800 max-w-xs truncate">${k.keyword}</td>
+              <tbody>${sortKw.sort(filtered).slice(0, 250).map((k) => { const blk = blockedBy(k.keyword); const exact = isNegExact(k.keyword); return html`<tr class=${cx('border-b border-slate-50', blk && 'bg-slate-50/60')}>
+                <td class="py-1.5 pr-3"><${Pill} cls=${blk ? 'bg-slate-200 text-slate-400' : oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
+                <td class=${cx('py-1.5 pr-3 font-medium max-w-xs truncate', blk ? 'text-slate-400 line-through' : 'text-slate-800')} title=${blk ? `Blocked from blogging${exact ? '' : ` by negative “${blk.keyword}”`}` : ''}>${k.keyword}</td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[k.intent] || 'bg-slate-100 text-slate-600'}>${k.intent}</${Pill}></td>
                 <td class="py-1.5 pr-3 text-slate-500 truncate max-w-[8rem]">${k.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(k.impressions)}</td>
@@ -228,8 +244,10 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right tabular-nums">${posf(k.position)}</td>
                 <td class=${cx('py-1.5 pr-3 text-right tabular-nums font-medium', k.est_value > 0 ? 'text-emerald-700' : 'text-slate-300')}>${k.est_value > 0 ? money(k.est_value) : '—'}</td>
                 <td class="py-1.5 pr-3 text-slate-600">${k.recommended_action}</td>
-                <td class="py-1.5 pr-1 text-right"><button title=${briefFor(k.keyword) ? 'View the content written for this keyword' : 'Write a blog post or page targeting this keyword'} onClick=${() => openContent(k.keyword, 'keyword')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(k.keyword) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>${briefFor(k.keyword) ? 'View' : '✨'}</button></td>
-              </tr>`)}</tbody>
+                <td class="py-1.5 pr-1 text-right whitespace-nowrap">
+                  <button title=${exact ? 'Remove from negative keywords' : 'Mark negative — block from blogging & queue as an Ads negative'} onClick=${() => toggleNeg(k.keyword)} disabled=${negBusy === k.keyword} class=${cx('text-xs px-2 py-1 rounded-lg border mr-1 disabled:opacity-40', exact ? 'border-rose-300 text-rose-600 bg-rose-50' : 'border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-500')}>${negBusy === k.keyword ? '…' : '🚫'}</button>
+                  <button title=${briefFor(k.keyword) ? 'View the content written for this keyword' : 'Write a blog post or page targeting this keyword'} onClick=${() => openContent(k.keyword, 'keyword')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(k.keyword) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>${briefFor(k.keyword) ? 'View' : '✨'}</button></td>
+              </tr>`; })}</tbody>
             </table>
             ${filtered.length > 250 && html`<div class="text-xs text-slate-400 pt-2">Showing top 250 of ${num(filtered.length)}.</div>`}
           </div></${Card}>`
@@ -246,6 +264,20 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right"><button onClick=${() => openContent(c.cluster, 'cluster')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
               </tr>`)}</tbody>
             </table></div></${Card}>`
+          : view === 'negatives'
+          ? html`<${Card}><div class="p-4 space-y-3">
+              <div>
+                <div class="text-sm font-medium text-slate-700">Negative keywords</div>
+                <p class="text-xs text-slate-500 mt-0.5">Blocked from blogging — auto <span class="italic">and</span> manual, regardless of opportunity score. Match is phrase-level, so “${negatives[0]?.keyword || 'cheap'}” also blocks any keyword that contains it. ${adsConn ? 'Queued to push to your Google Ads campaigns as campaign negatives.' : 'They’ll push to Google Ads as campaign negatives once Ads is connected for this account.'}</p>
+              </div>
+              ${negatives.length === 0
+                ? html`<div class="py-8 text-center text-sm text-slate-400">No negative keywords yet. Hit <span class="text-rose-500">🚫</span> on any keyword to add one.</div>`
+                : html`<div class="flex flex-wrap gap-2">${negatives.map((n) => html`<span class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-sm bg-rose-50 text-rose-700 border border-rose-200">
+                    <span class="line-through decoration-rose-300">${n.keyword}</span>
+                    <button onClick=${() => removeNeg(n.keyword)} disabled=${negBusy === n.keyword} title="Remove — allow blogging & drop the Ads negative" class="w-5 h-5 rounded-full hover:bg-rose-100 text-rose-500 disabled:opacity-40">${negBusy === n.keyword ? '·' : '✕'}</button>
+                  </span>`)}</div>`}
+              <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
+            </div></${Card}>`
           : html`<div class="space-y-3">
             <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${() => loadWp(site)} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
             <${Card}><div class="p-3">
@@ -362,6 +394,18 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
     ${notice && html`<div class="text-sm text-emerald-700">${notice}</div>`}
     ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
   </div></${Card}>`;
+}
+
+// Free-text add for a negative term that may not exist in the GSC keyword list
+// (e.g. "cheap", "free", "jobs", "diy") — phrase-level, so it blocks any keyword
+// that contains it.
+function NegAdd({ onAdd, busy, existing }) {
+  const [v, setV] = useState('');
+  const submit = () => { const kw = v.trim(); if (!kw || (existing || []).includes(kw.toLowerCase())) { setV(''); return; } onAdd(kw); setV(''); };
+  return html`<div class="flex gap-2 items-center flex-wrap" onKeyDown=${(e) => e.key === 'Enter' && submit()}>
+    <div class="w-64"><${Input} value=${v} onInput=${setV} placeholder="Add a term to block (e.g. cheap, free, diy)…" /></div>
+    <${Btn} size="sm" onClick=${submit} disabled=${busy || !v.trim()}>Add negative</${Btn}>
+  </div>`;
 }
 
 // Mirrors the generator's server-side counter: strips markdown syntax so link

@@ -163,6 +163,11 @@ export async function seoLoadAudit(siteId) {
   return data || [];
 }
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
+// Negative keywords: exclude from blogging (auto + manual, any opportunity score)
+// and queue for Google Ads campaign-negative push. Match is phrase-level.
+export const seoListNegatives = (siteId) => seoInvokeKw('list_negatives', { siteId });
+export const seoSetNegative = (siteId, keyword, reason) => seoInvokeKw('set_negative', { siteId, keyword, reason });
+export const seoClearNegative = (siteId, keyword) => seoInvokeKw('clear_negative', { siteId, keyword });
 async function seoInvokeComp(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-competitors', { body: { action, accountId: getActiveAccountId(), ...extra } });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
@@ -417,8 +422,9 @@ export const seoAutoblogStatus = (siteId) => seoInvokeAutoblog('status', { siteI
 export const seoAutoblogSave = (siteId, cfg) => seoInvokeAutoblog('save_schedule', { siteId, ...cfg });
 export const seoAutoblogPlanBatch = (siteId, n) => seoInvokeAutoblog('plan_batch', { siteId, n });
 export const seoAutoblogGenerateOne = (siteId, queueId) => seoInvokeAutoblog('generate_one', { siteId, queueId });
-export const seoAutoblogApprove = (siteId, queueId) => seoInvokeAutoblog('approve', { siteId, queueId });
-export const seoAutoblogReject = (siteId, queueId) => seoInvokeAutoblog('reject', { siteId, queueId });
+export const seoAutoblogApprove = (siteId, queueId, reason) => seoInvokeAutoblog('approve', { siteId, queueId, reason });
+// reason feeds the generator's learning; markNegative also blocks the keyword from future blogging + queues an Ads negative.
+export const seoAutoblogReject = (siteId, queueId, reason, markNegative) => seoInvokeAutoblog('reject', { siteId, queueId, reason, mark_negative: !!markNegative });
 export const seoAutoblogPublishOne = (siteId, queueId) => seoInvokeAutoblog('publish_one', { siteId, queueId });
 export const seoAutoblogRetry = (siteId, queueId) => seoInvokeAutoblog('retry', { siteId, queueId });
 export const seoAutoblogRemove = (siteId, queueId) => seoInvokeAutoblog('remove', { siteId, queueId });
