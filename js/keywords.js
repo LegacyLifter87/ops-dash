@@ -186,7 +186,7 @@ export function Keywords() {
     </div>`;
   }
 
-  return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
+  return html`<div class="max-w-[1600px] mx-auto p-4 sm:p-6 space-y-4">
     <${Head} />
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
@@ -234,7 +234,7 @@ export function Keywords() {
                 <${SortTh} k="impressions" label="Impr." sort=${sortKw} right=${true} /><${SortTh} k="volume" label="Vol." sort=${sortKw} right=${true} /><${SortTh} k="cpc" label="CPC" sort=${sortKw} right=${true} /><${SortTh} k="difficulty" label="Diff." sort=${sortKw} right=${true} /><${SortTh} k="position" label="Pos." sort=${sortKw} right=${true} /><${SortTh} k="est_value" label="$/mo" sort=${sortKw} right=${true} /><${SortTh} k="recommended_action" label="Recommended action" sort=${sortKw} /><th class="py-1.5 pr-3"></th></tr></thead>
               <tbody>${sortKw.sort(filtered).slice(0, 250).map((k) => { const blk = blockedBy(k.keyword); const exact = isNegExact(k.keyword); return html`<tr class=${cx('border-b border-slate-50', blk && 'bg-slate-50/60')}>
                 <td class="py-1.5 pr-3"><${Pill} cls=${blk ? 'bg-slate-200 text-slate-400' : oppColor(k.opportunity)}>${k.opportunity}</${Pill}></td>
-                <td class=${cx('py-1.5 pr-3 font-medium max-w-xs truncate', blk ? 'text-slate-400 line-through' : 'text-slate-800')} title=${blk ? `Blocked from blogging${exact ? '' : ` by negative “${blk.keyword}”`}` : ''}>${k.keyword}</td>
+                <td class=${cx('py-1.5 pr-3 font-medium max-w-[16rem] truncate', blk ? 'text-slate-400 line-through' : 'text-slate-800')} title=${blk ? `Blocked from blogging${exact ? '' : ` by negative “${blk.keyword}”`}` : ''}>${k.keyword}</td>
                 <td class="py-1.5 pr-3"><${Pill} cls=${intentColor[k.intent] || 'bg-slate-100 text-slate-600'}>${k.intent}</${Pill}></td>
                 <td class="py-1.5 pr-3 text-slate-500 truncate max-w-[8rem]">${k.cluster}</td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">${num(k.impressions)}</td>
