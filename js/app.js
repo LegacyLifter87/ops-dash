@@ -15,6 +15,7 @@ import { Backlinks } from './backlinks.js';
 import { JobTracker } from './jt.js';
 import { Ads } from './ads.js';
 import { Analytics } from './analytics.js';
+import { Autoblog } from './autoblog.js';
 import { Team } from './team.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
@@ -22,6 +23,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
+  { id: 'autoblog', label: 'Automation', icon: '🤖' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
   { id: 'local', label: 'Local', icon: '📍' },
@@ -145,6 +147,7 @@ function App() {
           ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
           ${view === 'seo' && html`<${SEO} />`}
           ${view === 'keywords' && html`<${Keywords} />`}
+          ${view === 'autoblog' && html`<${Autoblog} />`}
           ${view === 'competitors' && html`<${Competitors} />`}
           ${view === 'ranks' && html`<${Ranks} />`}
           ${view === 'local' && html`<${Local} />`}

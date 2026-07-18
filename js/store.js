@@ -405,6 +405,23 @@ export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam
 export const seoMemberSetAccounts = (userId, accountIds) => seoInvokeTeam('member_set_accounts', { userId, accountIds });
 export const seoMemberSetTier = (userId, tier) => seoInvokeTeam('member_set_tier', { userId, tier });
 export const seoMemberRevoke = (userId) => seoInvokeTeam('member_revoke', { userId });
+
+// ── Blog automation (seo-autoblog) ──────────────────────────────────────────
+async function seoInvokeAutoblog(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-autoblog', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoAutoblogStatus = (siteId) => seoInvokeAutoblog('status', { siteId });
+export const seoAutoblogSave = (siteId, cfg) => seoInvokeAutoblog('save_schedule', { siteId, ...cfg });
+export const seoAutoblogPlanBatch = (siteId, n) => seoInvokeAutoblog('plan_batch', { siteId, n });
+export const seoAutoblogGenerateOne = (siteId, queueId) => seoInvokeAutoblog('generate_one', { siteId, queueId });
+export const seoAutoblogApprove = (siteId, queueId) => seoInvokeAutoblog('approve', { siteId, queueId });
+export const seoAutoblogReject = (siteId, queueId) => seoInvokeAutoblog('reject', { siteId, queueId });
+export const seoAutoblogPublishOne = (siteId, queueId) => seoInvokeAutoblog('publish_one', { siteId, queueId });
+export const seoAutoblogRetry = (siteId, queueId) => seoInvokeAutoblog('retry', { siteId, queueId });
+export const seoAutoblogRemove = (siteId, queueId) => seoInvokeAutoblog('remove', { siteId, queueId });
 export const seoTeamSetPassword = (userId, password) => seoInvokeTeam('set_password', { userId, password });
 export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { userId, mode });
 export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
