@@ -60,7 +60,7 @@ export function SEO() {
   const disconnect = async () => { if (!confirm('Disconnect Google Search Console?')) return; setBusy('disc'); setErr(''); try { await seoDisconnect(); await loadStatus(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const addSite = async (property) => { if (!property) return; setBusy('add'); setErr(''); try { const r = await seoAddSite(property); await loadStatus(); if (r.site) setActiveSite(r.site.id); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const removeSite = async (id) => { if (!confirm('Remove this site and its synced data?')) return; setBusy('rm'); try { await seoRemoveSite(id); if (activeSite === id) setActiveSite(''); await loadStatus(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
-  const sync = async () => { if (!activeSite) return; setBusy('sync'); setErr(''); try { const r = await seoSync(activeSite); setBanner(`Synced ${num(r.queries)} query rows.`); setData(await seoLoadData(activeSite)); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const sync = async () => { if (!activeSite) return; setBusy('sync'); setErr(''); try { const r = await seoSync(activeSite); setBanner(`Synced ${num(r.queries)} query rows and ${num(r.pages)} page rows.`); setData(await seoLoadData(activeSite)); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
 
   const views = useMemo(() => {
     const periods = [...new Set(data.queries.map((r) => r.period_start))].sort().reverse();
@@ -75,9 +75,9 @@ export function SEO() {
     const rising = curAgg.map((a) => { const p = prevMap.get(a.query); return { ...a, prevImp: p?.impressions || 0, isNew: !p, delta: a.impressions - (p?.impressions || 0) }; })
       .filter((a) => (a.isNew && a.impressions >= 10) || a.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 40);
     const curPages = data.pages.filter((r) => r.period_start === cur);
-    const topPages = [...curPages].sort((a, b) => b.clicks - a.clicks).slice(0, 25);
+    const pages = [...curPages].sort((a, b) => b.clicks - a.clicks);
     const totals = curAgg.reduce((t, a) => { t.clicks += a.clicks; t.impressions += a.impressions; t.posWt += a.position * a.impressions; return t; }, { clicks: 0, impressions: 0, posWt: 0 });
-    return { striking, lowCtr, cannibal, rising, topPages, stat: { queries: curAgg.length, clicks: totals.clicks, impressions: totals.impressions, ctr: totals.impressions ? totals.clicks / totals.impressions : 0, position: totals.impressions ? totals.posWt / totals.impressions : 0, striking: striking.length, cannibal: cannibal.length } };
+    return { striking, lowCtr, cannibal, rising, pages, stat: { queries: curAgg.length, clicks: totals.clicks, impressions: totals.impressions, ctr: totals.impressions ? totals.clicks / totals.impressions : 0, position: totals.impressions ? totals.posWt / totals.impressions : 0, striking: striking.length, cannibal: cannibal.length } };
   }, [data]);
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
@@ -100,7 +100,7 @@ export function SEO() {
 
   const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p));
   const site = (status.sites || []).find((s) => s.id === activeSite);
-  const tabs = [['health', '🩺 Site Health'], ['trends', '📈 Trends'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.topPages.length})`]];
+  const tabs = [['health', '🩺 Site Health'], ['trends', '📈 Trends'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.pages.length})`]];
 
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <${Header} />
@@ -143,7 +143,7 @@ export function SEO() {
               ${tab === 'lowctr' && html`<${QTable} caption="Ranking well but under-earning clicks — rewrite the title/meta and add an FAQ to lift CTR." rows=${views.lowCtr} cols=${['query', 'impressions', 'clicks', 'ctr', 'position']} />`}
               ${tab === 'rising' && html`<${QTable} caption="Queries gaining impressions vs the prior 28 days (★ = new)." rows=${views.rising} cols=${['query', 'impressions', 'delta', 'clicks', 'position']} />`}
               ${tab === 'cannibal' && html`<${QTable} caption="One query spread across multiple pages — consolidate or differentiate to stop self-competition." rows=${views.cannibal} cols=${['query', 'pageCount', 'impressions', 'clicks', 'position']} />`}
-              ${tab === 'pages' && html`<${PTable} rows=${views.topPages} />`}
+              ${tab === 'pages' && html`<${PTable} rows=${views.pages} />`}
             `}
       `}
   </div>`;
@@ -185,16 +185,25 @@ function QTable({ caption, rows, cols }) {
 }
 function PTable({ rows }) {
   const sort = useSort('clicks', 'desc');
-  const sorted = sort.sort(rows, { ctr: (r) => (r.impressions ? r.clicks / r.impressions : 0) });
+  const [q, setQ] = useState('');
+  const CAP = 500;
+  const filtered = q ? rows.filter((r) => String(r.page).toLowerCase().includes(q.toLowerCase())) : rows;
+  const sorted = sort.sort(filtered, { ctr: (r) => (r.impressions ? r.clicks / r.impressions : 0) });
+  const shown = sorted.slice(0, CAP);
   return html`<${Card}><div class="p-3">
-    <p class="text-xs text-slate-500 mb-2">Pages (last 28 days). Click a column to sort.</p>
-    <div class="overflow-x-auto"><table class="w-full text-sm">
-      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><${SortTh} k="page" label="Page" sort=${sort} /><${SortTh} k="impressions" label="Impr." sort=${sort} right=${true} /><${SortTh} k="clicks" label="Clicks" sort=${sort} right=${true} /><${SortTh} k="ctr" label="CTR" sort=${sort} right=${true} /><${SortTh} k="position" label="Pos." sort=${sort} right=${true} /></tr></thead>
-      <tbody>${sorted.map((r) => html`<tr class="border-b border-slate-50">
+    <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+      <p class="text-xs text-slate-500">Every page with Search impressions in the last 28 days (${num(rows.length)}). Click a column to sort.</p>
+      <input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder="Filter by URL…" class="text-sm px-2.5 py-1.5 border border-slate-200 rounded-lg w-full sm:w-56 focus:outline-none focus:border-brand-400" />
+    </div>
+    <div class="overflow-x-auto max-h-[70vh] overflow-y-auto"><table class="w-full text-sm">
+      <thead class="sticky top-0 bg-white"><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><${SortTh} k="page" label="Page" sort=${sort} /><${SortTh} k="impressions" label="Impr." sort=${sort} right=${true} /><${SortTh} k="clicks" label="Clicks" sort=${sort} right=${true} /><${SortTh} k="ctr" label="CTR" sort=${sort} right=${true} /><${SortTh} k="position" label="Pos." sort=${sort} right=${true} /></tr></thead>
+      <tbody>${shown.map((r) => html`<tr class="border-b border-slate-50">
         <td class="py-1.5 pr-3 max-w-sm truncate"><a href=${r.page} target="_blank" rel="noopener" class="text-brand-700 hover:underline">${short(r.page)}</a></td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${num(r.impressions)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${num(r.clicks)}</td>
         <td class="py-1.5 pr-3 text-right tabular-nums">${pctf(r.impressions ? r.clicks / r.impressions : 0)}</td><td class="py-1.5 pr-3 text-right tabular-nums">${posf(r.position)}</td>
       </tr>`)}</tbody>
     </table></div>
+    ${sorted.length > CAP && html`<p class="text-xs text-slate-400 pt-2">Showing the top ${CAP} of ${num(sorted.length)} — type in the filter to find a specific page.</p>`}
+    ${q && sorted.length === 0 && html`<p class="text-xs text-slate-400 pt-2">No pages match “${q}”.</p>`}
   </div></${Card}>`;
 }

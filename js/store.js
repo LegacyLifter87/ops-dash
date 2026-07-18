@@ -125,11 +125,28 @@ export async function seoLoadMonthlyQueries(siteId, sinceMonth) {
 }
 export async function seoLoadData(siteId) {
   if (!siteId) return { queries: [], pages: [] };
-  const [{ data: queries }, { data: pages }] = await Promise.all([
-    supabase.from('seo_queries').select('*').eq('site_id', siteId),
-    supabase.from('seo_pages').select('*').eq('site_id', siteId),
-  ]);
-  return { queries: queries || [], pages: pages || [] };
+  // The SEO overview only uses the two most recent 28-day windows, but
+  // seo_queries/seo_pages accumulate every synced window over time. Scope to the
+  // latest two periods and page through the rows so large sites (hundreds of
+  // pages / tens of thousands of query rows) aren't silently truncated by the
+  // API's row cap — that was capping the Pages list.
+  const { data: latest } = await supabase.from('seo_queries').select('period_start').eq('site_id', siteId).order('period_start', { ascending: false }).limit(1);
+  const cur = latest?.[0]?.period_start;
+  if (!cur) return { queries: [], pages: [] };
+  const { data: prevRow } = await supabase.from('seo_queries').select('period_start').eq('site_id', siteId).lt('period_start', cur).order('period_start', { ascending: false }).limit(1);
+  const periods = [cur, prevRow?.[0]?.period_start].filter(Boolean);
+  const pageAll = async (table) => {
+    const out = []; const N = 1000;
+    for (let from = 0; ; from += N) {
+      const { data, error } = await supabase.from(table).select('*').eq('site_id', siteId).in('period_start', periods).range(from, from + N - 1);
+      if (error || !data || !data.length) break;
+      out.push(...data);
+      if (data.length < N) break;
+    }
+    return out;
+  };
+  const [queries, pages] = await Promise.all([pageAll('seo_queries'), pageAll('seo_pages')]);
+  return { queries, pages };
 }
 export async function seoLoadSites() {
   const aid = getActiveAccountId();
