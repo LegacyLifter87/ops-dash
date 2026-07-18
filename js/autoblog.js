@@ -178,7 +178,7 @@ export function Autoblog() {
         <span>
           <span class="font-medium text-slate-800">Require approval before publishing</span>
           <span class="block text-xs text-slate-500">${cfg.approval_required
-            ? 'You generate a batch, review the drafts, and approve the ones to schedule. Nothing goes live without you.'
+            ? 'When on, the system auto-writes drafts on your cadence and holds them here for review — nothing publishes until you approve it. Approved posts then auto-schedule and publish themselves. (You can still generate a batch on demand.)'
             : 'Hands-free — the system writes and publishes on the cadence automatically. No review step.'}</span>
         </span>
       </label>
@@ -189,9 +189,13 @@ export function Autoblog() {
       </div>
     </div></${Card}>
 
+    ${approval && cfg.enabled && html`<${Card}><div class="p-4 text-sm text-slate-600">
+      <span class="font-medium text-amber-700">Auto-drafting is on.</span> The system checks every ~10 minutes and writes drafts on your cadence into the queue below for review — it keeps a rolling buffer ready and pauses new drafts once enough are waiting. Approve the ones you want and they auto-schedule and publish; <span class="font-medium">nothing posts until you approve it.</span> ${st?.schedule?.next_run_at ? `Next draft around ${when(st.schedule.next_run_at)}.` : ''}
+    </div></${Card}>`}
+
     ${approval && html`<${Card}><div class="p-4 space-y-3">
-      <div class="font-semibold text-slate-800">Generate a batch to review</div>
-      <p class="text-xs text-slate-400">Picks your most strategic un-written keywords and drafts them. Approve the keepers — they'll auto-schedule at your cadence and publish themselves.</p>
+      <div class="font-semibold text-slate-800">Generate a batch now</div>
+      <p class="text-xs text-slate-400">On-demand: picks your most strategic un-written keywords and drafts them immediately. Approve the keepers — they'll auto-schedule at your cadence and publish themselves.</p>
       <div class="flex items-end gap-2 flex-wrap">
         <div><label class="text-[11px] text-slate-400">How many</label><${Input} type="number" min="1" max="14" value=${batchN} onInput=${(v) => setBatchN(Math.max(1, Math.min(14, Number(v) || 1)))} class="w-24" /></div>
         <${Btn} onClick=${runBatch} disabled=${!!busy}>${busy === 'batch' ? 'Working…' : `✍️ Generate ${batchN} draft(s)`}</${Btn}>
