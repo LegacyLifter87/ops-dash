@@ -2,14 +2,64 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
+ * Update URI: https://ops.legacybuilder.app/opsdash-connector
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.5.0');
+define('OPSDASH_VERSION', '1.6.0');
+define('OPSDASH_UPDATE_MANIFEST', 'https://ops.legacybuilder.app/plugin-update.json');
+// Any update package must come from this exact HTTPS origin. Without this a
+// tampered manifest could point WordPress at an arbitrary zip and install it.
+define('OPSDASH_PACKAGE_ORIGIN', 'https://ops.legacybuilder.app/');
+
+// ---------------------------------------------------------------------------
+// Self-updating: because the plugin header above declares an "Update URI" whose
+// host is not wordpress.org, WordPress 5.8+ hands the update check for THIS
+// plugin to the filter below instead of querying the .org repository.
+// ---------------------------------------------------------------------------
+function opsdash_remote_manifest() {
+	$cached = get_transient('opsdash_update_manifest');
+	if ($cached !== false) return is_array($cached) ? $cached : [];
+	$res = wp_remote_get(OPSDASH_UPDATE_MANIFEST, ['timeout' => 8, 'headers' => ['Accept' => 'application/json']]);
+	$data = [];
+	if (!is_wp_error($res) && (int) wp_remote_retrieve_response_code($res) === 200) {
+		$decoded = json_decode(wp_remote_retrieve_body($res), true);
+		if (is_array($decoded)) $data = $decoded;
+	}
+	// Refuse anything not served from our own origin.
+	if (!empty($data['package']) && stripos((string) $data['package'], OPSDASH_PACKAGE_ORIGIN) !== 0) $data = [];
+	// Short cache on failure so a blip doesn't stall updates for hours.
+	set_transient('opsdash_update_manifest', $data, $data ? 6 * HOUR_IN_SECONDS : 15 * MINUTE_IN_SECONDS);
+	return $data;
+}
+
+add_filter('update_plugins_ops.legacybuilder.app', function ($update, $plugin_data, $plugin_file, $locales) {
+	if ($plugin_file !== plugin_basename(__FILE__)) return $update;
+	$info = opsdash_remote_manifest();
+	if (empty($info['version']) || empty($info['package'])) return $update;
+	if (version_compare((string) $info['version'], OPSDASH_VERSION, '<=')) return $update;
+	return [
+		'slug'         => 'opsdash-connector',
+		'version'      => (string) $info['version'],
+		'url'          => (string) ($info['url'] ?? 'https://ops.legacybuilder.app'),
+		'package'      => (string) $info['package'],
+		'tested'       => (string) ($info['tested'] ?? ''),
+		'requires_php' => (string) ($info['requires_php'] ?? ''),
+	];
+}, 10, 4);
+
+// Install those updates unattended. Kill switch for a specific site: drop
+// add_filter('opsdash_allow_auto_update', '__return_false'); into a mu-plugin.
+add_filter('auto_update_plugin', function ($update, $item) {
+	if (!empty($item->plugin) && $item->plugin === plugin_basename(__FILE__)) {
+		return (bool) apply_filters('opsdash_allow_auto_update', true);
+	}
+	return $update;
+}, 10, 2);
 
 // Post types this plugin is ever allowed to create or modify. Everything else
 // on the site (products, templates, attachments, menu items) is off limits.
