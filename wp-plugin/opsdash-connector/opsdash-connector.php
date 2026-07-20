@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -10,7 +10,13 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.6.0');
+// If a second copy of this plugin is present (a stray folder left behind by a
+// failed update, or a duplicate upload), loading it again would fatal the whole
+// site with "Cannot redeclare opsdash_auth()". Bail out quietly instead — the
+// first copy stays in charge and the site keeps working.
+if (defined('OPSDASH_VERSION')) return;
+
+define('OPSDASH_VERSION', '1.6.1');
 define('OPSDASH_UPDATE_MANIFEST', 'https://ops.legacybuilder.app/plugin-update.json');
 // Any update package must come from this exact HTTPS origin. Without this a
 // tampered manifest could point WordPress at an arbitrary zip and install it.
