@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoSiteAuditRun, seoSiteAuditLoad, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -25,12 +25,20 @@ export function Audit() {
   const [banner, setBanner] = useState('');
   const [openUrl, setOpenUrl] = useState(null);
   const [wpConnected, setWpConnected] = useState(false);
+  const [siteAudit, setSiteAudit] = useState(null);
   const sort = useSort('technical_score', 'asc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (sid) => setPages(await seoLoadAudit(sid));
   useEffect(() => { if (site) load(site); else setPages([]); }, [site]);
   useEffect(() => { setWpConnected(false); if (site) seoWpStatus(site).then((w) => setWpConnected(!!w?.connected)).catch(() => {}); }, [site]);
+  useEffect(() => { setSiteAudit(null); if (site) seoSiteAuditLoad(site).then((d) => setSiteAudit(d.audit)).catch(() => {}); }, [site]);
+
+  const runSiteAudit = async () => {
+    setBusy('seo'); setErr(''); setBanner('');
+    try { const d = await seoSiteAuditRun(site); setSiteAudit(d.audit); setBanner(`SEO health score: ${d.audit.score}/100 across ${num(d.audit.pages_analyzed)} page(s).`); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
 
   const runAudit = async () => {
     setBusy('crawl'); setErr(''); setBanner('');
@@ -94,6 +102,7 @@ export function Audit() {
       </div>
       <div class="flex items-center gap-2">
         ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
+        ${site && pages.length > 0 && html`<${Btn} onClick=${runSiteAudit} disabled=${!!busy}>${busy === 'seo' ? 'Scoring…' : '🔎 SEO audit'}</${Btn}>`}
         ${site && html`<${Btn} onClick=${runAudit} disabled=${busy === 'crawl'}>${busy === 'crawl' ? 'Auditing…' : 'Run audit'}</${Btn}>`}
       </div>
     </div>
@@ -105,6 +114,8 @@ export function Audit() {
       : pages.length === 0
         ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">No audit yet. Click <span class="font-medium">Run audit</span> to crawl your top pages for technical issues and AI-readiness.</div></${Card}>`
         : html`
+          <${SiteAuditPanel} audit=${siteAudit} busy=${busy === 'seo'} onRun=${runSiteAudit} />
+
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             ${[['Pages', num(stats.pages)], ['Avg tech score', stats.avg], ['Critical', num(stats.sev.critical)], ['Warnings', num(stats.sev.warning)], ['Avg AI score', stats.aiAvg == null ? '—' : stats.aiAvg]]
               .map(([k, v]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div></div></${Card}>`)}
@@ -160,6 +171,91 @@ const FIXES = [
   { key: 'h1', action: 'fix_h1', icon: '#', label: 'Multiple H1 headings', desc: 'Extra H1s demoted to H2. Elementor-built pages are skipped (fix those in the builder).', match: (i) => i.type === 'h1' && /^Multiple/.test(i.message) },
   { key: 'canonical', action: 'fix_canonical', icon: '🔗', label: 'Canonical tags', desc: 'Adds a self-referencing canonical tag to pages missing one.', match: (i) => i.type === 'canonical' },
 ];
+// Site-wide SEO health: weighted category scores + prioritised findings from
+// the whole crawl (seo-site-audit fn), not just per-page technical checks.
+const SEV_CLS = { Critical: 'bg-rose-100 text-rose-700', High: 'bg-orange-100 text-orange-700', Medium: 'bg-amber-100 text-amber-700', Low: 'bg-slate-100 text-slate-600' };
+const barColor = (s) => (s >= 80 ? 'bg-emerald-500' : s >= 50 ? 'bg-amber-400' : 'bg-rose-500');
+const bigScore = (s) => (s >= 80 ? 'text-emerald-600' : s >= 50 ? 'text-amber-500' : 'text-rose-600');
+
+function SiteAuditPanel({ audit, busy, onRun }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!audit) {
+    return html`<${Card}><div class="p-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800">Site-wide SEO audit</div>
+        <p class="text-xs text-slate-500 max-w-2xl">Scores the whole site — technical, on-page, content, schema, images and AI-search readiness — into one health score with prioritised fixes. Uses the pages already crawled below, plus live robots.txt / sitemap.xml / llms.txt.</p>
+      </div>
+      <${Btn} onClick=${onRun} disabled=${busy}>${busy ? 'Scoring…' : '🔎 Run SEO audit'}</${Btn}>
+    </div></${Card}>`;
+  }
+  const f = audit.facts || {};
+  const cats = audit.categories || [];
+  const findings = audit.findings || [];
+  const shown = showAll ? findings : findings.slice(0, 8);
+  const counts = findings.reduce((a, x) => { a[x.severity] = (a[x.severity] || 0) + 1; return a; }, {});
+  const chip = (label, good, extra) => html`<span class=${cx('text-[11px] px-2 py-1 rounded-lg border', good ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500')}>${good ? '✓' : '✕'} ${label}${extra ? ` · ${extra}` : ''}</span>`;
+  let when = ''; try { when = new Date(audit.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { /* ignore */ }
+
+  return html`<${Card}><div class="p-4 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-4">
+        <div class="text-center">
+          <div class=${cx('text-4xl font-bold tabular-nums', bigScore(audit.score))}>${audit.score}</div>
+          <div class="text-[11px] text-slate-400">/ 100</div>
+        </div>
+        <div>
+          <div class="font-semibold text-slate-800">SEO health score</div>
+          <div class="text-xs text-slate-500">${num(audit.pages_analyzed)} page(s) analyzed${when ? ` · ${when}` : ''}</div>
+          <div class="flex flex-wrap gap-1.5 mt-1.5">
+            ${['Critical', 'High', 'Medium', 'Low'].filter((s) => counts[s]).map((s) => html`<${Pill} cls=${SEV_CLS[s]}>${counts[s]} ${s}</${Pill}>`)}
+            ${findings.length === 0 && html`<span class="text-sm text-emerald-600">No issues found 🎉</span>`}
+          </div>
+        </div>
+      </div>
+      <${Btn} onClick=${onRun} disabled=${busy}>${busy ? 'Scoring…' : '↻ Re-run'}</${Btn}>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+      ${cats.map((c) => html`<div>
+        <div class="flex items-center justify-between text-xs mb-0.5">
+          <span class="text-slate-600">${c.name} <span class="text-slate-300">${c.weight}%</span></span>
+          <span class=${cx('tabular-nums font-medium', c.score == null ? 'text-slate-300' : 'text-slate-700')}>${c.score == null ? 'not measured' : c.score}</span>
+        </div>
+        <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          ${c.score != null && html`<div class=${cx('h-full rounded-full', barColor(c.score))} style=${`width:${c.score}%`}></div>`}
+        </div>
+      </div>`)}
+    </div>
+
+    <div class="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
+      ${chip('robots.txt', !!f.robots_found)}
+      ${chip('XML sitemap', !!f.sitemap_url, f.sitemap_urls ? `${num(f.sitemap_urls)} URLs` : '')}
+      ${chip('llms.txt', !!f.llms_txt)}
+      ${chip('AI crawlers allowed', !(f.ai_blocked || []).length, (f.ai_blocked || []).length ? (f.ai_blocked || []).join(', ') : '')}
+      <span class="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-500">Schema ${f.schema_coverage ?? 0}%</span>
+      ${f.images_total ? html`<span class="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-500">Alt text ${Math.round((1 - (f.images_no_alt || 0) / f.images_total) * 100)}%</span>` : ''}
+      <span class="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-500">Avg ${num(f.avg_words)} words</span>
+    </div>
+
+    ${findings.length > 0 && html`<div class="space-y-2 pt-1 border-t border-slate-100">
+      <div class="text-sm font-semibold text-slate-700">Prioritised fixes</div>
+      ${shown.map((x) => html`<div class="rounded-lg border border-slate-100 p-2.5">
+        <div class="flex items-start justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 min-w-0">
+            <${Pill} cls=${SEV_CLS[x.severity] || SEV_CLS.Low}>${x.severity}</${Pill}>
+            <span class="font-medium text-slate-800">${x.title}</span>
+            ${x.count ? html`<span class="text-xs text-slate-400 tabular-nums">${num(x.count)}</span>` : ''}
+          </div>
+          <span class="text-[11px] text-slate-400">${x.category}</span>
+        </div>
+        <div class="text-xs text-slate-600 mt-1">${x.detail}</div>
+        <div class="text-xs text-brand-700 mt-0.5">→ ${x.recommendation}</div>
+      </div>`)}
+      ${findings.length > 8 && html`<button onClick=${() => setShowAll(!showAll)} class="text-xs text-slate-500 hover:text-slate-800 underline">${showAll ? 'Show less' : `Show all ${findings.length} findings`}</button>`}
+    </div>`}
+  </div></${Card}>`;
+}
+
 function AiFixes({ pages, site, onDone }) {
   const [busyKey, setBusyKey] = useState('');
   const [prog, setProg] = useState('');

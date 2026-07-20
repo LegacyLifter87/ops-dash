@@ -187,6 +187,16 @@ export async function seoLoadAudit(siteId) {
   const { data } = await supabase.from('seo_audit_pages').select('*').eq('site_id', siteId).order('technical_score');
   return data || [];
 }
+// Site-level SEO health audit (seo-site-audit fn): weighted category scores +
+// prioritised findings across the whole crawl, plus robots/sitemap/llms signals.
+async function seoInvokeSiteAudit(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-site-audit', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoSiteAuditRun = (siteId) => seoInvokeSiteAudit('run', { siteId });
+export const seoSiteAuditLoad = (siteId) => seoInvokeSiteAudit('load', { siteId });
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
 // Negative keywords: exclude from blogging (auto + manual, any opportunity score)
 // and queue for Google Ads campaign-negative push. Match is phrase-level.
