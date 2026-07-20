@@ -197,6 +197,18 @@ async function seoInvokeSiteAudit(action, extra = {}) {
 }
 export const seoSiteAuditRun = (siteId) => seoInvokeSiteAudit('run', { siteId });
 export const seoSiteAuditLoad = (siteId) => seoInvokeSiteAudit('load', { siteId });
+// Site-level fixes pushed through the Connector plugin (needs plugin v1.5.0+):
+// robots.txt, XML sitemap, and heading structure.
+async function seoInvokeSiteFix(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-site-fix', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoSiteFixStatus = (siteId) => seoInvokeSiteFix('status', { siteId });
+export const seoFixRobots = (siteId, opts) => seoInvokeSiteFix('fix_robots', { siteId, ...opts });
+export const seoFixSitemap = (siteId) => seoInvokeSiteFix('fix_sitemap', { siteId });
+export const seoFixHeadings = (siteId, url, renderedH1) => seoInvokeSiteFix('fix_headings', { siteId, url, rendered_h1: renderedH1 });
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
 // Negative keywords: exclude from blogging (auto + manual, any opportunity score)
 // and queue for Google Ads campaign-negative push. Match is phrase-level.

@@ -378,7 +378,7 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.4.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin (.zip)</a>
+      <a href="/opsdash-connector-1.5.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.5.0 (.zip)</a>
     </div>
     ${wp?.connected && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
       <div class="font-semibold text-slate-400 uppercase">Connection key</div>

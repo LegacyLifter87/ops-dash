@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoSiteAuditRun, seoSiteAuditLoad, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoSiteAuditRun, seoSiteAuditLoad, seoSiteFixStatus, seoFixRobots, seoFixSitemap, seoFixHeadings, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -139,6 +139,7 @@ export function Audit() {
           </div>
 
           ${wpConnected && html`<${AiFixes} pages=${pages} site=${site} onDone=${() => load(site)} />`}
+          <${SiteFixes} site=${site} wpConnected=${wpConnected} />
 
           <${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
             <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
@@ -168,7 +169,9 @@ const FIXES = [
   { key: 'meta', action: 'fix_meta', icon: '🏷', label: 'Titles & meta descriptions', desc: 'AI writes a keyword-matched title tag and meta description and pushes them into the SEO plugin.', match: (i) => (i.type === 'title' || i.type === 'meta') && /^Missing/.test(i.message) },
   { key: 'schema', action: 'fix_schema', icon: '🧩', label: 'Structured data (schema)', desc: 'AI builds page-appropriate JSON-LD (LocalBusiness, Service, Article…) from your business facts.', match: (i) => i.type === 'schema' },
   { key: 'alts', action: 'fix_alts', icon: '🖼', label: 'Image alt text', desc: 'AI looks at each image and writes descriptive alt text (up to 6 images per page).', match: (i) => i.type === 'alt' },
-  { key: 'h1', action: 'fix_h1', icon: '#', label: 'Multiple H1 headings', desc: 'Extra H1s demoted to H2. Elementor-built pages are skipped (fix those in the builder).', match: (i) => i.type === 'h1' && /^Multiple/.test(i.message) },
+  // Covers BOTH missing and duplicate H1s. Sends the rendered H1 count so the
+  // plugin knows whether the theme already emits one (needs Connector v1.5.0+).
+  { key: 'headings', action: 'fix_headings', icon: '#', label: 'H1 / heading structure', desc: 'Adds a missing H1 or demotes duplicates so each page has exactly one. Elementor-built pages are skipped (fix those in the builder).', match: (i) => i.type === 'h1', custom: (site, p) => seoFixHeadings(site, p.url, p.checks?.h1Count) },
   { key: 'canonical', action: 'fix_canonical', icon: '🔗', label: 'Canonical tags', desc: 'Adds a self-referencing canonical tag to pages missing one.', match: (i) => i.type === 'canonical' },
 ];
 // Site-wide SEO health: weighted category scores + prioritised findings from
@@ -256,26 +259,88 @@ function SiteAuditPanel({ audit, busy, onRun }) {
   </div></${Card}>`;
 }
 
+// Site-level fixes (robots.txt + XML sitemap) applied through the Connector
+// plugin. Only rendered when WordPress is connected; needs plugin v1.5.0+.
+function SiteFixes({ site, wpConnected }) {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
+  const load = () => { setErr(''); seoSiteFixStatus(site).then(setSt).catch((e) => { setSt(false); setErr(e.message); }); };
+  useEffect(() => { setSt(null); setErr(''); setNote(''); if (site && wpConnected) load(); }, [site, wpConnected]);
+  if (!wpConnected) return null;
+
+  const act = async (key, fn, okMsg) => {
+    setBusy(key); setErr(''); setNote('');
+    try { const r = await fn(); setNote(r?.warning || okMsg); load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const sm = st?.sitemap || {};
+
+  return html`<${Card}><div class="p-4 space-y-3">
+    <div>
+      <div class="font-semibold text-slate-800">🌐 Site-level fixes — robots.txt & sitemap</div>
+      <div class="text-xs text-slate-500">Applied through the Ops Dash Connector plugin. Requires Connector <span class="font-medium">v1.5.0+</span> on the site.</div>
+    </div>
+    ${st === null ? html`<div class="text-xs text-slate-400">Checking the site…</div>` : ''}
+    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
+    ${note && html`<div class="text-xs text-emerald-700">${note}</div>`}
+    ${st && html`<div class="space-y-2">
+      ${st.site_public === false && html`<div class="text-xs text-rose-700 bg-rose-50 rounded-lg px-3 py-2">⚠ WordPress is set to discourage search engines (Settings → Reading). Nothing will index until that box is unchecked — this one has to be changed in WP Admin.</div>`}
+      ${st.physical_file && html`<div class="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠ A physical robots.txt exists at the web root and overrides WordPress. Delete it on the server for managed rules to take effect.</div>`}
+
+      <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-slate-800">robots.txt</div>
+          <div class="text-xs text-slate-500">${st.managed ? 'Managed by Ops Dash.' : 'Using the WordPress default.'} ${sm.likely_sitemap_url ? `Will reference ${sm.likely_sitemap_url}` : 'No sitemap detected to reference.'}</div>
+        </div>
+        <${Btn} size="sm" onClick=${() => act('robots', () => seoFixRobots(site), 'robots.txt updated.')} disabled=${!!busy}>${busy === 'robots' ? 'Applying…' : 'Fix robots.txt'}</${Btn}>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-slate-800">XML sitemap</div>
+          <div class="text-xs text-slate-500">
+            ${sm.likely_sitemap_url ? html`Active: <a href=${sm.likely_sitemap_url} target="_blank" rel="noopener" class="text-brand-700 underline">${sm.likely_sitemap_url}</a>` : 'No sitemap detected.'}
+            ${sm.seo_plugin && sm.seo_plugin !== 'none' ? ` · provided by ${sm.seo_plugin}` : ''}
+          </div>
+        </div>
+        ${sm.likely_sitemap_url
+          ? html`<span class="text-xs text-emerald-600 shrink-0">✓ present</span>`
+          : html`<${Btn} size="sm" onClick=${() => act('sitemap', () => seoFixSitemap(site), 'WordPress core sitemaps enabled.')} disabled=${!!busy}>${busy === 'sitemap' ? 'Enabling…' : 'Enable sitemap'}</${Btn}>`}
+      </div>
+    </div>`}
+  </div></${Card}>`;
+}
+
 function AiFixes({ pages, site, onDone }) {
   const [busyKey, setBusyKey] = useState('');
   const [prog, setProg] = useState('');
   const [results, setResults] = useState({});
+  const [fixErr, setFixErr] = useState('');
+  // Keep the whole page row (not just the URL) so custom fixers can read its
+  // audit checks — e.g. the rendered H1 count.
   const cats = useMemo(() => {
     const m = {};
-    for (const f of FIXES) m[f.key] = pages.filter((p) => p.status_code > 0 && p.status_code < 400 && (p.issues || []).some(f.match)).map((p) => p.url);
+    for (const f of FIXES) m[f.key] = pages.filter((p) => p.status_code > 0 && p.status_code < 400 && (p.issues || []).some(f.match));
     return m;
   }, [pages]);
   const total = FIXES.reduce((s, f) => s + cats[f.key].length, 0);
   if (!total) return null;
   const run = async (f) => {
-    const urls = cats[f.key];
-    setBusyKey(f.key);
-    let ok = 0, fail = 0, skipped = 0;
-    for (let i = 0; i < urls.length; i++) {
-      setProg(`${f.label}: page ${i + 1} of ${urls.length}…`);
-      try { const r = await seoWpFix(site, f.action, urls[i]); if (r?.skipped) skipped++; else ok++; }
-      catch (_) { fail++; }
+    const items = cats[f.key];
+    setBusyKey(f.key); setFixErr('');
+    let ok = 0, fail = 0, skipped = 0, lastErr = '';
+    for (let i = 0; i < items.length; i++) {
+      setProg(`${f.label}: page ${i + 1} of ${items.length}…`);
+      try {
+        const r = f.custom ? await f.custom(site, items[i]) : await seoWpFix(site, f.action, items[i].url);
+        if (r?.skipped) skipped++; else ok++;
+      } catch (e) { fail++; lastErr = e.message; }
     }
+    // Surface a real reason rather than a silent failure count (most often the
+    // site is still on an older Connector plugin).
+    if (fail && lastErr) setFixErr(lastErr);
     setResults((r) => ({ ...r, [f.key]: { ok, fail, skipped } }));
     setBusyKey(''); setProg('');
     onDone && onDone();
@@ -300,6 +365,7 @@ function AiFixes({ pages, site, onDone }) {
       })}
     </div>
     ${prog && html`<div class="text-xs text-brand-700 animate-pulse">${prog}</div>`}
+    ${fixErr && html`<div class="text-xs text-rose-600">${fixErr}</div>`}
     <div class="text-[11px] text-slate-400">Tip: if the site uses a page cache, flush it after fixing to see changes on the live pages immediately. Re-run the audit afterwards to confirm scores improved.</div>
   </div></${Card}>`;
 }

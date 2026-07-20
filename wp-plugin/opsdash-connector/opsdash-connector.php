@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.4.0
+ * Version: 1.5.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('OPSDASH_VERSION', '1.4.0');
+define('OPSDASH_VERSION', '1.5.0');
 
 // Post types this plugin is ever allowed to create or modify. Everything else
 // on the site (products, templates, attachments, menu items) is off limits.
@@ -122,9 +122,104 @@ add_action('wp_head', function () {
 });
 
 // ---------------------------------------------------------------------------
+// robots.txt — WordPress serves a VIRTUAL robots.txt through this filter, but
+// only when no physical robots.txt sits at the web root. When Ops Dash has
+// stored custom rules we serve those verbatim; empty option = WP default.
+// ---------------------------------------------------------------------------
+add_filter('robots_txt', function ($output, $public) {
+	$custom = (string) get_option('opsdash_robots', '');
+	return $custom !== '' ? $custom . "\n" : $output;
+}, 20, 2);
+
+// A physical file at the web root wins over the filter — we cannot fix that
+// from PHP safely, so we detect it and tell the dashboard to warn the user.
+function opsdash_physical_robots() {
+	$path = trailingslashit(ABSPATH) . 'robots.txt';
+	return @file_exists($path) ? $path : '';
+}
+
+// Let Ops Dash force WordPress core sitemaps back on if something disabled them.
+add_filter('wp_sitemaps_enabled', function ($enabled) {
+	return get_option('opsdash_force_core_sitemap') ? true : $enabled;
+}, 99);
+
+function opsdash_sitemap_info() {
+	$seo = opsdash_seo_plugin();
+	$core_enabled = function_exists('wp_sitemaps_get_server') ? (bool) apply_filters('wp_sitemaps_enabled', true) : false;
+	$likely = '';
+	if ($seo === 'yoast' || $seo === 'rankmath') $likely = home_url('/sitemap_index.xml');
+	elseif ($seo === 'aioseo') $likely = home_url('/sitemap.xml');
+	elseif ($core_enabled) $likely = home_url('/wp-sitemap.xml');
+	return [
+		'seo_plugin' => $seo,
+		'core_sitemaps_enabled' => $core_enabled,
+		'core_sitemap_url' => $core_enabled ? home_url('/wp-sitemap.xml') : '',
+		'likely_sitemap_url' => $likely,
+		'forced_by_opsdash' => (bool) get_option('opsdash_force_core_sitemap'),
+	];
+}
+
+// ---------------------------------------------------------------------------
 // REST API: /wp-json/opsdash/v1/*
 // ---------------------------------------------------------------------------
 add_action('rest_api_init', function () {
+
+	// GET  — read the robots.txt situation: our stored rules, whether a physical
+	//        file is overriding us, and the sitemap that should be referenced.
+	// POST — replace the virtual robots.txt ({content}); empty string hands
+	//        control back to the WordPress default.
+	register_rest_route('opsdash/v1', '/robots', [
+		'methods' => ['GET', 'POST'],
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function (WP_REST_Request $req) {
+			$saved = false;
+			if ($req->get_method() === 'POST') {
+				$p = $req->get_json_params();
+				$content = (string) ($p['content'] ?? '');
+				if (strlen($content) > 10000) return new WP_Error('opsdash_bad_request', 'robots.txt too large', ['status' => 400]);
+				// Plain text only — strip any markup, keep line breaks.
+				update_option('opsdash_robots', sanitize_textarea_field($content));
+				$saved = true;
+			}
+			$phys = opsdash_physical_robots();
+			return [
+				'ok' => true,
+				'saved' => $saved,
+				'managed' => (string) get_option('opsdash_robots', ''),
+				'physical_file' => $phys !== '',
+				'physical_contents' => $phys !== '' ? substr((string) @file_get_contents($phys), 0, 10000) : '',
+				'warning' => $phys !== '' ? 'A physical robots.txt exists at the web root and takes precedence over WordPress. Delete it on the server for these rules to take effect.' : '',
+				'robots_url' => home_url('/robots.txt'),
+				'site_public' => (string) get_option('blog_public') === '1',
+				'sitemap' => opsdash_sitemap_info(),
+			];
+		},
+	]);
+
+	// Sitemap status, and optionally switch WordPress core sitemaps back on.
+	register_rest_route('opsdash/v1', '/sitemap', [
+		'methods' => ['GET', 'POST'],
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function (WP_REST_Request $req) {
+			if ($req->get_method() === 'POST') {
+				// get_json_params() is null when the body is not JSON — array_key_exists()
+				// would throw a TypeError on null under PHP 8.
+				$p = $req->get_json_params();
+				if (!is_array($p)) $p = [];
+				if (array_key_exists('enable_core', $p)) update_option('opsdash_force_core_sitemap', !empty($p['enable_core']) ? 1 : 0);
+			}
+			return ['ok' => true, 'sitemap' => opsdash_sitemap_info()];
+		},
+	]);
+
+	// Normalise heading structure so the page has exactly one H1. Driven by the
+	// RENDERED h1 count from the audit, because many themes emit their own H1.
+	register_rest_route('opsdash/v1', '/fix-headings', [
+		'methods' => 'POST',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => 'opsdash_fix_headings',
+	]);
+
 
 	register_rest_route('opsdash/v1', '/status', [
 		'methods' => 'GET',
@@ -247,6 +342,49 @@ function opsdash_fix_h1(WP_REST_Request $req) {
 	$changed = ($new !== $content);
 	if ($changed) wp_update_post(['ID' => $post_id, 'post_content' => $new]);
 	return ['ok' => true, 'post_id' => $post_id, 'changed' => $changed, 'h1_found' => $seen];
+}
+
+// Normalise a page to exactly one H1.
+// `rendered_h1` is what the audit actually saw in the live HTML, which matters
+// because most themes output the post title as an H1 outside post_content:
+//   rendered 0  -> content has no H1 and the theme adds none: insert one.
+//   rendered >1 -> if the extras all live in content, keep the first and demote
+//                  the rest; if the theme supplies one too, demote every H1 in
+//                  content so the theme's remains the only one.
+function opsdash_fix_headings(WP_REST_Request $req) {
+	$p = $req->get_json_params();
+	if (!is_array($p)) $p = [];
+	$post_id = opsdash_resolve_post($p);
+	if (!$post_id) return new WP_Error('opsdash_not_found', 'post not found for that id/url', ['status' => 404]);
+	if (get_post_meta($post_id, '_elementor_data', true)) return ['ok' => true, 'skipped' => 'elementor', 'note' => 'Page is built with Elementor — headings live in the builder and must be changed there.'];
+
+	$content = (string) get_post_field('post_content', $post_id);
+	$content_h1 = preg_match_all('/<h1\b[^>]*>/i', $content);
+	$rendered_h1 = array_key_exists('rendered_h1', $p) ? (int) $p['rendered_h1'] : $content_h1;
+	$new = $content;
+	$action = 'none';
+
+	if ($rendered_h1 === 0) {
+		$title = get_the_title($post_id);
+		if ($title !== '') { $new = '<h1>' . esc_html($title) . '</h1>' . "\n\n" . $content; $action = 'added_h1'; }
+	} elseif ($rendered_h1 > 1 && $content_h1 > 0) {
+		// Theme contributes an H1 when the live page has more of them than the
+		// content does — in that case every content H1 is surplus.
+		$demote_all = ($content_h1 < $rendered_h1);
+		$seen = 0;
+		$new = preg_replace_callback('/<(\/?)h1(\b[^>]*)>/i', function ($m) use (&$seen, $demote_all) {
+			if ($m[1] === '') {
+				$seen++;
+				return ($demote_all || $seen > 1) ? '<h2' . $m[2] . '>' : $m[0];
+			}
+			return ($demote_all || $seen > 1) ? '</h2>' : $m[0];
+		}, $content);
+		$action = $demote_all ? 'demoted_all_content_h1' : 'demoted_extra_h1';
+	}
+
+	$changed = ($new !== $content);
+	if ($changed) wp_update_post(['ID' => $post_id, 'post_content' => $new]);
+	return ['ok' => true, 'post_id' => $post_id, 'changed' => $changed, 'action' => $action, 'content_h1' => $content_h1, 'rendered_h1' => $rendered_h1];
 }
 
 function opsdash_publish(WP_REST_Request $req) {
