@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.6.2
+ * Version: 1.6.3
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -39,10 +39,15 @@ if (!function_exists('opsdash_cleanup_stale_copies')) {
 	}
 
 	function opsdash_cleanup_stale_copies() {
-		$self_dir = wp_normalize_path(untrailingslashit(plugin_dir_path(__FILE__)));
 		$root = wp_normalize_path(untrailingslashit(WP_PLUGIN_DIR));
 		$entries = @scandir($root);
 		if ($entries === false) return;
+		// Self-identity via realpath BOTH ways. String comparison here is not
+		// enough: on hosts that symlink wp-content (Pantheon, WP Engine, ...)
+		// __FILE__ is the RESOLVED path while WP_PLUGIN_DIR keeps the symlinked
+		// one — a naive compare failed to recognise the plugin's own folder and
+		// deleted it during activation ("Plugin file does not exist.").
+		$self_real = @realpath(dirname(__FILE__));
 		$removed_dirs = [];
 		foreach ($entries as $entry) {
 			if ($entry === '.' || $entry === '..') continue;
@@ -53,11 +58,14 @@ if (!function_exists('opsdash_cleanup_stale_copies')) {
 				@unlink($path);
 				continue;
 			}
-			// 2) Duplicate FOLDERS (opsdash-connector-1.6.0 etc.). Never touch the
-			//    folder the running copy lives in, and only delete a folder we can
-			//    positively identify as a copy of THIS plugin.
-			if (is_dir($path) && preg_match('/^opsdash-connector(-|\.|_|$)/', $entry)) {
-				if (wp_normalize_path($path) === $self_dir) continue;
+			// 2) Duplicate FOLDERS from the bad zips (opsdash-connector-1.6.0 etc.).
+			//    THREE hard rules: (a) the canonical 'opsdash-connector' folder is
+			//    NEVER deleted, only suffixed duplicates; (b) a folder whose real
+			//    path is the running copy's real path is never deleted; (c) only
+			//    folders positively identified by our plugin header are deleted.
+			if (is_dir($path) && preg_match('/^opsdash-connector[-._]/', $entry)) {
+				$real = @realpath($path);
+				if ($self_real && $real && $real === $self_real) continue;
 				$is_ours = false;
 				foreach ((array) @scandir($path) as $f) {
 					if ($f === '.' || $f === '..') continue;
@@ -83,13 +91,16 @@ if (!function_exists('opsdash_cleanup_stale_copies')) {
 	}
 
 	add_action('admin_init', function () {
-		if (get_option('opsdash_cleanup_ran') !== '1.6.2') {
+		if (get_option('opsdash_cleanup_ran') !== '1.6.3') {
 			opsdash_cleanup_stale_copies();
-			update_option('opsdash_cleanup_ran', '1.6.2');
+			update_option('opsdash_cleanup_ran', '1.6.3');
 		}
 	});
 }
-register_activation_hook(__FILE__, 'opsdash_cleanup_stale_copies');
+// On activation, only SCHEDULE the cleanup (next admin page load) rather than
+// deleting anything while WordPress is mid-activation — nothing can disappear
+// out from under the request that is activating the plugin.
+register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_ran'); });
 
 // If a second copy of this plugin is present (a stray folder left behind by a
 // failed update, or a duplicate upload), loading it again would fatal the whole
@@ -97,7 +108,7 @@ register_activation_hook(__FILE__, 'opsdash_cleanup_stale_copies');
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.6.2');
+define('OPSDASH_VERSION', '1.6.3');
 define('OPSDASH_UPDATE_MANIFEST', 'https://ops.legacybuilder.app/plugin-update.json');
 // Any update package must come from this exact HTTPS origin. Without this a
 // tampered manifest could point WordPress at an arbitrary zip and install it.

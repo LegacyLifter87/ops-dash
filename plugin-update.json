@@ -1,13 +1,13 @@
 {
   "name": "Ops Dash Connector",
   "slug": "opsdash-connector",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "author": "Legacy Sales Engineering",
   "url": "https://ops.legacybuilder.app",
-  "package": "https://ops.legacybuilder.app/opsdash-connector-1.6.2.zip",
+  "package": "https://ops.legacybuilder.app/opsdash-connector-1.6.3.zip",
   "requires": "5.8",
   "requires_php": "7.4",
   "tested": "6.8",
   "last_updated": "2026-07-20",
-  "changelog": "1.6.2 — Self-healing: on activation (and once per version) the plugin deletes leftover broken copies from the malformed 1.5.x-1.6.0 packages — stray backslash-named files and duplicate opsdash-connector-* folders — and cleans dead active_plugins entries. Fixes destination-folder-already-exists collisions and duplicate plugin listings. 1.6.1 — packaging fix (forward-slash zip entries). 1.6.0 — self-updating. 1.5.0 — robots.txt, sitemap, heading fixes."
+  "changelog": "1.6.3 — Fixes self-delete on symlinked hosts: the 1.6.2 cleanup could fail to recognise its own folder on hosts that symlink wp-content and delete itself on activation (plugin file does not exist). Cleanup now identifies itself via realpath, never touches the canonical opsdash-connector folder, and runs after activation instead of during it. 1.6.2 — self-healing cleanup of broken 1.5.x-1.6.0 installs. 1.6.1 — packaging fix. 1.6.0 — self-updating. 1.5.0 — robots.txt, sitemap, heading fixes."
 }
