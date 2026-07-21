@@ -1,13 +1,13 @@
 {
   "name": "Ops Dash Connector",
   "slug": "opsdash-connector",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "author": "Legacy Sales Engineering",
   "url": "https://ops.legacybuilder.app",
-  "package": "https://ops.legacybuilder.app/opsdash-connector-1.6.1.zip",
+  "package": "https://ops.legacybuilder.app/opsdash-connector-1.6.2.zip",
   "requires": "5.8",
   "requires_php": "7.4",
   "tested": "6.8",
   "last_updated": "2026-07-20",
-  "changelog": "1.6.1 — CRITICAL packaging fix: the 1.5.0/1.6.0 zips were built with backslash path separators, so Linux servers extracted a single mis-named file instead of a plugin folder — installs appeared to fail and were retried. Rebuilt correctly. Also bails out safely if a duplicate copy of the plugin is present instead of fataling with 'cannot redeclare'. 1.6.0 — Self-updating from Ops Dash. 1.5.0 — robots.txt and XML sitemap management, plus heading-structure fixes."
+  "changelog": "1.6.2 — Self-healing: on activation (and once per version) the plugin deletes leftover broken copies from the malformed 1.5.x-1.6.0 packages — stray backslash-named files and duplicate opsdash-connector-* folders — and cleans dead active_plugins entries. Fixes destination-folder-already-exists collisions and duplicate plugin listings. 1.6.1 — packaging fix (forward-slash zip entries). 1.6.0 — self-updating. 1.5.0 — robots.txt, sitemap, heading fixes."
 }
