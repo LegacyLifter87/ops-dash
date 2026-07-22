@@ -182,8 +182,8 @@ function DevTokenCard({ st, onChange }) {
     </div>
     <p class="text-xs text-slate-500">One shared platform token covers every client that connects — clients never need their own. Override it here only if this account should bill against its own Google Ads API quota.</p>
     ${open && html`<div class="space-y-2 pt-1">
-      <${Input} value=${token} onInput=${(e) => setToken(e.target.value)} placeholder="Developer token from Google Ads Manager → API Center" />
-      <${Input} value=${label} onInput=${(e) => setLabel(e.target.value)} placeholder="Label (e.g. Acme Agency MCC) — optional" />
+      <${Input} value=${token} onInput=${setToken} placeholder="Developer token from Google Ads Manager → API Center" />
+      <${Input} value=${label} onInput=${setLabel} placeholder="Label (e.g. Acme Agency MCC) — optional" />
       <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save token'}</${Btn}>
     </div>`}
     ${err && html`<div class="text-xs text-rose-600">${err}</div>`}

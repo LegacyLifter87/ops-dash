@@ -404,7 +404,7 @@ function SeoPush({ page, site, onPushed }) {
     </div>
     <div class="space-y-1">
       <div class="flex justify-between text-[11px] text-slate-400"><span>SEO title (50–60 chars)</span>${lenPill(title.length, 50, 60)}</div>
-      <${Input} value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="Title tag for this page" />
+      <${Input} value=${title} onInput=${setTitle} placeholder="Title tag for this page" />
     </div>
     <div class="space-y-1">
       <div class="flex justify-between text-[11px] text-slate-400"><span>Meta description (150–155 chars)</span>${lenPill(desc.length, 150, 155)}</div>

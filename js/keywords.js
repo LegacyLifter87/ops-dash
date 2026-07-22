@@ -376,7 +376,7 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
       </div>`}
     </div>
     <div class="flex gap-2 items-center flex-wrap">
-      <div class="w-72"><${Input} value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="https://clientsite.com" /></div>
+      <div class="w-72"><${Input} value=${url} onInput=${setUrl} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
       <a href="/opsdash-connector-1.6.3.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.6.3 (.zip)</a>
     </div>
@@ -539,7 +539,7 @@ function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected
           </div>
           <div class="flex items-center gap-2 flex-1 min-w-48">
             <span class="text-xs text-slate-400 shrink-0">Featured image URL (optional override)</span>
-            <div class="flex-1"><${Input} value=${imgUrl} onInput=${(e) => setImgUrl(e.target.value)} placeholder="https://…" /></div>
+            <div class="flex-1"><${Input} value=${imgUrl} onInput=${setImgUrl} placeholder="https://…" /></div>
           </div>
         </div>`}
         <div class="flex flex-wrap gap-2 items-center">
