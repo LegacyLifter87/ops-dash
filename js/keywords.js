@@ -139,8 +139,14 @@ export function Keywords() {
   // by itself the moment the site checks in.
   const wpPair = async (url) => {
     setWpBusy(true); setWpErr(''); setWpNotice('');
-    try { await seoWpPairStart(site, url); await loadWp(site); }
-    catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
+    try {
+      const r = await seoWpPairStart(site, url);
+      // Show the code IMMEDIATELY from the pair_start response. Never gate the
+      // display on the status round-trip — status calls the WordPress site,
+      // which hangs or errors precisely when the site isn't paired yet, and
+      // that swallowed failure left users staring at a card with no code.
+      setWp((prev) => ({ ...(prev || {}), connected: true, live: false, pair_code: r.code, pair_expires: r.expires }));
+    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
   // While a pairing code is outstanding, poll every 5s so the card goes green
   // on its own as soon as the plugin claims the code. Stops on connect/expiry.
@@ -148,13 +154,20 @@ export function Keywords() {
     const code = wp?.pair_code;
     if (!code || wp?.live) return;
     const until = wp?.pair_expires ? new Date(wp.pair_expires).getTime() : 0;
+    // status calls the WP site and can take many seconds while unpaired — the
+    // inflight guard stops ticks from stacking on top of a slow probe. A
+    // failed/slow status NEVER clears the code from view (functional setWp
+    // keeps pair fields when the response lacks them).
+    let inflight = false;
     const iv = setInterval(async () => {
+      if (inflight) return;
       if (until && Date.now() > until) { clearInterval(iv); return; }
+      inflight = true;
       try {
         const s = await seoWpStatus(site);
-        setWp(s);
+        setWp((prev) => ({ ...s, pair_code: s?.pair_code ?? prev?.pair_code, pair_expires: s?.pair_expires ?? prev?.pair_expires }));
         if (s?.live) { clearInterval(iv); setWpErr(''); setWpNotice(`Connected ✓ — ${s.info?.site_name || s.wp_url} (plugin v${s.info?.plugin_version || '?'})`); }
-      } catch (_) { /* keep polling */ }
+      } catch (_) { /* keep polling */ } finally { inflight = false; }
     }, 5000);
     return () => clearInterval(iv);
   }, [wp?.pair_code, wp?.live, site]);
