@@ -564,6 +564,22 @@ export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { 
 export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
 export const seoTeamSetTabs = (userId, tabs) => seoInvokeTeam('set_tabs', { userId, tabs });
 
+// --- Marketing strategy (seo-strategy fn) -----------------------------------
+async function seoInvokeStrategy(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-strategy', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoStrategySitemap = (siteId) => seoInvokeStrategy('sitemap_fetch', { siteId });
+export const seoStrategyPages = (siteId) => seoInvokeStrategy('pages_list', { siteId });
+export const seoStrategyPagesSave = (siteId, pages) => seoInvokeStrategy('pages_save', { siteId, pages });
+export const seoStrategyAreaGet = (siteId) => seoInvokeStrategy('area_get', { siteId });
+export const seoStrategyAreaSave = (siteId, state, counties, cities) => seoInvokeStrategy('area_save', { siteId, state, counties, cities });
+export const seoStrategyCounties = (state) => seoInvokeStrategy('geo_counties', { state });
+export const seoStrategyCities = (state, counties) => seoInvokeStrategy('geo_cities', { state, counties });
+export const seoStrategyContext = (siteId) => seoInvokeStrategy('context', { siteId });
+
 // --- Media generation (kie.ai via seo-media fn) -----------------------------
 async function seoInvokeMedia(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-media', { body: { action, accountId: getActiveAccountId(), ...extra } });
