@@ -132,7 +132,7 @@ export function Team() {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
-  const loadAgency = async () => { const a = await seoAgencyList(); setOwners(a.owners || []); setMembers(a.members || []); setAccounts(a.accounts || []); setAgencyName(a.agencyName || ''); };
+  const loadAgency = async () => { const a = await seoAgencyList(); setOwners(a.owners || []); setMembers(a.members || []); setAccounts((a.accounts || []).sort((x, y) => (x.name || '').localeCompare(y.name || '', undefined, { sensitivity: 'base' }))); setAgencyName(a.agencyName || ''); };
   const load = async () => {
     const d = await seoTeamList();
     setData(d);

@@ -116,9 +116,9 @@ async function applySession(session) {
   await Promise.all([loadAccounts(), loadIdentity()]);
 }
 export async function loadAccounts() {
-  const { data, error } = await supabase.from('seo_accounts').select('*').order('created_at');
+  const { data, error } = await supabase.from('seo_accounts').select('*');
   if (error) { set({ phase: 'app', accounts: [], error: error.message }); return; }
-  const accounts = data || [];
+  const accounts = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
   let active = null;
   try { active = localStorage.getItem('ops_active_account'); } catch { /* ignore */ }
   if (!accounts.some((a) => a.id === active)) active = accounts[0]?.id || null;
