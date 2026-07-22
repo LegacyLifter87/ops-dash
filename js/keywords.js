@@ -309,7 +309,7 @@ export function Keywords() {
               <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
             </div></${Card}>`
           : html`<div class="space-y-3">
-            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpPair} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
+            <${WpCard} wp=${wp} domain=${(sites || []).find((x) => x.id === site)?.domain || ''} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpPair} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
             <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
@@ -386,9 +386,13 @@ export function mdRender(md) {
 }
 
 // Per-site WordPress connection card (Ops Dash Connector plugin handshake).
-function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect, onRotate }) {
-  const [url, setUrl] = useState(wp?.wp_url || '');
-  useEffect(() => { setUrl(wp?.wp_url || ''); }, [wp?.wp_url]);
+function WpCard({ wp, domain, wpBusy, notice, error, onConnect, onRecheck, onDisconnect, onRotate }) {
+  // The URL is already known from the Search Console connection (seo_sites.domain)
+  // — prefill it so connecting a site needs ZERO typing. Editable for the rare
+  // case where WordPress lives somewhere else (subdirectory, different host).
+  const prefill = () => wp?.wp_url || (domain ? 'https://' + domain : '');
+  const [url, setUrl] = useState(prefill());
+  useEffect(() => { setUrl(prefill()); }, [wp?.wp_url, domain]);
   const [copied, setCopied] = useState('');
   // Show the tail of what actually hit the clipboard: if a regenerate re-rendered
   // mid-click, the user can SEE their clipboard holds a different key than the box.
@@ -412,6 +416,7 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.live ? '🔗 Re-pair' : wp?.pair_code ? '🔗 New code' : '🔗 Connect'}</${Btn}>
       <a href="/opsdash-connector-1.7.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.7.0 (.zip)</a>
     </div>
+    ${!wp?.connected && url && html`<div class="text-[11px] text-slate-400 -mt-1">URL pre-filled from this site's Search Console connection — change it only if WordPress lives at a different address.</div>`}
 
     ${wp?.pair_code && !wp?.live && html`<div class="rounded-lg border-2 border-brand-200 bg-brand-50 p-4 space-y-2">
       <div class="text-xs font-semibold text-brand-700 uppercase">Pairing code — enter it on the WordPress site</div>
