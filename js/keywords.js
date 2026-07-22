@@ -123,6 +123,17 @@ export function Keywords() {
   // --- WordPress publishing (Ops Dash Connector plugin) ---
   const loadWp = async (sid) => { try { setWp(await seoWpStatus(sid)); } catch (_) { setWp(null); } };
   useEffect(() => { if (site) { setWp(null); loadWp(site); } }, [site]);
+  // Explicit check with visible feedback — a silent recheck reads as "nothing happened".
+  const wpRecheck = async () => {
+    setWpBusy(true); setWpErr(''); setWpNotice('');
+    try {
+      const s = await seoWpStatus(site);
+      setWp(s);
+      if (s?.live) setWpNotice(`Connected ✓ — plugin v${s.info?.plugin_version || '?'} on ${s.info?.site_name || s.wp_url}`);
+      else if (s?.connected) setWpErr(s.error || 'The site did not answer with this connection key yet — re-copy the key below and re-paste it in WP Admin → Settings → Ops Dash.');
+      else setWpErr('Not connected yet — enter the site URL and click Connect.');
+    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
+  };
   const wpConnect = async (url) => {
     setWpBusy(true); setWpErr(''); setWpNotice('');
     try { await seoWpConnect(site, url); await loadWp(site); setWpNotice('Connection key ready — install the plugin on the site, paste the key, then hit ↻.'); }
@@ -279,7 +290,7 @@ export function Keywords() {
               <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
             </div></${Card}>`
           : html`<div class="space-y-3">
-            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${() => loadWp(site)} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
+            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
             <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
