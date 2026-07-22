@@ -367,27 +367,27 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
         <div class="font-semibold text-slate-800">WordPress publishing</div>
         <div class="text-xs text-slate-500">Send finished articles straight to the client's WordPress site as ready-to-review drafts — SEO title, meta description, slug, and schema included.</div>
       </div>
-      ${wp?.connected && html`<div class="flex items-center gap-2 flex-wrap">
-        <${Pill} cls=${wp.live ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>${wp.live ? '● Connected' : '● Plugin not reachable'}</${Pill}>
-        ${wp.info?.seo_plugin && html`<${Pill} cls="bg-slate-100 text-slate-600">SEO plugin: ${wp.info.seo_plugin}</${Pill}>`}
-        ${wp.info?.plugin_version && html`<${Pill} cls="bg-slate-100 text-slate-600">v${wp.info.plugin_version}</${Pill}>`}
-        <${Btn} size="sm" onClick=${onRecheck} disabled=${wpBusy}>↻</${Btn}>
-        <${Btn} size="sm" onClick=${onDisconnect} disabled=${wpBusy}>Disconnect</${Btn}>
-      </div>`}
+      <div class="flex items-center gap-2 flex-wrap">
+        ${wp?.connected && html`<${Pill} cls=${wp.live ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>${wp.live ? '● Connected' : '● Plugin not reachable'}</${Pill}>`}
+        ${wp?.info?.seo_plugin && html`<${Pill} cls="bg-slate-100 text-slate-600">SEO plugin: ${wp.info.seo_plugin}</${Pill}>`}
+        ${wp?.info?.plugin_version && html`<${Pill} cls="bg-slate-100 text-slate-600">v${wp.info.plugin_version}</${Pill}>`}
+        <${Btn} size="sm" onClick=${onRecheck} disabled=${wpBusy}>${wpBusy ? 'Checking…' : '↻ Check connection'}</${Btn}>
+        ${wp?.connected && html`<${Btn} size="sm" onClick=${onDisconnect} disabled=${wpBusy}>Disconnect</${Btn}>`}
+      </div>
     </div>
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${setUrl} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
       <a href="/opsdash-connector-1.6.3.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.6.3 (.zip)</a>
     </div>
-    ${wp?.connected && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
+    ${wp?.token && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
       <div class="font-semibold text-slate-400 uppercase">Connection key</div>
       <div class="flex items-center gap-2 flex-wrap">
         <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
         <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy'}</${Btn}>
         <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
       </div>
-      <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click ↻ here.</div>
+      <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click <span class="font-medium">↻ Check connection</span> here.</div>
       <div class="text-slate-400">Treat this key like a password — it can create and edit posts and pages on the site (nothing else). If it's ever exposed, hit <span class="font-medium">Regenerate</span> and re-paste.</div>
       ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
     </div>`}
