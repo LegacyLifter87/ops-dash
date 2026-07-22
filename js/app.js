@@ -2,8 +2,9 @@
 // app.js — Ops Dash shell: auth gate, sidebar nav, account switcher, router.
 // ---------------------------------------------------------------------------
 import { html, render, useState, useEffect, cx } from './lib.js';
-import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount, completeRecovery } from './store.js';
+import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount, completeRecovery, visibleAccounts, exitAgency } from './store.js';
 import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
+import { AgencyConsole } from './agencies.js';
 import { Dashboard } from './dashboard.js';
 import { SEO } from './seo.js';
 import { Keywords } from './keywords.js';
@@ -74,11 +75,12 @@ function NewAccountModal({ onClose }) {
     setBusy(true); setErr('');
     try { await createAccount(name); onClose(); } catch (e) { setErr(e.message); setBusy(false); }
   };
-  return html`<${Modal} title="New account" onClose=${onClose}>
+  return html`<${Modal} title="New business" onClose=${onClose}>
     <div class="space-y-3">
-      <${Field} label="Account name"><${Input} value=${name} onInput=${setName} placeholder="Acme Home Services" /></${Field}>
+      <p class="text-xs text-slate-500">A business is a workspace for one client — its sites, keywords, and SEO data live here, inside your agency.</p>
+      <${Field} label="Business name"><${Input} value=${name} onInput=${setName} placeholder="Acme Home Services" /></${Field}>
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
-      <${Btn} class="w-full" onClick=${create} disabled=${busy}>${busy ? 'Creating…' : 'Create account'}</${Btn}>
+      <${Btn} class="w-full" onClick=${create} disabled=${busy}>${busy ? 'Creating…' : 'Create business'}</${Btn}>
     </div>
   </${Modal}>`;
 }
@@ -99,6 +101,10 @@ function App() {
   if (s.phase === 'loading') return html`<${LoadingScreen} />`;
   if (s.recovery) return html`<${RecoveryScreen} />`;
   if (s.phase === 'login') return html`<${AuthScreen} />`;
+  if (s.phase === 'app' && !s.identity) return html`<${LoadingScreen} />`;
+  // Hierarchy: the platform admin lands on the agency console (like Job
+  // Tracker's "All companies" screen) and enters an agency to work inside it.
+  if (s.phase === 'app' && s.identity.superAdmin && !s.curAgency) return html`<${AgencyConsole} />`;
   if (s.phase === 'app' && s.accounts.length === 0) return html`<${Onboarding} />`;
 
   const navigate = (view) => { location.hash = `/${view}`; setMobileOpen(false); };
@@ -106,6 +112,8 @@ function App() {
   const nav = s.myTabs ? NAV.filter((n) => s.myTabs.includes(n.id) || n.id === 'dashboard') : NAV;
   const view = nav.some((n) => n.id === route.view) ? route.view : 'dashboard';
   const acct = activeAccount();
+  const superInAgency = s.identity.superAdmin && !!s.curAgency;
+  const accts = visibleAccounts();
 
   return html`
     <div class="min-h-screen flex">
@@ -117,10 +125,12 @@ function App() {
         </div>
 
         <div class="px-3 pt-3">
-          <label class="text-[11px] uppercase tracking-wide text-slate-500 px-1">Account</label>
+          ${superInAgency && html`<button onClick=${exitAgency} class="block text-xs text-slate-400 hover:text-white underline mb-1 px-1">← All agencies</button>`}
+          ${s.curAgency && html`<div class="px-1 text-[11px] text-brand-300 font-medium truncate">${s.curAgency.name}</div>`}
+          <label class="text-[11px] uppercase tracking-wide text-slate-500 px-1">Business</label>
           <${Select} value=${s.activeAccountId || ''} onChange=${(v) => setActiveAccount(v)}
-            options=${(s.accounts || []).map((a) => ({ value: a.id, label: a.name }))} class="mt-1 text-slate-800" />
-          <button onClick=${() => setShowNew(true)} class="mt-1.5 text-xs text-slate-400 hover:text-white">＋ New account</button>
+            options=${accts.map((a) => ({ value: a.id, label: a.name }))} class="mt-1 text-slate-800" />
+          <button onClick=${() => setShowNew(true)} class="mt-1.5 text-xs text-slate-400 hover:text-white">＋ New business</button>
         </div>
 
         <nav class="flex-1 p-3 space-y-1">
@@ -144,19 +154,28 @@ function App() {
           <span class="font-semibold text-slate-800">${acct?.name || 'Ops Dash'}</span>
         </header>
         <main class="flex-1">
-          ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
-          ${view === 'seo' && html`<${SEO} />`}
-          ${view === 'keywords' && html`<${Keywords} />`}
-          ${view === 'autoblog' && html`<${Autoblog} />`}
-          ${view === 'competitors' && html`<${Competitors} />`}
-          ${view === 'ranks' && html`<${Ranks} />`}
-          ${view === 'local' && html`<${Local} />`}
-          ${view === 'audit' && html`<${Audit} />`}
-          ${view === 'backlinks' && html`<${Backlinks} />`}
-          ${view === 'ads' && html`<${Ads} />`}
-          ${view === 'analytics' && html`<${Analytics} />`}
-          ${view === 'jt' && html`<${JobTracker} />`}
-          ${view === 'team' && html`<${Team} />`}
+          ${accts.length === 0 && html`<div class="min-h-[60vh] flex items-center justify-center p-6">
+            <div class="text-center max-w-sm">
+              <div class="text-4xl mb-3">🏢</div>
+              <div class="font-semibold text-slate-800">No businesses in ${s.curAgency?.name || 'this agency'} yet</div>
+              <p class="text-sm text-slate-500 mt-1 mb-4">Each business is a workspace for one client — its sites, keywords, and SEO data live there.</p>
+              <${Btn} variant="cta" onClick=${() => setShowNew(true)}>+ Create the first business</${Btn}>
+            </div>
+          </div>`}
+          ${accts.length > 0 && html`
+            ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
+            ${view === 'seo' && html`<${SEO} />`}
+            ${view === 'keywords' && html`<${Keywords} />`}
+            ${view === 'autoblog' && html`<${Autoblog} />`}
+            ${view === 'competitors' && html`<${Competitors} />`}
+            ${view === 'ranks' && html`<${Ranks} />`}
+            ${view === 'local' && html`<${Local} />`}
+            ${view === 'audit' && html`<${Audit} />`}
+            ${view === 'backlinks' && html`<${Backlinks} />`}
+            ${view === 'ads' && html`<${Ads} />`}
+            ${view === 'analytics' && html`<${Analytics} />`}
+            ${view === 'jt' && html`<${JobTracker} />`}
+            ${view === 'team' && html`<${Team} />`}`}
         </main>
       </div>
 

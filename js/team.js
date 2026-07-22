@@ -7,7 +7,7 @@
 //     or an owner-assigned subset). Owners grant / limit / promote / revoke.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, getUserEmail, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs, seoAgencyWhoami, seoSuperListAgencies, seoSuperCreateAgency } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, getUserEmail, getCurrentAgency, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs } from './store.js';
 import { Card, Btn, Input, Select, Modal, Field } from './ui.js';
 
 const ROLE_OPTS = [{ value: 'member', label: 'Member' }, { value: 'admin', label: 'Admin' }, { value: 'owner', label: 'Owner' }];
@@ -96,63 +96,6 @@ function AccountsModal({ m, accounts, onClose, onSave }) {
   </${Modal}>`;
 }
 
-// Platform-admin only: create agencies and see every agency at a glance.
-function SuperConsole() {
-  const [agencies, setAgencies] = useState(null);
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [ownerEmail, setOwnerEmail] = useState('');
-  const [cred, setCred] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const load = async () => { try { const r = await seoSuperListAgencies(); setAgencies(r.agencies || []); } catch (e) { setErr(e.message); setAgencies([]); } };
-  useEffect(() => { load(); }, []);
-
-  const create = async () => {
-    if (!name.trim() || !ownerEmail.trim()) { setErr('Agency name and owner email are both required.'); return; }
-    setBusy(true); setErr(''); setCred(null);
-    try {
-      const r = await seoSuperCreateAgency(name.trim(), ownerEmail.trim());
-      if (r.tempPassword) setCred({ email: ownerEmail.trim(), password: r.tempPassword });
-      setName(''); setOwnerEmail(''); setOpen(false); await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  };
-
-  return html`<${Card}><div class="p-4 border-l-4 border-slate-800">
-    <div class="flex items-center justify-between mb-1">
-      <div class="font-semibold text-slate-800">🏛 Agencies <span class="text-xs font-normal text-slate-400">— platform admin</span></div>
-      <${Btn} size="sm" variant=${open ? 'ghost' : 'cta'} onClick=${() => { setOpen(!open); setErr(''); }}>${open ? 'Cancel' : '+ New agency'}</${Btn}>
-    </div>
-    <p class="text-xs text-slate-400 mb-3">Each agency is fully walled off — its owners create their own businesses, staff, and Google connections and can never see another agency's data.</p>
-    ${err && html`<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700 mb-2">${err}</div>`}
-    ${cred && html`<div class="mb-2"><${TempPw} cred=${cred} onClose=${() => setCred(null)} /></div>`}
-    ${open && html`<div class="flex flex-wrap items-end gap-2 mb-3 pb-3 border-b border-slate-100">
-      <div class="flex-1 min-w-[180px]">
-        <label class="text-[11px] text-slate-400">Agency name</label>
-        <${Input} value=${name} onInput=${setName} placeholder="Acme Marketing" />
-      </div>
-      <div class="flex-1 min-w-[220px]">
-        <label class="text-[11px] text-slate-400">First owner's email</label>
-        <${Input} value=${ownerEmail} onInput=${setOwnerEmail} placeholder="owner@acme.com" />
-      </div>
-      <${Btn} size="sm" variant="cta" onClick=${create} disabled=${busy}>${busy ? 'Creating…' : 'Create agency'}</${Btn}>
-    </div>`}
-    ${agencies === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`<div class="divide-y divide-slate-50">
-      ${agencies.map((a) => html`<div class="flex items-center gap-3 py-2.5 flex-wrap">
-        <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm text-white shrink-0">${(a.name || '?')[0].toUpperCase()}</div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium text-slate-800 truncate">${a.name}</div>
-          <div class="text-xs text-slate-400 truncate">${(a.owners || []).join(', ') || 'no owners yet'}</div>
-        </div>
-        <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.businesses ?? 0} business${(a.businesses ?? 0) === 1 ? '' : 'es'}</span>
-        <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.staff ?? 0} staff</span>
-        <span class="text-[11px] text-slate-400">since ${a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—'}</span>
-      </div>`)}
-    </div>`}
-  </div></${Card}>`;
-}
-
 function TempPw({ cred, onClose }) {
   const copy = () => { try { navigator.clipboard.writeText(`${cred.email} / ${cred.password}`); } catch { /* ignore */ } };
   return html`<div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm">
@@ -171,7 +114,6 @@ export function Team() {
   const acct = activeAccount();
   const myEmail = getUserEmail();
   const [data, setData] = useState(null); // { members, admin, agency }
-  const [whoami, setWhoami] = useState(null); // { super, owner, member, agencyId, agencyName }
   const [agencyName, setAgencyName] = useState('');
   const [owners, setOwners] = useState(null);
   const [members, setMembers] = useState(null);
@@ -196,7 +138,6 @@ export function Team() {
     setData(d);
     if (d.agency) { try { await loadAgency(); } catch { /* non-fatal */ } }
   };
-  useEffect(() => { seoAgencyWhoami().then(setWhoami).catch(() => setWhoami({})); }, []);
   useEffect(() => { setData(null); setOwners(null); setMembers(null); setErr(''); setCred(null); if (accountId) load().catch((e) => { setErr(e.message); setData({ members: [], admin: false, agency: false }); }); }, [accountId]);
 
   const add = async () => {
@@ -257,9 +198,8 @@ export function Team() {
   return html`<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
     <div>
       <h1 class="text-xl font-bold text-slate-800">Team</h1>
-      <p class="text-sm text-slate-500">Who can access <span class="font-medium">${acct?.name || 'this account'}</span>${data.agency ? html` — plus staff across <span class="font-medium">${agencyName || whoami?.agencyName || 'your agency'}</span>.` : '.'}</p>
+      <p class="text-sm text-slate-500">Who can access <span class="font-medium">${acct?.name || 'this business'}</span>${data.agency ? html` — plus staff across <span class="font-medium">${agencyName || getCurrentAgency()?.name || 'your agency'}</span>.` : '.'}</p>
     </div>
-    ${whoami?.super && html`<${SuperConsole} />`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800 flex items-center justify-between"><span class="break-all">${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 hover:opacity-100 ml-2">✕</button></div>`}
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}

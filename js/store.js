@@ -12,7 +12,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- tiny pub/sub store -----------------------------------------------------
 const listeners = new Set();
-let state = { phase: 'loading', session: null, user: null, accounts: [], activeAccountId: null, error: '', myTabs: null, recovery: false };
+let state = { phase: 'loading', session: null, user: null, accounts: [], activeAccountId: null, error: '', myTabs: null, recovery: false, identity: null, curAgency: null };
 function set(patch) { state = { ...state, ...patch }; listeners.forEach((l) => l()); }
 export function getState() { return state; }
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -20,6 +20,61 @@ export function useStore() {
   const [, bump] = useState(0);
   useEffect(() => subscribe(() => bump((n) => n + 1)), []);
   return state;
+}
+
+// --- agency context (super → agency → business hierarchy) -------------------
+// Non-super staff are locked to their own agency. The platform admin (super)
+// picks an agency from the console and can back out to "All agencies";
+// everything below (account switcher, team, new-business) scopes to it.
+export function isSuper() { return !!state.identity?.superAdmin; }
+export function getCurrentAgency() { return state.curAgency; }
+export function enterAgency(id, name) {
+  try { localStorage.setItem('ops_current_agency', JSON.stringify({ id, name })); } catch { /* ignore */ }
+  set({ curAgency: { id, name } });
+  reconcileActiveAccount();
+}
+export function exitAgency() {
+  try { localStorage.removeItem('ops_current_agency'); } catch { /* ignore */ }
+  set({ curAgency: null });
+}
+// Accounts visible in the current agency context (supers see every account
+// via RLS, so filter client-side; everyone else is already scoped by RLS).
+export function visibleAccounts() {
+  if (state.identity?.superAdmin && state.curAgency) return state.accounts.filter((a) => a.agency_id === state.curAgency.id);
+  return state.accounts;
+}
+function reconcileActiveAccount() {
+  const vis = visibleAccounts();
+  if (!vis.some((a) => a.id === state.activeAccountId)) {
+    const id = vis[0]?.id || null;
+    set({ activeAccountId: id });
+    loadMyTabs(id);
+  }
+}
+export async function loadIdentity() {
+  const uid = state.user?.id;
+  if (!uid) return;
+  try {
+    const [{ data: prof }, { data: staff }] = await Promise.all([
+      supabase.from('profiles').select('role').eq('id', uid).maybeSingle(),
+      supabase.from('seo_agency_users').select('agency_id, role').eq('user_id', uid).maybeSingle(),
+    ]);
+    const superAdmin = prof?.role === 'overall_admin';
+    let agencyName = null;
+    if (staff?.agency_id) {
+      const { data: ag } = await supabase.from('seo_agencies').select('name').eq('id', staff.agency_id).maybeSingle();
+      agencyName = ag?.name || null;
+    }
+    let cur = null;
+    if (superAdmin) {
+      try { cur = JSON.parse(localStorage.getItem('ops_current_agency') || 'null'); } catch { cur = null; }
+      if (cur && !cur.id) cur = null;
+    } else if (staff?.agency_id) {
+      cur = { id: staff.agency_id, name: agencyName };
+    }
+    set({ identity: { superAdmin, staffRole: staff?.role || null, agencyId: staff?.agency_id || null, agencyName }, curAgency: cur });
+    reconcileActiveAccount();
+  } catch { set({ identity: { superAdmin: false, staffRole: null, agencyId: null, agencyName: null } }); }
 }
 
 // --- active account ---------------------------------------------------------
@@ -56,9 +111,9 @@ export async function forgotPassword(email) {
   if (error) throw new Error(error.message);
 }
 async function applySession(session) {
-  if (!session) { set({ phase: 'login', session: null, user: null, accounts: [], activeAccountId: null }); return; }
+  if (!session) { set({ phase: 'login', session: null, user: null, accounts: [], activeAccountId: null, identity: null, curAgency: null }); return; }
   set({ session, user: session.user });
-  await loadAccounts();
+  await Promise.all([loadAccounts(), loadIdentity()]);
 }
 export async function loadAccounts() {
   const { data, error } = await supabase.from('seo_accounts').select('*').order('created_at');
@@ -69,6 +124,7 @@ export async function loadAccounts() {
   if (!accounts.some((a) => a.id === active)) active = accounts[0]?.id || null;
   set({ phase: 'app', accounts, activeAccountId: active, error: '' });
   loadMyTabs(active);
+  reconcileActiveAccount(); // keep the active account inside the agency context (races loadIdentity)
 }
 export async function signIn(email, password) {
   const { error } = await supabase.auth.signInWithPassword({ email: (email || '').trim(), password });
@@ -90,7 +146,10 @@ async function opsInvoke(action, extra = {}) {
   return data;
 }
 export async function createAccount(name) {
-  const r = await opsInvoke('create_account', { name: (name || '').trim() });
+  const extra = { name: (name || '').trim() };
+  // Super creating inside an entered agency: stamp that agency, not their own.
+  if (state.identity?.superAdmin && state.curAgency) extra.agencyId = state.curAgency.id;
+  const r = await opsInvoke('create_account', extra);
   await loadAccounts();
   if (r.account) setActiveAccount(r.account.id);
   return r.account;
@@ -444,7 +503,11 @@ async function seoInvokeKw(action, extra = {}) {
 
 // --- Team / user control panel (seo-team fn) ---------------------------------
 async function seoInvokeTeam(action, extra = {}) {
-  const { data, error } = await supabase.functions.invoke('seo-team', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  const body = { action, accountId: getActiveAccountId(), ...extra };
+  // Super acting inside an entered agency targets THAT agency (seo-team
+  // honors body.agencyId only for platform admins).
+  if (state.identity?.superAdmin && state.curAgency) body.agencyId = state.curAgency.id;
+  const { data, error } = await supabase.functions.invoke('seo-team', { body });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
   if (data?.error) throw new Error(data.error);
   return data;
