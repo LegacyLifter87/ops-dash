@@ -2,7 +2,7 @@
 // app.js — Ops Dash shell: auth gate, sidebar nav, account switcher, router.
 // ---------------------------------------------------------------------------
 import { html, render, useState, useEffect, cx } from './lib.js';
-import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount, completeRecovery, visibleAccounts, exitAgency } from './store.js';
+import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAccount, createAccount, updateAccount, deleteAccount, completeRecovery, visibleAccounts, exitAgency } from './store.js';
 import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
 import { AgencyConsole } from './agencies.js';
 import { Dashboard } from './dashboard.js';
@@ -85,11 +85,48 @@ function NewAccountModal({ onClose }) {
   </${Modal}>`;
 }
 
+// Agency owners + supers: rename or permanently delete the active business.
+function ManageBusinessModal({ acct, onClose }) {
+  const [name, setName] = useState(acct.name || '');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const save = async () => {
+    if (!name.trim() || name.trim() === acct.name) { onClose(); return; }
+    setBusy('save'); setErr('');
+    try { await updateAccount(acct.id, name); onClose(); } catch (e) { setErr(e.message); setBusy(''); }
+  };
+  const del = async () => {
+    setBusy('del'); setErr('');
+    try { await deleteAccount(acct.id, confirm); onClose(); } catch (e) { setErr(e.message); setBusy(''); }
+  };
+  return html`<${Modal} title=${`Manage business — ${acct.name}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <${Field} label="Business name"><${Input} value=${name} onInput=${setName} placeholder="Acme Home Services" /></${Field}>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${!!busy || !name.trim()}>${busy === 'save' ? 'Saving…' : 'Save name'}</${Btn}>
+      <details class="pt-1">
+        <summary class="text-xs text-rose-500 cursor-pointer select-none">Danger zone — delete this business</summary>
+        <div class="mt-2 space-y-2">
+          <div class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800">
+            Permanently deletes <span class="font-semibold">${acct.name}</span> and ALL of its data — sites, keywords, rankings, Google/WordPress connections, blog queue, history. This cannot be undone.
+          </div>
+          <${Field} label=${`Type the business name to confirm: ${acct.name}`}>
+            <${Input} value=${confirm} onInput=${setConfirm} placeholder=${acct.name} />
+          </${Field}>
+          <${Btn} variant="danger" class="w-full" onClick=${del} disabled=${!!busy || confirm !== acct.name}>${busy === 'del' ? 'Deleting…' : 'Delete business permanently'}</${Btn}>
+        </div>
+      </details>
+    </div>
+  </${Modal}>`;
+}
+
 function App() {
   const s = useStore();
   const [route, setRoute] = useState(parseHash());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [manageAcct, setManageAcct] = useState(null);
 
   useEffect(() => { initAuth(); }, []);
   useEffect(() => {
@@ -113,6 +150,7 @@ function App() {
   const view = nav.some((n) => n.id === route.view) ? route.view : 'dashboard';
   const acct = activeAccount();
   const superInAgency = s.identity.superAdmin && !!s.curAgency;
+  const canManageBiz = s.identity.superAdmin || s.identity.staffRole === 'owner';
   const accts = visibleAccounts();
 
   return html`
@@ -130,7 +168,10 @@ function App() {
           <label class="text-[11px] uppercase tracking-wide text-slate-500 px-1">Business</label>
           <${Select} value=${s.activeAccountId || ''} onChange=${(v) => setActiveAccount(v)}
             options=${accts.map((a) => ({ value: a.id, label: a.name }))} class="mt-1 text-slate-800" />
-          <button onClick=${() => setShowNew(true)} class="mt-1.5 text-xs text-slate-400 hover:text-white">＋ New business</button>
+          <div class="mt-1.5 flex items-center gap-3">
+            <button onClick=${() => setShowNew(true)} class="text-xs text-slate-400 hover:text-white">＋ New business</button>
+            ${canManageBiz && acct && html`<button onClick=${() => setManageAcct(acct)} class="text-xs text-slate-400 hover:text-white">✏️ Manage</button>`}
+          </div>
         </div>
 
         <nav class="flex-1 p-3 space-y-1">
@@ -180,6 +221,7 @@ function App() {
       </div>
 
       ${showNew && html`<${NewAccountModal} onClose=${() => setShowNew(false)} />`}
+      ${manageAcct && html`<${ManageBusinessModal} acct=${manageAcct} onClose=${() => setManageAcct(null)} />`}
     </div>`;
 }
 

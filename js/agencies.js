@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // agencies.js — the PLATFORM console (super admin only). Mirrors Job
 // Tracker's "All companies" screen: the super admin lands here, sees every
-// agency, creates new ones, and enters an agency to work inside it. Inside,
-// "← All agencies" (in the sidebar) exits back to this screen.
+// agency, creates/renames/deletes them, and enters an agency to work inside
+// it. Inside, "← All agencies" (in the sidebar) exits back to this screen.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency } from './store.js';
-import { Btn, Input, Field } from './ui.js';
+import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency } from './store.js';
+import { Btn, Input, Field, Modal } from './ui.js';
 
 function OwnerCred({ cred, onClose }) {
   const copy = () => { try { navigator.clipboard.writeText(`${cred.email} / ${cred.password}`); } catch { /* ignore */ } };
@@ -20,12 +20,58 @@ function OwnerCred({ cred, onClose }) {
   </div>`;
 }
 
+function RenameAgencyModal({ agency, onClose, onDone }) {
+  const [name, setName] = useState(agency.name || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    if (!name.trim()) return;
+    setBusy(true); setErr('');
+    try { await seoSuperUpdateAgency(agency.id, name.trim()); await onDone(); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Rename agency — ${agency.name}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <${Field} label="Agency name"><${Input} value=${name} onInput=${setName} placeholder="Acme Marketing" /></${Field}>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy || !name.trim()}>${busy ? 'Saving…' : 'Save name'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+function DeleteAgencyModal({ agency, onClose, onDone }) {
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const del = async () => {
+    setBusy(true); setErr('');
+    try { await seoSuperDeleteAgency(agency.id, confirm); await onDone(); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Delete agency — ${agency.name}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <div class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-800">
+        This permanently deletes <span class="font-semibold">${agency.name}</span> — including its
+        <span class="font-semibold"> ${agency.businesses ?? 0} business${(agency.businesses ?? 0) === 1 ? '' : 'es'}</span> and all their data
+        (sites, keywords, rankings, connections, blog queue). Staff logins keep existing but lose all access. This cannot be undone.
+      </div>
+      <${Field} label=${`Type the agency name to confirm: ${agency.name}`}>
+        <${Input} value=${confirm} onInput=${setConfirm} placeholder=${agency.name} />
+      </${Field}>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} variant="danger" class="w-full" onClick=${del} disabled=${busy || confirm !== agency.name}>${busy ? 'Deleting…' : 'Delete agency permanently'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
 export function AgencyConsole() {
   const [agencies, setAgencies] = useState(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [cred, setCred] = useState(null);
+  const [renaming, setRenaming] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -88,20 +134,26 @@ export function AgencyConsole() {
       ${agencies === null ? html`<div class="text-sm text-slate-400 py-8 text-center">Loading agencies…</div>` : agencies.length === 0 ? html`
         <div class="text-sm text-slate-400 py-8 text-center">No agencies yet — create the first one.</div>` : html`
         <div class="space-y-3">
-          ${agencies.map((a) => html`<button onClick=${() => enterAgency(a.id, a.name)}
-            class="w-full text-left bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-brand-300 hover:shadow-md transition p-4 flex items-center gap-4 flex-wrap group">
-            <div class="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-lg text-white shrink-0 font-semibold">${(a.name || '?')[0].toUpperCase()}</div>
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold text-slate-800 truncate">${a.name}</div>
-              <div class="text-xs text-slate-400 truncate">${(a.owners || []).join(', ') || 'no owners yet'}</div>
-            </div>
+          ${agencies.map((a) => html`<div class="bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-brand-300 hover:shadow-md transition p-4 flex items-center gap-4 flex-wrap">
+            <button onClick=${() => enterAgency(a.id, a.name)} class="flex items-center gap-4 flex-1 min-w-0 text-left group">
+              <div class="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-lg text-white shrink-0 font-semibold">${(a.name || '?')[0].toUpperCase()}</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold text-slate-800 truncate group-hover:text-brand-700">${a.name}</div>
+                <div class="text-xs text-slate-400 truncate">${(a.owners || []).join(', ') || 'no owners yet'}</div>
+              </div>
+            </button>
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.businesses ?? 0} business${(a.businesses ?? 0) === 1 ? '' : 'es'}</span>
               <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.staff ?? 0} staff</span>
-              <span class="text-sm text-brand-600 font-medium group-hover:translate-x-0.5 transition">Open →</span>
+              <button onClick=${() => setRenaming(a)} title="Rename agency" class="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-700">✏️ Rename</button>
+              <button onClick=${() => setDeleting(a)} title="Delete agency" class="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:border-rose-300 hover:text-rose-700">🗑 Delete</button>
+              <${Btn} size="sm" onClick=${() => enterAgency(a.id, a.name)}>Open →</${Btn}>
             </div>
-          </button>`)}
+          </div>`)}
         </div>`}
     </main>
+
+    ${renaming && html`<${RenameAgencyModal} agency=${renaming} onClose=${() => setRenaming(null)} onDone=${load} />`}
+    ${deleting && html`<${DeleteAgencyModal} agency=${deleting} onClose=${() => setDeleting(null)} onDone=${load} />`}
   </div>`;
 }

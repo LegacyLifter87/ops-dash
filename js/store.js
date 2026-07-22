@@ -154,6 +154,15 @@ export async function createAccount(name) {
   if (r.account) setActiveAccount(r.account.id);
   return r.account;
 }
+export async function updateAccount(accountId, name) {
+  const r = await opsInvoke('update_account', { accountId, name: (name || '').trim() });
+  await loadAccounts();
+  return r.account;
+}
+export async function deleteAccount(accountId, confirmName) {
+  await opsInvoke('delete_account', { accountId, confirmName });
+  await loadAccounts(); // reconciles the active account away from the deleted one
+}
 
 // --- SEO / Google Search Console (account-scoped) ---------------------------
 async function seoInvoke(action, extra = {}) {
@@ -505,8 +514,9 @@ async function seoInvokeKw(action, extra = {}) {
 async function seoInvokeTeam(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };
   // Super acting inside an entered agency targets THAT agency (seo-team
-  // honors body.agencyId only for platform admins).
-  if (state.identity?.superAdmin && state.curAgency) body.agencyId = state.curAgency.id;
+  // honors body.agencyId only for platform admins). Explicit agencyId in
+  // `extra` (console actions) always wins.
+  if (state.identity?.superAdmin && state.curAgency && body.agencyId === undefined) body.agencyId = state.curAgency.id;
   const { data, error } = await supabase.functions.invoke('seo-team', { body });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
   if (data?.error) throw new Error(data.error);
@@ -522,6 +532,8 @@ export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email }
 export const seoAgencyWhoami = () => seoInvokeTeam('agency_whoami', {});
 export const seoSuperListAgencies = () => seoInvokeTeam('super_list_agencies', {});
 export const seoSuperCreateAgency = (name, ownerEmail) => seoInvokeTeam('super_create_agency', { name, ownerEmail });
+export const seoSuperUpdateAgency = (agencyId, name) => seoInvokeTeam('super_update_agency', { agencyId, name });
+export const seoSuperDeleteAgency = (agencyId, confirmName) => seoInvokeTeam('super_delete_agency', { agencyId, confirmName });
 export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
 export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam('member_grant', { email, unrestricted, accountIds });
 export const seoMemberSetAccounts = (userId, accountIds) => seoInvokeTeam('member_set_accounts', { userId, accountIds });
