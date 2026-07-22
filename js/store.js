@@ -564,6 +564,19 @@ export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { 
 export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
 export const seoTeamSetTabs = (userId, tabs) => seoInvokeTeam('set_tabs', { userId, tabs });
 
+// --- Media generation (kie.ai via seo-media fn) -----------------------------
+async function seoInvokeMedia(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-media', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoMediaGenerate = ({ model, input, kind, purpose, siteId }) => seoInvokeMedia('generate', { model, input, kind, purpose, siteId });
+export const seoMediaStatus = (id) => seoInvokeMedia('status', { id });
+export const seoMediaList = (limit) => seoInvokeMedia('list', { limit });
+export const seoMediaRemove = (id) => seoInvokeMedia('remove', { id });
+export const seoMediaCredits = () => seoInvokeMedia('credits', {});
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };
