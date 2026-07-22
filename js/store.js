@@ -455,6 +455,10 @@ export const seoTeamSetRole = (userId, role) => seoInvokeTeam('set_role', { user
 export const seoTeamRemove = (userId) => seoInvokeTeam('remove_member', { userId });
 export const seoAgencyList = () => seoInvokeTeam('agency_list', {});
 export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email });
+// Multi-agency: caller tier + the SUPER console (platform admin only).
+export const seoAgencyWhoami = () => seoInvokeTeam('agency_whoami', {});
+export const seoSuperListAgencies = () => seoInvokeTeam('super_list_agencies', {});
+export const seoSuperCreateAgency = (name, ownerEmail) => seoInvokeTeam('super_create_agency', { name, ownerEmail });
 export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
 export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam('member_grant', { email, unrestricted, accountIds });
 export const seoMemberSetAccounts = (userId, accountIds) => seoInvokeTeam('member_set_accounts', { userId, accountIds });
