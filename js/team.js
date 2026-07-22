@@ -7,8 +7,8 @@
 //     or an owner-assigned subset). Owners grant / limit / promote / revoke.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, getUserEmail, getCurrentAgency, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs } from './store.js';
-import { Card, Btn, Input, Select, Modal, Field } from './ui.js';
+import { useStore, getActiveAccountId, activeAccount, getUserEmail, getCurrentAgency, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs, seoUserAccounts, seoUserSetAccounts, jtAgencyStatus, jtAgencySet, jtAgencyUsers, jtAgencyTaskCreate } from './store.js';
+import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const ROLE_OPTS = [{ value: 'member', label: 'Member' }, { value: 'admin', label: 'Admin' }, { value: 'owner', label: 'Owner' }];
 const roleTone = (r) => r === 'owner' ? 'bg-violet-100 text-violet-700' : r === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600';
@@ -96,6 +96,122 @@ function AccountsModal({ m, accounts, onClose, onSave }) {
   </${Modal}>`;
 }
 
+// Owner-only: pick which of this agency's businesses a REGULAR user (client
+// login, not agency staff) can view. Staff access is managed in the members
+// card instead.
+function BizAccessModal({ m, onClose, onSave }) {
+  const [rows, setRows] = useState(null);
+  const [sel, setSel] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    seoUserAccounts(m.userId)
+      .then((r) => { setRows(r.accounts || []); setSel(new Set((r.accounts || []).filter((a) => a.member).map((a) => a.id))); })
+      .catch((e) => { setErr(e.message); setRows([]); });
+  }, [m.userId]);
+  const toggle = (id) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await onSave([...sel]); onClose(); } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Business access — ${m.email || 'user'}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <p class="text-xs text-slate-500">Tick the businesses this user can view. Unticking removes their access (their login is kept). Their role within each business is managed on that business's Team tab.</p>
+      ${rows === null ? html`<div class="text-sm text-slate-400 py-2">Loading…</div>` : html`
+        <div class="space-y-1.5 max-h-64 overflow-y-auto">
+          ${rows.map((a) => html`<label class=${cx('flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer', sel.has(a.id) ? 'border-brand-300 bg-brand-50/50 text-slate-800' : 'border-slate-200 text-slate-500')}>
+            <input type="checkbox" checked=${sel.has(a.id)} onChange=${() => toggle(a.id)} class="accent-brand-600" />
+            <span class="flex-1 truncate">${a.name}</span>
+            ${a.member && a.role && html`<span class=${cx('text-[10px] px-1.5 py-0.5 rounded', roleTone(a.role))}>${a.role}</span>`}
+          </label>`)}
+        </div>
+        <div class="text-xs text-slate-400">${sel.size} of ${rows.length} businesses</div>`}
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy || rows === null}>${busy ? 'Saving…' : 'Save access'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+// Agency ↔ Job Tracker: link the agency's own JT company, then assign tasks
+// from Ops Dash that land in that company's Tasks tab / My Day.
+function JtAgencyCard({ onBanner }) {
+  const [st, setSt] = useState(null); // { companyId, companyName, canPick, companies }
+  const [pick, setPick] = useState('');
+  const [users, setUsers] = useState(null);
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = async () => {
+    try {
+      const r = await jtAgencyStatus();
+      setSt(r); setPick(r.companyId || '');
+      if (r.companyId) { try { const u = await jtAgencyUsers(); setUsers(u.users || []); } catch { setUsers([]); } }
+    } catch (e) { setErr(e.message); setSt({}); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const saveLink = async () => {
+    setBusy('link'); setErr('');
+    try { await jtAgencySet(pick || null); await load(); onBanner(pick ? '🔗 Job Tracker account linked.' : 'Job Tracker account unlinked.'); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const createTask = async () => {
+    if (!title.trim()) { setErr('Give the task a title.'); return; }
+    setBusy('task'); setErr('');
+    try {
+      await jtAgencyTaskCreate({ title: title.trim(), description: desc.trim(), dueDate: dueDate || null, dueTime: dueTime || null, assigneeId: assignee || null });
+      setTitle(''); setDesc(''); setDueDate(''); setDueTime(''); setAssignee('');
+      onBanner('✅ Task sent to Job Tracker — it will show in that user’s Tasks / My Day.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  if (st === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading Job Tracker link…</div></${Card}>`;
+  return html`<${Card}><div class="p-4 border-l-4 border-teal-300">
+    <div class="font-semibold text-slate-800 mb-1">Job Tracker <span class="text-xs font-normal text-slate-400">— the agency's own JT account</span></div>
+    <p class="text-xs text-slate-400 mb-3">Link the Job Tracker company that belongs to this agency. Tasks assigned here show up as to-dos in that company's Job Tracker (Tasks tab + My Day).</p>
+    ${err && html`<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700 mb-2">${err}</div>`}
+
+    ${st.canPick ? html`<div class="flex flex-wrap items-end gap-2 mb-3">
+      <div class="flex-1 min-w-[220px]">
+        <label class="text-[11px] text-slate-400">Job Tracker company</label>
+        <${Select} value=${pick} onChange=${setPick} options=${[{ value: '', label: '— not linked —' }, ...(st.companies || []).map((c) => ({ value: c.id, label: c.name }))]} />
+      </div>
+      <${Btn} size="sm" onClick=${saveLink} disabled=${busy === 'link' || pick === (st.companyId || '')}>${busy === 'link' ? 'Saving…' : 'Save link'}</${Btn}>
+    </div>` : html`<div class="text-sm mb-3 ${st.companyName ? 'text-slate-700' : 'text-slate-400'}">${st.companyName ? html`Linked to <span class="font-medium">${st.companyName}</span>.` : 'Not linked yet — ask your platform admin to link your Job Tracker account.'}</div>`}
+
+    ${st.companyId && html`<div class="pt-3 border-t border-slate-100 space-y-2">
+      <div class="text-sm font-medium text-slate-700">Assign a task${st.companyName ? html` <span class="text-xs font-normal text-slate-400">→ ${st.companyName}</span>` : ''}</div>
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[220px]">
+          <label class="text-[11px] text-slate-400">Task title</label>
+          <${Input} value=${title} onInput=${setTitle} placeholder="Follow up on the Smith proposal" />
+        </div>
+        <div class="min-w-[170px]">
+          <label class="text-[11px] text-slate-400">Assign to</label>
+          <${Select} value=${assignee} onChange=${setAssignee} options=${[{ value: '', label: 'Unassigned' }, ...((users || []).map((u) => ({ value: u.id, label: u.name })))]} />
+        </div>
+      </div>
+      <${Textarea} value=${desc} onInput=${setDesc} rows=${2} placeholder="Details (optional)" />
+      <div class="flex flex-wrap items-end gap-2">
+        <div>
+          <label class="text-[11px] text-slate-400">Due date</label>
+          <${Input} type="date" value=${dueDate} onInput=${setDueDate} />
+        </div>
+        <div>
+          <label class="text-[11px] text-slate-400">Due time</label>
+          <${Input} type="time" value=${dueTime} onInput=${setDueTime} />
+        </div>
+        <${Btn} size="sm" variant="cta" onClick=${createTask} disabled=${busy === 'task' || !title.trim()}>${busy === 'task' ? 'Sending…' : '📌 Send task to Job Tracker'}</${Btn}>
+      </div>
+    </div>`}
+  </div></${Card}>`;
+}
+
 function TempPw({ cred, onClose }) {
   const copy = () => { try { navigator.clipboard.writeText(`${cred.email} / ${cred.password}`); } catch { /* ignore */ } };
   return html`<div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm">
@@ -129,6 +245,7 @@ export function Team() {
   const [tabsFor, setTabsFor] = useState(null);
   const [pwFor, setPwFor] = useState(null);
   const [acctFor, setAcctFor] = useState(null);
+  const [bizFor, setBizFor] = useState(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
@@ -222,6 +339,7 @@ export function Team() {
             ? html`<${Select} value=${m.role} onChange=${(v) => setMemberRole(m, v)} options=${ROLE_OPTS} />`
             : html`<span class=${cx('text-[11px] font-semibold px-2 py-0.5 rounded-full', roleTone(m.role))}>${m.role}</span>`}
           ${data.admin && !m.you && !m.isAgency && html`<div class="flex items-center gap-2 text-sm">
+            ${data.agency && !m.agencyTier && html`<button title="Which businesses this user can view" onClick=${() => setBizFor(m)} class="text-slate-400 hover:text-slate-700">🏢</button>`}
             <button title="Tab access" onClick=${() => setTabsFor(m)} class="text-slate-400 hover:text-slate-700">🗂</button>
             <button title="Send password-reset email" onClick=${() => sendReset(m)} class="text-slate-400 hover:text-slate-700">✉</button>
             <button title="Copy a reset link" onClick=${() => copyResetLink(m)} class="text-slate-400 hover:text-slate-700">🔗</button>
@@ -307,8 +425,11 @@ export function Team() {
       `}
     </div></${Card}>`}
 
+    ${data.agency && html`<${JtAgencyCard} onBanner=${setBanner} />`}
+
     ${tabsFor && html`<${TabsModal} m=${tabsFor} onClose=${() => setTabsFor(null)} onSave=${async (tabs) => { await seoTeamSetTabs(tabsFor.userId, tabs); await load(); }} />`}
     ${pwFor && html`<${PwModal} m=${pwFor} onClose=${() => setPwFor(null)} onSave=${async (pw) => { await seoTeamSetPassword(pwFor.userId, pw); setBanner(`🔑 Password updated for ${pwFor.email}.`); }} />`}
     ${acctFor && html`<${AccountsModal} m=${acctFor} accounts=${accounts} onClose=${() => setAcctFor(null)} onSave=${async (ids) => { await seoMemberSetAccounts(acctFor.userId, ids); await loadAgency(); await load(); }} />`}
+    ${bizFor && html`<${BizAccessModal} m=${bizFor} onClose=${() => setBizFor(null)} onSave=${async (ids) => { await seoUserSetAccounts(bizFor.userId, ids); setBanner(`🏢 Business access updated for ${bizFor.email}.`); await load(); }} />`}
   </div>`;
 }

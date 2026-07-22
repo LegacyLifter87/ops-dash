@@ -533,6 +533,8 @@ export const seoAgencyWhoami = () => seoInvokeTeam('agency_whoami', {});
 export const seoSuperListAgencies = () => seoInvokeTeam('super_list_agencies', {});
 export const seoSuperCreateAgency = (name, ownerEmail) => seoInvokeTeam('super_create_agency', { name, ownerEmail });
 export const seoSuperUpdateAgency = (agencyId, name) => seoInvokeTeam('super_update_agency', { agencyId, name });
+export const seoUserAccounts = (userId) => seoInvokeTeam('user_accounts', { userId });
+export const seoUserSetAccounts = (userId, accountIds) => seoInvokeTeam('user_set_accounts', { userId, accountIds });
 export const seoSuperDeleteAgency = (agencyId, confirmName) => seoInvokeTeam('super_delete_agency', { agencyId, confirmName });
 export const seoAgencyRevoke = (userId) => seoInvokeTeam('agency_revoke', { userId });
 export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam('member_grant', { email, unrestricted, accountIds });
@@ -564,7 +566,10 @@ export const seoTeamSetTabs = (userId, tabs) => seoInvokeTeam('set_tabs', { user
 
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
-  const { data, error } = await supabase.functions.invoke('jt-bridge', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  const body = { action, accountId: getActiveAccountId(), ...extra };
+  // Super acting inside an entered agency targets THAT agency's JT link.
+  if (state.identity?.superAdmin && state.curAgency && body.agencyId === undefined) body.agencyId = state.curAgency.id;
+  const { data, error } = await supabase.functions.invoke('jt-bridge', { body });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
   if (data?.error) throw new Error(data.error);
   return data;
@@ -575,3 +580,8 @@ export const jtListCompanies = () => jtInvoke('list_companies');
 export const jtLink = (companyId) => jtInvoke('link', { companyId });
 export const jtUnlink = () => jtInvoke('unlink');
 export const jtCreateFromCompany = (companyId) => jtInvoke('create_from_company', { companyId });
+// Agency-level JT link + task push (Team tab).
+export const jtAgencyStatus = () => jtInvoke('agency_jt_status');
+export const jtAgencySet = (companyId) => jtInvoke('agency_jt_set', { companyId });
+export const jtAgencyUsers = () => jtInvoke('agency_task_users');
+export const jtAgencyTaskCreate = ({ title, description, dueDate, dueTime, assigneeId }) => jtInvoke('agency_task_create', { title, description, dueDate, dueTime, assigneeId });
