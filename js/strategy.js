@@ -65,7 +65,9 @@ export function Strategy() {
       const r = await seoStrategySitemap(site);
       const p = await seoStrategyPages(site);
       setPages(p.pages || []); setPagesDirty(false);
-      setBanner(`🗺 Sitemap pulled — ${r.found} pages found.`);
+      setBanner(r.source === 'gsc'
+        ? `🔍 No public sitemap — pulled ${r.found} pages from this site's Search Console data instead.`
+        : `🗺 Sitemap pulled — ${r.found} pages found.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const togglePage = (url) => {
