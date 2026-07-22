@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.7.0
+ * Version: 1.7.1
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.7.0');
+define('OPSDASH_VERSION', '1.7.1');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -331,11 +331,38 @@ add_filter('robots_txt', function ($output, $public) {
 	return $custom !== '' ? $custom . "\n" : $output;
 }, 20, 2);
 
-// A physical file at the web root wins over the filter — we cannot fix that
-// from PHP safely, so we detect it and tell the dashboard to warn the user.
+// A physical file at the web root wins over the filter. Since 1.7.1 we manage
+// it directly: back the original up once, then write the Ops Dash rules INTO
+// the physical file. Resetting to the WordPress default restores the backup.
 function opsdash_physical_robots() {
 	$path = trailingslashit(ABSPATH) . 'robots.txt';
 	return @file_exists($path) ? $path : '';
+}
+function opsdash_robots_backup_path() {
+	return trailingslashit(ABSPATH) . 'robots-opsdash-backup.txt';
+}
+// Returns ['written' => bool, 'warning' => string]
+function opsdash_write_physical_robots($content) {
+	$phys = opsdash_physical_robots();
+	if ($phys === '') return ['written' => false, 'warning' => ''];
+	if (!@is_writable($phys)) {
+		return ['written' => false, 'warning' => 'A physical robots.txt exists at the web root and is NOT writable by WordPress, so it still overrides these rules. Fix its file permissions or delete it on the server.'];
+	}
+	$bak = opsdash_robots_backup_path();
+	if (!@file_exists($bak)) @copy($phys, $bak);
+	$okw = @file_put_contents($phys, rtrim((string) $content) . "\n");
+	if ($okw === false) {
+		return ['written' => false, 'warning' => 'Could not write to the physical robots.txt at the web root — it still overrides these rules. Fix its file permissions or delete it on the server.'];
+	}
+	return ['written' => true, 'warning' => ''];
+}
+function opsdash_restore_physical_robots() {
+	$phys = opsdash_physical_robots();
+	$bak = opsdash_robots_backup_path();
+	if ($phys === '' || !@file_exists($bak)) return false;
+	$ok = @copy($bak, $phys);
+	if ($ok) @unlink($bak);
+	return (bool) $ok;
 }
 
 // Let Ops Dash force WordPress core sitemaps back on if something disabled them.
@@ -373,22 +400,42 @@ add_action('rest_api_init', function () {
 		'permission_callback' => 'opsdash_auth',
 		'callback' => function (WP_REST_Request $req) {
 			$saved = false;
+			$warning = '';
+			$physical_written = false;
 			if ($req->get_method() === 'POST') {
 				$p = $req->get_json_params();
+				if (!is_array($p)) $p = [];
 				$content = (string) ($p['content'] ?? '');
 				if (strlen($content) > 10000) return new WP_Error('opsdash_bad_request', 'robots.txt too large', ['status' => 400]);
 				// Plain text only — strip any markup, keep line breaks.
-				update_option('opsdash_robots', sanitize_textarea_field($content));
+				$clean = sanitize_textarea_field($content);
+				update_option('opsdash_robots', $clean);
 				$saved = true;
+				if ($clean === '') {
+					// Handing control back to WordPress: restore the original
+					// physical file if we replaced it earlier.
+					opsdash_restore_physical_robots();
+				} else {
+					// A physical file overrides the WP filter — write the rules
+					// straight into it (original backed up once).
+					$w = opsdash_write_physical_robots($clean);
+					$physical_written = $w['written'];
+					$warning = $w['warning'];
+				}
 			}
 			$phys = opsdash_physical_robots();
+			if (!$saved && $phys !== '' && (string) get_option('opsdash_robots', '') !== '' && @file_get_contents($phys) !== false && trim((string) @file_get_contents($phys)) !== trim((string) get_option('opsdash_robots', ''))) {
+				$warning = 'A physical robots.txt at the web root differs from the managed rules. Re-apply the fix to overwrite it (the original is backed up first).';
+			}
 			return [
 				'ok' => true,
 				'saved' => $saved,
 				'managed' => (string) get_option('opsdash_robots', ''),
 				'physical_file' => $phys !== '',
+				'physical_written' => $physical_written,
+				'physical_backup' => @file_exists(opsdash_robots_backup_path()),
 				'physical_contents' => $phys !== '' ? substr((string) @file_get_contents($phys), 0, 10000) : '',
-				'warning' => $phys !== '' ? 'A physical robots.txt exists at the web root and takes precedence over WordPress. Delete it on the server for these rules to take effect.' : '',
+				'warning' => $warning,
 				'robots_url' => home_url('/robots.txt'),
 				'site_public' => (string) get_option('blog_public') === '1',
 				'sitemap' => opsdash_sitemap_info(),

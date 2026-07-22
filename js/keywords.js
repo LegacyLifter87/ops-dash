@@ -427,7 +427,7 @@ function WpCard({ wp, domain, wpBusy, notice, error, onConnect, onRecheck, onDis
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${setUrl} placeholder="https://clientsite.com" /></div>
       <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.live ? '🔗 Re-pair' : wp?.pair_code ? '🔗 New code' : '🔗 Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.7.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.7.0 (.zip)</a>
+      <a href="/opsdash-connector-1.7.1.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.7.1 (.zip)</a>
     </div>
     ${!wp?.connected && url && html`<div class="text-[11px] text-slate-400 -mt-1">URL pre-filled from this site's Search Console connection — change it only if WordPress lives at a different address.</div>`}
 
