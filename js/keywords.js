@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpStatus, seoWpPublish, seoWpDisconnect, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpPairStart, seoWpStatus, seoWpPublish, seoWpDisconnect, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -134,11 +134,30 @@ export function Keywords() {
       else setWpErr('Not connected yet — enter the site URL and click Connect.');
     } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
-  const wpConnect = async (url) => {
+  // Start the pairing flow: mint a short code, show it, and wait for the WP
+  // plugin to claim it — the polling effect below flips the card to Connected
+  // by itself the moment the site checks in.
+  const wpPair = async (url) => {
     setWpBusy(true); setWpErr(''); setWpNotice('');
-    try { await seoWpConnect(site, url); await loadWp(site); setWpNotice('Connection key ready — install the plugin on the site, paste the key, then hit ↻.'); }
+    try { await seoWpPairStart(site, url); await loadWp(site); }
     catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
   };
+  // While a pairing code is outstanding, poll every 5s so the card goes green
+  // on its own as soon as the plugin claims the code. Stops on connect/expiry.
+  useEffect(() => {
+    const code = wp?.pair_code;
+    if (!code || wp?.live) return;
+    const until = wp?.pair_expires ? new Date(wp.pair_expires).getTime() : 0;
+    const iv = setInterval(async () => {
+      if (until && Date.now() > until) { clearInterval(iv); return; }
+      try {
+        const s = await seoWpStatus(site);
+        setWp(s);
+        if (s?.live) { clearInterval(iv); setWpErr(''); setWpNotice(`Connected ✓ — ${s.info?.site_name || s.wp_url} (plugin v${s.info?.plugin_version || '?'})`); }
+      } catch (_) { /* keep polling */ }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [wp?.pair_code, wp?.live, site]);
   const wpDisconnect = async () => {
     setWpBusy(true); setWpErr(''); setWpNotice('');
     try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
@@ -290,7 +309,7 @@ export function Keywords() {
               <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
             </div></${Card}>`
           : html`<div class="space-y-3">
-            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpConnect} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
+            <${WpCard} wp=${wp} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpPair} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
             <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
@@ -390,20 +409,32 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
     </div>
     <div class="flex gap-2 items-center flex-wrap">
       <div class="w-72"><${Input} value=${url} onInput=${setUrl} placeholder="https://clientsite.com" /></div>
-      <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.connected ? 'Update URL' : 'Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.6.3.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.6.3 (.zip)</a>
+      <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.live ? '🔗 Re-pair' : wp?.pair_code ? '🔗 New code' : '🔗 Connect'}</${Btn}>
+      <a href="/opsdash-connector-1.7.0.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.7.0 (.zip)</a>
     </div>
-    ${wp?.token && html`<div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs text-slate-600">
-      <div class="font-semibold text-slate-400 uppercase">Connection key</div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
-        <${Btn} size="sm" onClick=${copy} disabled=${wpBusy}>${copied ? `Copied ✓ ${copied}` : 'Copy'}</${Btn}>
-        <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
-      </div>
-      <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click <span class="font-medium">↻ Check connection</span> here.</div>
-      <div class="text-slate-400">Treat this key like a password — it can create and edit posts and pages on the site (nothing else). If it's ever exposed, hit <span class="font-medium">Regenerate</span> and re-paste.</div>
-      ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
+
+    ${wp?.pair_code && !wp?.live && html`<div class="rounded-lg border-2 border-brand-200 bg-brand-50 p-4 space-y-2">
+      <div class="text-xs font-semibold text-brand-700 uppercase">Pairing code — enter it on the WordPress site</div>
+      <div class="text-3xl font-bold tracking-widest text-slate-800 tabular-nums select-all">${String(wp.pair_code).slice(0, 4)}-${String(wp.pair_code).slice(4)}</div>
+      <ol class="list-decimal ml-5 text-xs text-slate-600 space-y-0.5">
+        <li>On the site: install &amp; activate the Connector plugin (v1.7.0+, download link above) if it isn't already.</li>
+        <li>WP Admin → Settings → <span class="font-medium">Ops Dash</span> → type this code → <span class="font-medium">Connect to Ops Dash</span>.</li>
+      </ol>
+      <div class="text-xs text-slate-500 animate-pulse">Waiting for the site… this card connects automatically the moment the code is entered. Code expires in 15 minutes.</div>
     </div>`}
+
+    ${wp?.token && html`<details class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+      <summary class="cursor-pointer font-semibold text-slate-400 uppercase">Advanced: connection key (manual)</summary>
+      <div class="space-y-1.5 mt-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
+          <${Btn} size="sm" onClick=${copy} disabled=${wpBusy}>${copied ? `Copied ✓ ${copied}` : 'Copy'}</${Btn}>
+          <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
+        </div>
+        <div>Only needed on plugin versions older than 1.7.0, or when a pairing code can't be used: paste this key in WP Admin → Settings → Ops Dash → <span class="font-medium">Advanced</span>, Save, then click <span class="font-medium">↻ Check connection</span>.</div>
+        ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
+      </div>
+    </details>`}
     ${notice && html`<div class="text-sm text-emerald-700">${notice}</div>`}
     ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
   </div></${Card}>`;

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.6.3
+ * Version: 1.7.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -91,9 +91,9 @@ if (!function_exists('opsdash_cleanup_stale_copies')) {
 	}
 
 	add_action('admin_init', function () {
-		if (get_option('opsdash_cleanup_ran') !== '1.6.3') {
+		if (get_option('opsdash_cleanup_ran') !== '1.7.0') {
 			opsdash_cleanup_stale_copies();
-			update_option('opsdash_cleanup_ran', '1.6.3');
+			update_option('opsdash_cleanup_ran', '1.7.0');
 		}
 	});
 }
@@ -108,7 +108,11 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.6.3');
+define('OPSDASH_VERSION', '1.7.0');
+// Pairing-code exchange endpoint: the plugin trades the short code the user
+// typed for the real connection key, server-to-server. Public endpoint; codes
+// are single-use, 15-minute, host-locked, and rate-limited server-side.
+define('OPSDASH_PAIR_URL', 'https://ghwmaluhbrainprieoaq.supabase.co/functions/v1/seo-wp-pair');
 define('OPSDASH_UPDATE_MANIFEST', 'https://ops.legacybuilder.app/plugin-update.json');
 // Any update package must come from this exact HTTPS origin. Without this a
 // tampered manifest could point WordPress at an arbitrary zip and install it.
@@ -172,23 +176,71 @@ add_action('admin_menu', function () {
 add_action('admin_init', function () {
 	register_setting('opsdash', 'opsdash_key', ['sanitize_callback' => 'sanitize_text_field']);
 });
-function opsdash_settings_page() { ?>
+function opsdash_settings_page() {
+	$msg = isset($_GET['opsdash_msg']) ? sanitize_text_field(wp_unslash($_GET['opsdash_msg'])) : ''; ?>
 	<div class="wrap">
 		<h1>Ops Dash Connector</h1>
-		<p>Paste the connection key from your Ops Dash portal (Keywords &rarr; Briefs &rarr; WordPress publishing).</p>
-		<form method="post" action="options.php">
-			<?php settings_fields('opsdash'); ?>
-			<input type="password" name="opsdash_key" value="<?php echo esc_attr(get_option('opsdash_key', '')); ?>" style="width:440px" placeholder="opsd_..." autocomplete="off" />
-			<?php submit_button('Save key'); ?>
-		</form>
+		<?php if ($msg === 'paired') : ?>
+			<div class="notice notice-success"><p><strong>Connected!</strong> This site is now linked to your Ops Dash portal &mdash; the portal will show it as connected within a few seconds.</p></div>
+		<?php elseif ($msg !== '') : ?>
+			<div class="notice notice-error"><p><?php echo esc_html($msg); ?></p></div>
+		<?php endif; ?>
 		<p>Status: <?php echo get_option('opsdash_key')
-			? '<strong style="color:green">Key saved.</strong> Finish connecting from the Ops Dash portal (it will show &ldquo;Connected&rdquo; once it can reach this site).'
-			: '<em>No key saved yet.</em>'; ?></p>
-		<p style="color:#666">This key lets Ops Dash create and edit <strong>posts and pages only</strong>. It cannot add users, change settings, install plugins, or touch anything else on the site. If it is ever exposed, click <em>Regenerate key</em> in the Ops Dash portal and paste the new one here &mdash; the old key stops working immediately.</p>
-		<p style="color:#666">Detected SEO plugin: <strong><?php echo esc_html(opsdash_seo_plugin()); ?></strong>
-			<?php if (opsdash_seo_plugin() === 'none') echo ' &mdash; Ops Dash will output SEO titles, meta descriptions, and schema itself.'; ?></p>
+			? '<strong style="color:green">Connected key saved.</strong>'
+			: '<em>Not connected yet.</em>'; ?>
+			&nbsp;Detected SEO plugin: <strong><?php echo esc_html(opsdash_seo_plugin()); ?></strong></p>
+
+		<h2>Connect with a pairing code</h2>
+		<p>In your Ops Dash portal, open <strong>Keywords &rarr; Briefs &rarr; WordPress publishing</strong> and click <strong>Connect</strong> &mdash; it shows an 8-character code. Enter it here:</p>
+		<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+			<input type="hidden" name="action" value="opsdash_pair" />
+			<?php wp_nonce_field('opsdash_pair'); ?>
+			<input type="text" name="opsdash_code" style="width:220px;font-size:18px;letter-spacing:3px;text-transform:uppercase" placeholder="XXXX-XXXX" autocomplete="off" />
+			<?php submit_button('Connect to Ops Dash', 'primary', 'submit', false); ?>
+		</form>
+
+		<details style="margin-top:20px">
+			<summary style="cursor:pointer;color:#666">Advanced: paste a connection key manually</summary>
+			<form method="post" action="options.php" style="margin-top:8px">
+				<?php settings_fields('opsdash'); ?>
+				<input type="password" name="opsdash_key" value="<?php echo esc_attr(get_option('opsdash_key', '')); ?>" style="width:440px" placeholder="opsd_..." autocomplete="off" />
+				<?php submit_button('Save key'); ?>
+			</form>
+		</details>
+
+		<p style="color:#666;margin-top:16px">The connection lets Ops Dash create and edit <strong>posts and pages only</strong>. It cannot add users, change settings, install plugins, or touch anything else on the site. Re-pairing from the Ops Dash portal invalidates the previous connection immediately.</p>
 	</div>
 <?php }
+
+// Trade the typed pairing code for the real connection key, server-to-server.
+add_action('admin_post_opsdash_pair', function () {
+	if (!current_user_can('manage_options')) wp_die('Insufficient permissions.');
+	check_admin_referer('opsdash_pair');
+	$back = admin_url('options-general.php?page=opsdash');
+	$code = isset($_POST['opsdash_code']) ? strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) wp_unslash($_POST['opsdash_code']))) : '';
+	if (strlen($code) < 6) { wp_safe_redirect(add_query_arg('opsdash_msg', rawurlencode('Enter the pairing code shown in Ops Dash.'), $back)); exit; }
+	$res = wp_remote_post(OPSDASH_PAIR_URL, [
+		'timeout' => 20,
+		'headers' => ['Content-Type' => 'application/json'],
+		'body' => wp_json_encode([
+			'action' => 'claim',
+			'code' => $code,
+			'site_url' => home_url(),
+			'site_name' => get_bloginfo('name'),
+			'plugin_version' => OPSDASH_VERSION,
+			'seo_plugin' => opsdash_seo_plugin(),
+			'wp_version' => get_bloginfo('version'),
+		]),
+	]);
+	if (is_wp_error($res)) { wp_safe_redirect(add_query_arg('opsdash_msg', rawurlencode('Could not reach Ops Dash: ' . $res->get_error_message()), $back)); exit; }
+	$body = json_decode((string) wp_remote_retrieve_body($res), true);
+	if (!is_array($body) || empty($body['token'])) {
+		$err = (is_array($body) && !empty($body['error'])) ? (string) $body['error'] : 'Pairing failed — the code may have expired. Generate a fresh one in Ops Dash and try again.';
+		wp_safe_redirect(add_query_arg('opsdash_msg', rawurlencode($err), $back)); exit;
+	}
+	update_option('opsdash_key', sanitize_text_field((string) $body['token']));
+	wp_safe_redirect(add_query_arg('opsdash_msg', 'paired', $back)); exit;
+});
 
 // ---------------------------------------------------------------------------
 // Auth: every REST call must carry the connection key.

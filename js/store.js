@@ -384,6 +384,9 @@ async function seoInvokeWp(action, extra = {}) {
   return data;
 }
 export const seoWpConnect = (siteId, wpUrl) => seoInvokeWp('connect', { siteId, wpUrl });
+// Pairing flow: mint a short-lived 8-char code; the WP plugin exchanges it for
+// the real key itself (seo-wp-pair), so no human ever copies the long key.
+export const seoWpPairStart = (siteId, wpUrl) => seoInvokeWp('pair_start', { siteId, wpUrl });
 export const seoWpStatus = (siteId) => seoInvokeWp('status', { siteId });
 export const seoWpPublish = (siteId, key, mode, featuredImageUrl, imageSource) => seoInvokeWp('publish', { siteId, key, mode, featuredImageUrl, imageSource });
 export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { siteId, url });
