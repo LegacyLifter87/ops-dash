@@ -370,8 +370,10 @@ export function mdRender(md) {
 function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect, onRotate }) {
   const [url, setUrl] = useState(wp?.wp_url || '');
   useEffect(() => { setUrl(wp?.wp_url || ''); }, [wp?.wp_url]);
-  const [copied, setCopied] = useState(false);
-  const copy = async () => { try { await navigator.clipboard.writeText(wp.token); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
+  const [copied, setCopied] = useState('');
+  // Show the tail of what actually hit the clipboard: if a regenerate re-rendered
+  // mid-click, the user can SEE their clipboard holds a different key than the box.
+  const copy = async () => { try { const t = wp.token; await navigator.clipboard.writeText(t); setCopied('…' + t.slice(-4)); setTimeout(() => setCopied(''), 2500); } catch (_) { /* ignore */ } };
   return html`<${Card}><div class="p-4 space-y-3">
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
@@ -395,7 +397,7 @@ function WpCard({ wp, wpBusy, notice, error, onConnect, onRecheck, onDisconnect,
       <div class="font-semibold text-slate-400 uppercase">Connection key</div>
       <div class="flex items-center gap-2 flex-wrap">
         <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
-        <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy'}</${Btn}>
+        <${Btn} size="sm" onClick=${copy} disabled=${wpBusy}>${copied ? `Copied ✓ ${copied}` : 'Copy'}</${Btn}>
         <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
       </div>
       <div>Setup: WP Admin → Plugins → Add New → Upload the zip → Activate → Settings → <span class="font-medium">Ops Dash</span> → paste this key → Save → click <span class="font-medium">↻ Check connection</span> here.</div>
