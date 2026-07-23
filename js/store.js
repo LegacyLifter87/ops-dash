@@ -581,6 +581,27 @@ export const seoStrategyCounties = (state) => seoInvokeStrategy('geo_counties', 
 export const seoStrategyCities = (state, counties) => seoInvokeStrategy('geo_cities', { state, counties });
 export const seoStrategyContext = (siteId) => seoInvokeStrategy('context', { siteId });
 
+// --- Social Media Manager (seo-social fn) -----------------------------------
+async function seoInvokeSocial(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-social', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoSocialProfile = (siteId) => seoInvokeSocial('profile_get', { siteId });
+export const seoSocialProfileSave = (siteId, fields) => seoInvokeSocial('profile_save', { siteId, ...fields });
+export const seoSocialLogoUpload = (siteId, dataBase64, contentType) => seoInvokeSocial('logo_upload', { siteId, dataBase64, contentType });
+export const seoSocialPlanMonth = (siteId, month) => seoInvokeSocial('plan_month', { siteId, month });
+export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
+export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });
+export const seoSocialRegenMedia = (siteId, postId) => seoInvokeSocial('regen_media', { siteId, postId });
+export const seoSocialRefresh = (siteId, calendarId) => seoInvokeSocial('refresh', { siteId, calendarId });
+export const seoSocialCalendar = (siteId, month) => seoInvokeSocial('calendar_get', { siteId, month });
+export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('update_post', { siteId, postId, ...fields });
+export const seoSocialApprove = (siteId, postId) => seoInvokeSocial('approve', { siteId, postId });
+export const seoSocialReject = (siteId, postId, reason) => seoInvokeSocial('reject', { siteId, postId, reason });
+export const seoSocialApproveAll = (siteId, calendarId) => seoInvokeSocial('approve_all', { siteId, calendarId });
+
 // --- Media generation (kie.ai via seo-media fn) -----------------------------
 async function seoInvokeMedia(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-media', { body: { action, accountId: getActiveAccountId(), ...extra } });

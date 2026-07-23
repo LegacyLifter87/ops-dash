@@ -19,6 +19,7 @@ import { Analytics } from './analytics.js';
 import { Autoblog } from './autoblog.js';
 import { Team } from './team.js';
 import { Strategy } from './strategy.js';
+import { Social } from './social.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
 const NAV = [
@@ -26,6 +27,7 @@ const NAV = [
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
   { id: 'strategy', label: 'Strategy', icon: '🎯' },
+  { id: 'social', label: 'Social', icon: '📣' },
   { id: 'autoblog', label: 'Automation', icon: '🤖' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
@@ -210,6 +212,7 @@ function App() {
             ${view === 'seo' && html`<${SEO} />`}
             ${view === 'keywords' && html`<${Keywords} />`}
             ${view === 'strategy' && html`<${Strategy} />`}
+            ${view === 'social' && html`<${Social} />`}
             ${view === 'autoblog' && html`<${Autoblog} />`}
             ${view === 'competitors' && html`<${Competitors} />`}
             ${view === 'ranks' && html`<${Ranks} />`}
