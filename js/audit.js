@@ -4,7 +4,7 @@
 // per page — how ready it is for AI answer engines to understand and cite.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoSiteAuditRun, seoSiteAuditLoad, seoSiteFixStatus, seoFixRobots, seoFixSitemap, seoFixHeadings, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadAudit, seoAuditDiscover, seoAuditRun, seoAuditAi, seoAuditSpeed, seoSiteAuditRun, seoSiteAuditLoad, seoSiteFixStatus, seoFixRobots, seoFixSitemap, seoFixLlms, seoFixHeadings, seoWpStatus, seoWpSuggestMeta, seoWpUpdateSeo, seoWpFix } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -309,6 +309,21 @@ function SiteFixes({ site, wpConnected }) {
         ${sm.likely_sitemap_url
           ? html`<span class="text-xs text-emerald-600 shrink-0">✓ present</span>`
           : html`<${Btn} size="sm" onClick=${() => act('sitemap', () => seoFixSitemap(site), 'WordPress core sitemaps enabled.')} disabled=${!!busy}>${busy === 'sitemap' ? 'Enabling…' : 'Enable sitemap'}</${Btn}>`}
+      </div>
+
+      <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-slate-800">llms.txt <span class="text-[10px] font-normal text-slate-400">AI search</span></div>
+          <div class="text-xs text-slate-500">
+            ${st.llms?.upgrade ? 'Needs Connector v1.7.2+ on the site (auto-updates within ~24h).'
+              : st.llms?.exists ? html`Published: <a href=${st.llms.llms_url} target="_blank" rel="noopener" class="text-brand-700 underline">${st.llms.llms_url}</a> — tells AI assistants what to cite.`
+              : 'Not published — summarises the business, services and service area for AI assistants.'}
+          </div>
+        </div>
+        ${!st.llms?.upgrade && html`<div class="flex items-center gap-2 shrink-0">
+          ${st.llms?.exists && html`<span class="text-xs text-emerald-600">✓ present</span>`}
+          <${Btn} size="sm" onClick=${() => act('llms', () => seoFixLlms(site), 'llms.txt published from your business profile + Strategy tab.')} disabled=${!!busy}>${busy === 'llms' ? 'Publishing…' : st.llms?.exists ? '↻ Regenerate' : 'Generate llms.txt'}</${Btn}>
+        </div>`}
       </div>
     </div>`}
   </div></${Card}>`;

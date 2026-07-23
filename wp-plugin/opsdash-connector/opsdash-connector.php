@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.7.1
+ * Version: 1.7.2
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.7.1');
+define('OPSDASH_VERSION', '1.7.2');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -439,6 +439,49 @@ add_action('rest_api_init', function () {
 				'robots_url' => home_url('/robots.txt'),
 				'site_public' => (string) get_option('blog_public') === '1',
 				'sitemap' => opsdash_sitemap_info(),
+			];
+		},
+	]);
+
+	// llms.txt — the emerging AI-assistant site summary (llmstxt.org). Served
+	// as a PHYSICAL file at the web root so any host serves it without rewrite
+	// rules. GET reads the state; POST {content} writes it (a pre-existing
+	// file is backed up once); POST {content: ""} removes our file.
+	register_rest_route('opsdash/v1', '/llms', [
+		'methods' => ['GET', 'POST'],
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function (WP_REST_Request $req) {
+			$path = trailingslashit(ABSPATH) . 'llms.txt';
+			$bak = trailingslashit(ABSPATH) . 'llms-opsdash-backup.txt';
+			$saved = false;
+			$warning = '';
+			if ($req->get_method() === 'POST') {
+				$p = $req->get_json_params();
+				if (!is_array($p)) $p = [];
+				$content = (string) ($p['content'] ?? '');
+				if (strlen($content) > 30000) return new WP_Error('opsdash_bad_request', 'llms.txt too large', ['status' => 400]);
+				$clean = sanitize_textarea_field($content);
+				if ($clean === '') {
+					if (@file_exists($bak)) { @copy($bak, $path); @unlink($bak); }
+					elseif (@file_exists($path)) @unlink($path);
+					$saved = true;
+				} else {
+					if (@file_exists($path) && !@file_exists($bak)) @copy($path, $bak);
+					$okw = @file_put_contents($path, rtrim($clean) . "\n");
+					if ($okw === false) $warning = 'Could not write llms.txt at the web root — fix file permissions on the server.';
+					else $saved = true;
+				}
+			}
+			$exists = @file_exists($path);
+			return [
+				'ok' => true,
+				'saved' => $saved,
+				'exists' => $exists,
+				'contents' => $exists ? substr((string) @file_get_contents($path), 0, 30000) : '',
+				'writable' => $exists ? (bool) @is_writable($path) : (bool) @is_writable(ABSPATH),
+				'backup' => @file_exists($bak),
+				'warning' => $warning,
+				'llms_url' => home_url('/llms.txt'),
 			];
 		},
 	]);

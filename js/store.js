@@ -276,6 +276,7 @@ async function seoInvokeSiteFix(action, extra = {}) {
 export const seoSiteFixStatus = (siteId) => seoInvokeSiteFix('status', { siteId });
 export const seoFixRobots = (siteId, opts) => seoInvokeSiteFix('fix_robots', { siteId, ...opts });
 export const seoFixSitemap = (siteId) => seoInvokeSiteFix('fix_sitemap', { siteId });
+export const seoFixLlms = (siteId, content) => seoInvokeSiteFix('fix_llms', { siteId, content });
 export const seoFixHeadings = (siteId, url, renderedH1) => seoInvokeSiteFix('fix_headings', { siteId, url, rendered_h1: renderedH1 });
 export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { siteId } : {});
 // Negative keywords: exclude from blogging (auto + manual, any opportunity score)
