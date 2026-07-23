@@ -18,7 +18,7 @@ function slugTitle(path) {
   return seg.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 }
 
-export function Strategy() {
+export function Strategy({ site: siteProp, embedded } = {}) {
   useStore();
   const accountId = getActiveAccountId();
   const [sites, setSites] = useState(null);
@@ -40,7 +40,10 @@ export function Strategy() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
 
-  useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
+  useEffect(() => {
+    if (siteProp) { setSites([]); setSite(siteProp); return; }
+    if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); });
+  }, [accountId, siteProp]);
 
   const loadAll = async (sid) => {
     setPages(null); setStateCode(''); setCounties(null); setSelCounties(new Set()); setCities([]); setPagesDirty(false); setAreaDirty(false); setErr('');
@@ -116,8 +119,8 @@ export function Strategy() {
   };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
-  if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading strategy…</div>`;
-  if (sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
+  if (!embedded && sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading strategy…</div>`;
+  if (!embedded && sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
 
   const shownPages = (pages || []).filter((p) => !filter || (p.path || p.url).toLowerCase().includes(filter.toLowerCase()));
   const svcCount = (pages || []).filter((p) => p.is_service).length;
@@ -125,14 +128,14 @@ export function Strategy() {
   const byCounty = {};
   cities.forEach((c) => { (byCounty[c.county] = byCounty[c.county] || []).push(c); });
 
-  return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
-    <div class="flex flex-wrap items-start justify-between gap-3">
+  return html`<div class=${embedded ? 'space-y-4' : 'max-w-5xl mx-auto p-4 sm:p-6 space-y-4'}>
+    ${!embedded && html`<div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 class="text-xl font-bold text-slate-800">Marketing Strategy</h1>
         <p class="text-sm text-slate-500">Your services and service area — every blog and social post is steered by what you set here.</p>
       </div>
-      ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
-    </div>
+      ${(sites || []).length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
+    </div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-800 flex items-center justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 hover:opacity-100 ml-2">✕</button></div>`}
 

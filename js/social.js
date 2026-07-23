@@ -28,7 +28,7 @@ const STATUS = {
 const PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['gbp', 'Google Business'], ['tiktok', 'TikTok']];
 const nextMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
-function BrandKit({ site, onBanner }) {
+export function BrandKit({ site, onBanner }) {
   const [p, setP] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
   const [open, setOpen] = useState(false);
@@ -115,7 +115,7 @@ const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '�
 // Real-photo library: pull from a link-shared Google Drive folder and/or the
 // linked Job Tracker company's photos tagged "social". These photos become
 // reference images for generation (authentic proof/BTS posts).
-function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
+export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
   const [driveUrl, setDriveUrl] = useState('');
   const [jtLinked, setJtLinked] = useState(false);
   const [open, setOpen] = useState(false);
@@ -174,7 +174,7 @@ function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
 
 // GoHighLevel Social Planner connection: paste the sub-account's Private
 // Integration token once; approved posts push as scheduled GHL posts.
-function GhlCard({ site, onBanner }) {
+export function GhlCard({ site, onBanner }) {
   const [st, setSt] = useState(null); // { connected, ghl }
   const [open, setOpen] = useState(false);
   const [locId, setLocId] = useState('');
@@ -314,6 +314,8 @@ export function Social() {
     catch (e) { setErr(e.message); }
   };
   useEffect(() => { setCal(null); setPosts([]); setErr(''); if (site) load(site, month); }, [site, month]);
+  // Photo library feeds the per-post picker (managed in the Business tab).
+  useEffect(() => { setPhotos(null); if (site) seoSocialPhotos(site).then((r) => setPhotos(r.photos || [])).catch(() => setPhotos([])); }, [site]);
 
   // Poll while media is generating.
   useEffect(() => {
@@ -397,9 +399,7 @@ export function Social() {
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-800 flex items-center justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 ml-2">✕</button></div>`}
     ${prog && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800">${prog}</div>`}
 
-    <${BrandKit} site=${site} onBanner=${setBanner} />
-    <${GhlCard} site=${site} onBanner=${setBanner} />
-    <${PhotoLibrary} site=${site} onBanner=${setBanner} photos=${photos} setPhotos=${setPhotos} />
+    <div class="text-xs text-slate-400">Brand kit, photo sources, and integrations now live in the <span class="font-medium">🏢 Business</span> tab.</div>
 
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">

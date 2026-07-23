@@ -20,13 +20,14 @@ import { Autoblog } from './autoblog.js';
 import { Team } from './team.js';
 import { Strategy } from './strategy.js';
 import { Social } from './social.js';
+import { Profile } from './profile.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
+  { id: 'profile', label: 'Business', icon: '🏢' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
-  { id: 'strategy', label: 'Strategy', icon: '🎯' },
   { id: 'social', label: 'Social', icon: '📣' },
   { id: 'autoblog', label: 'Automation', icon: '🤖' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
@@ -36,7 +37,7 @@ const NAV = [
   { id: 'backlinks', label: 'Backlinks', icon: '🔗' },
   { id: 'ads', label: 'Google Ads', icon: '💰' },
   { id: 'analytics', label: 'Analytics', icon: '📶' },
-  { id: 'jt', label: 'Business', icon: '📊' },
+  { id: 'jt', label: 'Job Tracker', icon: '📊' },
   { id: 'team', label: 'Team', icon: '👥' },
 ];
 
@@ -211,6 +212,7 @@ function App() {
             ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
             ${view === 'seo' && html`<${SEO} />`}
             ${view === 'keywords' && html`<${Keywords} />`}
+            ${view === 'profile' && html`<${Profile} />`}
             ${view === 'strategy' && html`<${Strategy} />`}
             ${view === 'social' && html`<${Social} />`}
             ${view === 'autoblog' && html`<${Autoblog} />`}
