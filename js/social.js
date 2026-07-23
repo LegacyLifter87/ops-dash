@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const PILLAR = {
@@ -106,6 +106,74 @@ function BrandKit({ site, onBanner }) {
           class=${cx('text-xs px-2.5 py-1 rounded-full border', f.platforms?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>${label}</button>`)}
       </div>
       <${Btn} onClick=${save} disabled=${busy === 'save'}>${busy === 'save' ? 'Saving…' : 'Save brand kit'}</${Btn}>
+    </div>`}
+  </div></${Card}>`;
+}
+
+const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '🅶', tiktok: '🎵', 'tiktok-business': '🎵', linkedin: '💼', twitter: '🐦' };
+
+// GoHighLevel Social Planner connection: paste the sub-account's Private
+// Integration token once; approved posts push as scheduled GHL posts.
+function GhlCard({ site, onBanner }) {
+  const [st, setSt] = useState(null); // { connected, ghl }
+  const [open, setOpen] = useState(false);
+  const [locId, setLocId] = useState('');
+  const [token, setToken] = useState('');
+  const [sel, setSel] = useState(new Set());
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = () => seoSocialGhlStatus(site).then((r) => { setSt(r); setSel(new Set(r.ghl?.selected || [])); }).catch((e) => { setErr(e.message); setSt({ connected: false }); });
+  useEffect(() => { setSt(null); setErr(''); setOpen(false); if (site) load(); }, [site]);
+
+  const connect = async () => {
+    setBusy('conn'); setErr('');
+    try {
+      const r = await seoSocialGhlConnect(site, locId.trim(), token.trim());
+      setToken(''); setOpen(false);
+      onBanner(`🔗 GoHighLevel connected — ${r.accounts.length} social account(s) found${r.userName ? `, posting as ${r.userName}` : ''}.`);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const toggleAcc = (id) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const saveSel = async () => {
+    setBusy('sel'); setErr('');
+    try { await seoSocialGhlSetAccounts(site, [...sel]); onBanner('✅ Posting accounts saved.'); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  if (st === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Checking GoHighLevel…</div></${Card}>`;
+  const g = st.ghl;
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800">🚀 GoHighLevel <span class="text-xs font-normal text-slate-400">— scheduling &amp; publishing</span></div>
+        <div class="text-xs text-slate-400 truncate">${st.connected ? `Connected to location ${g.locationId}${g.userName ? ` · posts as ${g.userName}` : ''}${g.timezone ? ` · ${g.timezone}` : ''}` : 'Connect the client’s GHL sub-account to push approved posts into its Social Planner.'}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${st.connected && html`<button onClick=${async () => { if (confirm('Disconnect GoHighLevel for this business?')) { await seoSocialGhlDisconnect(site); await load(); } }} class="text-xs text-slate-400 hover:text-rose-600 underline">disconnect</button>`}
+        <${Btn} size="sm" variant=${open ? 'ghost' : 'secondary'} onClick=${() => setOpen(!open)}>${open ? 'Close' : st.connected ? '⚙ Manage' : '🔗 Connect'}</${Btn}>
+      </div>
+    </div>
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+    ${open && html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-3">
+      ${st.connected && (g.accounts || []).length > 0 && html`<div>
+        <div class="text-xs font-medium text-slate-500 mb-1.5">Post to these accounts</div>
+        <div class="flex flex-wrap gap-1.5">
+          ${(g.accounts || []).map((a) => html`<button onClick=${() => toggleAcc(a.id)}
+            class=${cx('text-xs px-2.5 py-1 rounded-full border flex items-center gap-1', sel.has(a.id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-400')}>
+            <span>${PLAT_ICON[a.platform] || '🌐'}</span>${a.name}</button>`)}
+        </div>
+        <div class="mt-2"><${Btn} size="sm" onClick=${saveSel} disabled=${busy === 'sel'}>${busy === 'sel' ? 'Saving…' : 'Save accounts'}</${Btn}></div>
+      </div>`}
+      <div class="space-y-2">
+        <p class="text-xs text-slate-500">${st.connected ? 'Reconnect with a new token if it was rotated:' : html`In the client's GHL <span class="font-medium">sub-account</span>: Settings → <span class="font-medium">Private Integrations</span> → New Integration with scopes <span class="font-medium">View Social Planner, Edit Social Planner, View Users, View Locations</span> → copy the token. The Location ID is in Settings → Business Profile.`}</p>
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="min-w-[180px]"><label class="text-[11px] text-slate-400">Location ID</label><${Input} value=${locId} onInput=${setLocId} placeholder="ve9EPM428h8vShlRW1KT" /></div>
+          <div class="flex-1 min-w-[240px]"><label class="text-[11px] text-slate-400">Private Integration token</label><${Input} type="password" value=${token} onInput=${setToken} placeholder="pit-…" /></div>
+          <${Btn} size="sm" variant="cta" onClick=${connect} disabled=${busy === 'conn' || !locId.trim() || !token.trim()}>${busy === 'conn' ? 'Connecting…' : st.connected ? 'Reconnect' : 'Connect'}</${Btn}>
+        </div>
+      </div>
     </div>`}
   </div></${Card}>`;
 }
@@ -228,6 +296,19 @@ export function Social() {
   posts.forEach((p) => { (byDate[p.post_date] = byDate[p.post_date] || []).push(p); });
   const counts = posts.reduce((m, p) => { m[p.status] = (m[p.status] || 0) + 1; return m; }, {});
   const readyCount = counts.ready || 0;
+  const toPush = posts.filter((p) => p.status === 'approved' && !p.ghl_post_id).length;
+  const pushedCount = posts.filter((p) => p.ghl_post_id).length;
+
+  const pushGhl = async () => {
+    setBusy('push'); setErr(''); setProg(`🚀 Pushing ${toPush} approved posts to GoHighLevel…`);
+    try {
+      const r = await seoSocialGhlPush(site, cal.id);
+      setProg('');
+      setBanner(`🚀 ${r.pushed} post(s) scheduled in GoHighLevel${r.skipped ? ` — ${r.skipped} skipped` : ''}.`);
+      if (r.errors?.length) setErr(r.errors.join(' · '));
+      await load();
+    } catch (e) { setErr(e.message); setProg(''); } finally { setBusy(''); }
+  };
 
   return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -245,6 +326,7 @@ export function Social() {
     ${prog && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800">${prog}</div>`}
 
     <${BrandKit} site=${site} onBanner=${setBanner} />
+    <${GhlCard} site=${site} onBanner=${setBanner} />
 
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -254,6 +336,8 @@ export function Social() {
         <div class="flex flex-wrap items-center gap-2">
           ${cal && posts.some((p) => p.status === 'written') && html`<${Btn} size="sm" variant="cta" onClick=${genMedia} disabled=${!!busy}>${busy === 'media' ? 'Generating…' : '🎨 Generate all media'}</${Btn}>`}
           ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="success" onClick=${async () => { await seoSocialApproveAll(site, cal.id); setBanner(`✓ ${readyCount} posts approved.`); await load(); }} disabled=${!!busy}>✓ Approve all ready</${Btn}>`}
+          ${cal && toPush > 0 && html`<${Btn} size="sm" variant="cta" onClick=${pushGhl} disabled=${!!busy}>${busy === 'push' ? 'Pushing…' : `🚀 Push ${toPush} to GHL`}</${Btn}>`}
+          ${cal && pushedCount > 0 && toPush === 0 && html`<span class="text-xs text-emerald-600">🚀 ${pushedCount} scheduled in GHL</span>`}
           <${Btn} size="sm" onClick=${planMonth} disabled=${!!busy}>${busy === 'plan' ? 'Planning…' : cal ? '↻ Re-plan month' : '🧠 Plan this month'}</${Btn}>
         </div>
       </div>

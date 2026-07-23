@@ -601,6 +601,12 @@ export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('
 export const seoSocialApprove = (siteId, postId) => seoInvokeSocial('approve', { siteId, postId });
 export const seoSocialReject = (siteId, postId, reason) => seoInvokeSocial('reject', { siteId, postId, reason });
 export const seoSocialApproveAll = (siteId, calendarId) => seoInvokeSocial('approve_all', { siteId, calendarId });
+// GHL Social Planner connection (per business).
+export const seoSocialGhlStatus = (siteId) => seoInvokeSocial('ghl_status', { siteId });
+export const seoSocialGhlConnect = (siteId, locationId, token) => seoInvokeSocial('ghl_connect', { siteId, locationId, token });
+export const seoSocialGhlSetAccounts = (siteId, accountIds) => seoInvokeSocial('ghl_set_accounts', { siteId, accountIds });
+export const seoSocialGhlDisconnect = (siteId) => seoInvokeSocial('ghl_disconnect', { siteId });
+export const seoSocialGhlPush = (siteId, calendarId) => seoInvokeSocial('ghl_push', { siteId, calendarId });
 
 // --- Media generation (kie.ai via seo-media fn) -----------------------------
 async function seoInvokeMedia(action, extra = {}) {
