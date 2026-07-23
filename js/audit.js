@@ -287,7 +287,8 @@ function SiteFixes({ site, wpConnected }) {
     ${note && html`<div class="text-xs text-emerald-700">${note}</div>`}
     ${st && html`<div class="space-y-2">
       ${st.site_public === false && html`<div class="text-xs text-rose-700 bg-rose-50 rounded-lg px-3 py-2">⚠ WordPress is set to discourage search engines (Settings → Reading). Nothing will index until that box is unchecked — this one has to be changed in WP Admin.</div>`}
-      ${st.physical_file && html`<div class="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠ A physical robots.txt exists at the web root and overrides WordPress. Delete it on the server for managed rules to take effect.</div>`}
+      ${st.warning && html`<div class="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">⚠ ${st.warning}</div>`}
+      ${st.physical_file && !st.warning && html`<div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">📄 A physical robots.txt exists at the web root${st.physical_backup ? ' — managed by Ops Dash (original backed up on the server)' : ' — applying the fix will back it up and overwrite it (Connector v1.7.1+)'}.</div>`}
 
       <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
         <div class="min-w-0">
