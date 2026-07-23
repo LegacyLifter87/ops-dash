@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const PILLAR = {
@@ -112,6 +112,66 @@ function BrandKit({ site, onBanner }) {
 
 const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '🅶', tiktok: '🎵', 'tiktok-business': '🎵', linkedin: '💼', twitter: '🐦' };
 
+// Real-photo library: pull from a link-shared Google Drive folder and/or the
+// linked Job Tracker company's photos tagged "social". These photos become
+// reference images for generation (authentic proof/BTS posts).
+function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
+  const [driveUrl, setDriveUrl] = useState('');
+  const [jtLinked, setJtLinked] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = () => seoSocialPhotos(site).then((r) => { setPhotos(r.photos || []); setDriveUrl(r.driveFolderUrl || ''); setJtLinked(!!r.jtLinked); }).catch((e) => { setErr(e.message); setPhotos([]); });
+  useEffect(() => { setPhotos(null); setErr(''); setOpen(false); if (site) load(); }, [site]);
+
+  const saveDrive = async () => {
+    setBusy('drive'); setErr('');
+    try {
+      const r = await seoSocialDriveLink(site, driveUrl.trim());
+      onBanner(r.cleared ? 'Drive folder unlinked.' : `📁 Drive folder linked — ${r.imagesVisible} image(s) visible. Click Sync to import.`);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const sync = async () => {
+    setBusy('sync'); setErr('');
+    try {
+      const r = await seoSocialPhotosSync(site);
+      onBanner(`📷 Imported ${r.imported} new photo(s) — ${r.driveSeen} seen in Drive, ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
+      if (r.errors?.length) setErr(r.errors.join(' · '));
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const del = async (p) => { try { await seoSocialPhotoDelete(site, p.id); await load(); } catch (e) { setErr(e.message); } };
+
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800">📷 Photo library <span class="text-xs font-normal text-slate-400">— ${photos === null ? '…' : `${photos.length} real photos`}</span></div>
+        <div class="text-xs text-slate-400 truncate">Real photos make proof posts authentic — pulled from the client's Google Drive and Job Tracker photos tagged “social”.</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <${Btn} size="sm" variant="secondary" onClick=${sync} disabled=${busy === 'sync'}>${busy === 'sync' ? 'Syncing…' : '↻ Sync photos'}</${Btn}>
+        <${Btn} size="sm" variant=${open ? 'ghost' : 'secondary'} onClick=${() => setOpen(!open)}>${open ? 'Close' : '⚙ Sources'}</${Btn}>
+      </div>
+    </div>
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+    ${open && html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-2">
+      <p class="text-xs text-slate-500">Google Drive: share the client's photo folder as <span class="font-medium">“Anyone with the link — Viewer”</span> and paste the folder link. Job Tracker: photos tagged with the <span class="font-medium">social</span> category on the linked company ${jtLinked ? html`<span class="text-emerald-600">(company linked ✓)</span>` : html`<span class="text-amber-600">(link a company in the Business tab first)</span>`} import automatically on Sync.</p>
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[260px]"><label class="text-[11px] text-slate-400">Google Drive folder link</label><${Input} value=${driveUrl} onInput=${setDriveUrl} placeholder="https://drive.google.com/drive/folders/…" /></div>
+        <${Btn} size="sm" onClick=${saveDrive} disabled=${busy === 'drive'}>${busy === 'drive' ? 'Checking…' : 'Save folder'}</${Btn}>
+      </div>
+    </div>`}
+    ${photos !== null && photos.length > 0 && html`<div class="mt-3 flex flex-wrap gap-2">
+      ${photos.slice(0, 24).map((p) => html`<div class="relative group">
+        <img src=${p.url} alt=${p.name || 'photo'} title=${`${p.source === 'drive' ? '📁 Drive' : p.source === 'jobtracker' ? '🧰 Job Tracker' : 'Upload'}${p.name ? ' · ' + p.name : ''}`} class="h-16 w-16 object-cover rounded-lg border border-slate-100" />
+        <button onClick=${() => del(p)} class="absolute -top-1.5 -right-1.5 hidden group-hover:block bg-rose-600 text-white rounded-full w-5 h-5 text-xs leading-none">✕</button>
+      </div>`)}
+      ${photos.length > 24 && html`<div class="h-16 w-16 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-400">+${photos.length - 24}</div>`}
+    </div>`}
+  </div></${Card}>`;
+}
+
 // GoHighLevel Social Planner connection: paste the sub-account's Private
 // Integration token once; approved posts push as scheduled GHL posts.
 function GhlCard({ site, onBanner }) {
@@ -178,17 +238,20 @@ function GhlCard({ site, onBanner }) {
   </div></${Card}>`;
 }
 
-function PostModal({ site, post, onClose, onChanged }) {
+function PostModal({ site, post, onClose, onChanged, library }) {
   const [f, setF] = useState({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
+  const [refSel, setRefSel] = useState(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const media = (post.media_urls || [])[0];
+  const toggleRef = (url) => setRefSel((p) => { const n = new Set(p); if (n.has(url)) n.delete(url); else if (n.size < 3) n.add(url); return n; });
   const doSave = async () => {
     setBusy('save'); setErr('');
     try {
       await seoSocialUpdatePost(site, post.id, {
         caption: f.caption, overlayText: f.overlay,
         hashtags: f.tags.split(/[\s,]+/).filter(Boolean),
+        refPhotos: [...refSel],
         ...(post.format === 'video' ? { videoPrompt: f.prompt } : { imagePrompt: f.prompt }),
       });
       await onChanged(); onClose();
@@ -210,6 +273,14 @@ function PostModal({ site, post, onClose, onChanged }) {
       <details><summary class="text-xs text-slate-400 cursor-pointer">${post.format === 'video' ? 'Video' : 'Image'} generation prompt</summary>
         <div class="mt-2"><${Textarea} value=${f.prompt} onInput=${(v) => setF({ ...f, prompt: v })} rows=${4} /></div>
       </details>
+      ${post.format === 'image' && (library || []).length > 0 && html`<div>
+        <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— pick up to 3 to build the image from (save, then regenerate)</span></div>
+        <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+          ${(library || []).map((p) => html`<button onClick=${() => toggleRef(p.url)} title=${p.name || ''}
+            class=${cx('rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
+            <img src=${p.url} alt="" class="h-12 w-12 object-cover" /></button>`)}
+        </div>
+      </div>`}
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
       <div class="flex flex-wrap gap-2">
         <${Btn} size="sm" onClick=${doSave} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : 'Save edits'}</${Btn}>
@@ -229,6 +300,7 @@ export function Social() {
   const [month, setMonth] = useState(nextMonth());
   const [cal, setCal] = useState(null);   // calendar row or null
   const [posts, setPosts] = useState([]);
+  const [photos, setPhotos] = useState(null); // real-photo library (shared w/ PostModal)
   const [sel, setSel] = useState(null);
   const [busy, setBusy] = useState('');
   const [prog, setProg] = useState('');
@@ -327,6 +399,7 @@ export function Social() {
 
     <${BrandKit} site=${site} onBanner=${setBanner} />
     <${GhlCard} site=${site} onBanner=${setBanner} />
+    <${PhotoLibrary} site=${site} onBanner=${setBanner} photos=${photos} setPhotos=${setPhotos} />
 
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -361,6 +434,6 @@ export function Social() {
         </div>`}
     </div></${Card}>
 
-    ${sel && html`<${PostModal} site=${site} post=${sel} onClose=${() => setSel(null)} onChanged=${load} />`}
+    ${sel && html`<${PostModal} site=${site} post=${sel} library=${photos || []} onClose=${() => setSel(null)} onChanged=${load} />`}
   </div>`;
 }

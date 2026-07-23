@@ -601,6 +601,11 @@ export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('
 export const seoSocialApprove = (siteId, postId) => seoInvokeSocial('approve', { siteId, postId });
 export const seoSocialReject = (siteId, postId, reason) => seoInvokeSocial('reject', { siteId, postId, reason });
 export const seoSocialApproveAll = (siteId, calendarId) => seoInvokeSocial('approve_all', { siteId, calendarId });
+// Real-photo library (Drive folder + Job Tracker social-tagged photos).
+export const seoSocialPhotos = (siteId) => seoInvokeSocial('photos_list', { siteId });
+export const seoSocialDriveLink = (siteId, folderUrl) => seoInvokeSocial('drive_link', { siteId, folderUrl });
+export const seoSocialPhotosSync = (siteId) => seoInvokeSocial('photos_sync', { siteId });
+export const seoSocialPhotoDelete = (siteId, photoId) => seoInvokeSocial('photo_delete', { siteId, photoId });
 // GHL Social Planner connection (per business).
 export const seoSocialGhlStatus = (siteId) => seoInvokeSocial('ghl_status', { siteId });
 export const seoSocialGhlConnect = (siteId, locationId, token) => seoInvokeSocial('ghl_connect', { siteId, locationId, token });
