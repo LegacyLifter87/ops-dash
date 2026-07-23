@@ -1,13 +1,13 @@
 {
   "name": "Ops Dash Connector",
   "slug": "opsdash-connector",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "author": "Legacy Sales Engineering",
   "url": "https://ops.legacybuilder.app",
-  "package": "https://ops.legacybuilder.app/opsdash-connector-1.7.2.zip",
+  "package": "https://ops.legacybuilder.app/opsdash-connector-1.7.3.zip",
   "requires": "5.8",
   "requires_php": "7.4",
   "tested": "6.8",
   "last_updated": "2026-07-22",
-  "changelog": "1.7.2 — llms.txt endpoint: Ops Dash can publish/refresh an llms.txt (AI-assistant site summary) as a physical file at the web root, with one-time backup of any pre-existing file. 1.7.1 — robots.txt fixes now work even when a physical robots.txt exists at the web root: the original file is backed up once and the managed rules are written into it; resetting to the WordPress default restores the backup. Clear warnings when the file is not writable. 1.7.0 — One-code pairing: connect a site by typing an 8-character code from Ops Dash instead of copying the long key; the plugin exchanges the code for the key automatically. Manual key entry moved to Advanced. 1.6.x — packaging + self-heal fixes, self-updating, robots.txt-sitemap-heading fixes."
+  "changelog": "1.7.3 — update checks: a manual Check Again on Dashboard → Updates now sees new releases immediately (manifest cache busted on forced checks; routine cache 1h). 1.7.2 — llms.txt endpoint: Ops Dash can publish/refresh an llms.txt (AI-assistant site summary) as a physical file at the web root, with one-time backup of any pre-existing file. 1.7.1 — robots.txt fixes now work even when a physical robots.txt exists at the web root: the original file is backed up once and the managed rules are written into it; resetting to the WordPress default restores the backup. Clear warnings when the file is not writable. 1.7.0 — One-code pairing: connect a site by typing an 8-character code from Ops Dash instead of copying the long key; the plugin exchanges the code for the key automatically. Manual key entry moved to Advanced. 1.6.x — packaging + self-heal fixes, self-updating, robots.txt-sitemap-heading fixes."
 }
