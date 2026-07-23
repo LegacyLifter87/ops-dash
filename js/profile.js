@@ -5,27 +5,11 @@
 // plus links to the Google connections managed in their tabs).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoWpStatus, jtStatus, jtListCompanies, jtLink, jtUnlink } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, jtStatus, jtListCompanies, jtLink, jtUnlink } from './store.js';
 import { Card, Btn, Select } from './ui.js';
 import { BrandKit, GhlCard, PhotoLibrary } from './social.js';
 import { Strategy } from './strategy.js';
-
-// WordPress status — the full connect/pairing panel stays in the Keywords
-// tab (WordPress publishing); this card shows live state + deep link.
-function WpStatusCard({ site }) {
-  const [st, setSt] = useState(null);
-  useEffect(() => { setSt(null); if (site) seoWpStatus(site).then(setSt).catch(() => setSt(false)); }, [site]);
-  const live = st && st.live;
-  return html`<${Card}><div class="p-4 flex items-center justify-between flex-wrap gap-2">
-    <div class="min-w-0">
-      <div class="font-semibold text-slate-800">🔌 WordPress <span class="text-xs font-normal text-slate-400">— publishing & site fixes</span></div>
-      <div class="text-xs truncate ${live ? 'text-emerald-600' : 'text-slate-400'}">
-        ${st === null ? 'Checking…' : live ? `Connected ✓ ${st.wp_url || ''}${st.plugin_version ? ` · Connector v${st.plugin_version}` : ''}` : 'Not connected — pair the Ops Dash Connector plugin.'}
-      </div>
-    </div>
-    <a href="#/keywords" class="text-xs text-brand-700 underline shrink-0">${live ? 'Manage' : 'Connect'} in Keywords →</a>
-  </div></${Card}>`;
-}
+import { WordPressConnect } from './wp-connect.js';
 
 // Job Tracker company link (account-level; linking is platform-admin only).
 function JtLinkCard() {
@@ -87,10 +71,8 @@ export function Profile() {
 
     <${BrandKit} site=${site} onBanner=${setBanner} />
 
-    <div class="grid lg:grid-cols-2 gap-4 items-start">
-      <${WpStatusCard} site=${site} />
-      <${JtLinkCard} />
-    </div>
+    <${WordPressConnect} site=${site} domain=${sites.find((x) => x.id === site)?.domain || ''} />
+    <${JtLinkCard} />
     <${GhlCard} site=${site} onBanner=${setBanner} />
     <${PhotoLibrary} site=${site} onBanner=${setBanner} photos=${photos} setPhotos=${setPhotos} />
 

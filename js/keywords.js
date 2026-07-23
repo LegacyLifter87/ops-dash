@@ -4,7 +4,7 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpConnect, seoWpPairStart, seoWpStatus, seoWpPublish, seoWpDisconnect, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpStatus, seoWpPublish, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -41,8 +41,6 @@ export function Keywords() {
   const [leadPct, setLeadPct] = useState(3);
   const [wp, setWp] = useState(null);
   const [wpBusy, setWpBusy] = useState(false);
-  const [wpNotice, setWpNotice] = useState('');
-  const [wpErr, setWpErr] = useState('');
   const [negatives, setNegatives] = useState([]);
   const [adsConn, setAdsConn] = useState(false);
   const [negBusy, setNegBusy] = useState('');
@@ -120,75 +118,11 @@ export function Keywords() {
   };
   const removeNeg = async (kw) => { setNegBusy(kw); setErr(''); try { await seoClearNegative(site, kw); await loadNegs(site); } catch (e) { setErr(e.message); } finally { setNegBusy(''); } };
 
-  // --- WordPress publishing (Ops Dash Connector plugin) ---
+  // --- WordPress publishing --- connection management moved to the 🏢
+  // Business Profile (wp-connect.js); this tab only needs live status for
+  // the publish buttons.
   const loadWp = async (sid) => { try { setWp(await seoWpStatus(sid)); } catch (_) { setWp(null); } };
   useEffect(() => { if (site) { setWp(null); loadWp(site); } }, [site]);
-  // Explicit check with visible feedback — a silent recheck reads as "nothing happened".
-  const wpRecheck = async () => {
-    setWpBusy(true); setWpErr(''); setWpNotice('');
-    try {
-      const s = await seoWpStatus(site);
-      setWp(s);
-      if (s?.live) setWpNotice(`Connected ✓ — plugin v${s.info?.plugin_version || '?'} on ${s.info?.site_name || s.wp_url}`);
-      else if (s?.connected) setWpErr(s.error || 'The site did not answer with this connection key yet — re-copy the key below and re-paste it in WP Admin → Settings → Ops Dash.');
-      else setWpErr('Not connected yet — enter the site URL and click Connect.');
-    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
-  };
-  // Start the pairing flow: mint a short code, show it, and wait for the WP
-  // plugin to claim it — the polling effect below flips the card to Connected
-  // by itself the moment the site checks in.
-  const wpPair = async (url) => {
-    setWpBusy(true); setWpErr(''); setWpNotice('');
-    try {
-      const r = await seoWpPairStart(site, url);
-      // Show the code IMMEDIATELY from the pair_start response. Never gate the
-      // display on the status round-trip — status calls the WordPress site,
-      // which hangs or errors precisely when the site isn't paired yet, and
-      // that swallowed failure left users staring at a card with no code.
-      setWp((prev) => ({ ...(prev || {}), connected: true, live: false, pair_code: r.code, pair_expires: r.expires }));
-    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
-  };
-  // While a pairing code is outstanding, poll every 5s so the card goes green
-  // on its own as soon as the plugin claims the code. Stops on connect/expiry.
-  useEffect(() => {
-    const code = wp?.pair_code;
-    if (!code || wp?.live) return;
-    const until = wp?.pair_expires ? new Date(wp.pair_expires).getTime() : 0;
-    // status calls the WP site and can take many seconds while unpaired — the
-    // inflight guard stops ticks from stacking on top of a slow probe. A
-    // failed/slow status NEVER clears the code from view (functional setWp
-    // keeps pair fields when the response lacks them).
-    let inflight = false;
-    const iv = setInterval(async () => {
-      if (inflight) return;
-      if (until && Date.now() > until) { clearInterval(iv); return; }
-      inflight = true;
-      try {
-        const s = await seoWpStatus(site);
-        setWp((prev) => ({ ...s, pair_code: s?.pair_code ?? prev?.pair_code, pair_expires: s?.pair_expires ?? prev?.pair_expires }));
-        if (s?.live) { clearInterval(iv); setWpErr(''); setWpNotice(`Connected ✓ — ${s.info?.site_name || s.wp_url} (plugin v${s.info?.plugin_version || '?'})`); }
-      } catch (_) { /* keep polling */ } finally { inflight = false; }
-    }, 5000);
-    return () => clearInterval(iv);
-  }, [wp?.pair_code, wp?.live, site]);
-  const wpDisconnect = async () => {
-    setWpBusy(true); setWpErr(''); setWpNotice('');
-    try { await seoWpDisconnect(site); setWp({ connected: false }); } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
-  };
-  // Rotate a leaked/stale key: dropping the connection and reconnecting mints a
-  // fresh token, and the old one stops working the moment the row is deleted.
-  const wpRotate = async () => {
-    const url = wp?.wp_url;
-    if (!url) return;
-    if (!confirm('Regenerate the connection key?\n\nThe current key stops working immediately. Publishing stays broken until you paste the new key into WP Admin → Settings → Ops Dash.')) return;
-    setWpBusy(true); setWpErr(''); setWpNotice('');
-    try {
-      await seoWpDisconnect(site);
-      await seoWpConnect(site, url);
-      await loadWp(site);
-      setWpNotice('New key generated — the old one is dead. Copy it below into WP Admin → Settings → Ops Dash → Save, then hit ↻.');
-    } catch (e) { setWpErr(e.message); } finally { setWpBusy(false); }
-  };
   const wpPublish = async (key, mode, imgUrl, imageSource) => {
     setWpBusy(true);
     try { const r = await seoWpPublish(site, key, mode, imgUrl, imageSource); setBriefs(await seoLoadBriefs(site)); return r; }
@@ -322,7 +256,13 @@ export function Keywords() {
               <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
             </div></${Card}>`
           : html`<div class="space-y-3">
-            <${WpCard} wp=${wp} domain=${(sites || []).find((x) => x.id === site)?.domain || ''} wpBusy=${wpBusy} notice=${wpNotice} error=${wpErr} onConnect=${wpPair} onRecheck=${wpRecheck} onDisconnect=${wpDisconnect} onRotate=${wpRotate} />
+            <${Card}><div class="p-4 flex items-center justify-between flex-wrap gap-2">
+              <div class="min-w-0">
+                <div class="font-semibold text-slate-800">WordPress publishing</div>
+                <div class="text-xs truncate ${wp?.live ? 'text-emerald-600' : 'text-slate-400'}">${wp === null ? 'Checking connection…' : wp?.live ? `Connected ✓ ${wp.wp_url || ''} · plugin v${wp.info?.plugin_version || '?'}` : wp?.connected ? 'Connected, but the plugin is not reachable right now.' : 'Not connected.'}</div>
+              </div>
+              <a href="#/profile" class="text-xs text-brand-700 underline shrink-0">Manage connection in 🏢 Business →</a>
+            </div></${Card}>
             <${Card}><div class="p-3">
               ${briefs.length === 0
                 ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
@@ -396,66 +336,6 @@ export function mdRender(md) {
   }
   flush();
   return out;
-}
-
-// Per-site WordPress connection card (Ops Dash Connector plugin handshake).
-function WpCard({ wp, domain, wpBusy, notice, error, onConnect, onRecheck, onDisconnect, onRotate }) {
-  // The URL is already known from the Search Console connection (seo_sites.domain)
-  // — prefill it so connecting a site needs ZERO typing. Editable for the rare
-  // case where WordPress lives somewhere else (subdirectory, different host).
-  const prefill = () => wp?.wp_url || (domain ? 'https://' + domain : '');
-  const [url, setUrl] = useState(prefill());
-  useEffect(() => { setUrl(prefill()); }, [wp?.wp_url, domain]);
-  const [copied, setCopied] = useState('');
-  // Show the tail of what actually hit the clipboard: if a regenerate re-rendered
-  // mid-click, the user can SEE their clipboard holds a different key than the box.
-  const copy = async () => { try { const t = wp.token; await navigator.clipboard.writeText(t); setCopied('…' + t.slice(-4)); setTimeout(() => setCopied(''), 2500); } catch (_) { /* ignore */ } };
-  return html`<${Card}><div class="p-4 space-y-3">
-    <div class="flex items-center justify-between gap-3 flex-wrap">
-      <div>
-        <div class="font-semibold text-slate-800">WordPress publishing</div>
-        <div class="text-xs text-slate-500">Send finished articles straight to the client's WordPress site as ready-to-review drafts — SEO title, meta description, slug, and schema included.</div>
-      </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        ${wp?.connected && html`<${Pill} cls=${wp.live ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>${wp.live ? '● Connected' : '● Plugin not reachable'}</${Pill}>`}
-        ${wp?.info?.seo_plugin && html`<${Pill} cls="bg-slate-100 text-slate-600">SEO plugin: ${wp.info.seo_plugin}</${Pill}>`}
-        ${wp?.info?.plugin_version && html`<${Pill} cls="bg-slate-100 text-slate-600">v${wp.info.plugin_version}</${Pill}>`}
-        <${Btn} size="sm" onClick=${onRecheck} disabled=${wpBusy}>${wpBusy ? 'Checking…' : '↻ Check connection'}</${Btn}>
-        ${wp?.connected && html`<${Btn} size="sm" onClick=${onDisconnect} disabled=${wpBusy}>Disconnect</${Btn}>`}
-      </div>
-    </div>
-    <div class="flex gap-2 items-center flex-wrap">
-      <div class="w-72"><${Input} value=${url} onInput=${setUrl} placeholder="https://clientsite.com" /></div>
-      <${Btn} size="sm" onClick=${() => onConnect(url)} disabled=${wpBusy || !url.trim()}>${wpBusy ? '…' : wp?.live ? '🔗 Re-pair' : wp?.pair_code ? '🔗 New code' : '🔗 Connect'}</${Btn}>
-      <a href="/opsdash-connector-1.7.3.zip" download class="text-xs text-brand-700 underline">Download the Ops Dash Connector plugin v1.7.3 (.zip)</a>
-    </div>
-    ${!wp?.connected && url && html`<div class="text-[11px] text-slate-400 -mt-1">URL pre-filled from this site's Search Console connection — change it only if WordPress lives at a different address.</div>`}
-
-    ${wp?.pair_code && !wp?.live && html`<div class="rounded-lg border-2 border-brand-200 bg-brand-50 p-4 space-y-2">
-      <div class="text-xs font-semibold text-brand-700 uppercase">Pairing code — enter it on the WordPress site</div>
-      <div class="text-3xl font-bold tracking-widest text-slate-800 tabular-nums select-all">${String(wp.pair_code).slice(0, 4)}-${String(wp.pair_code).slice(4)}</div>
-      <ol class="list-decimal ml-5 text-xs text-slate-600 space-y-0.5">
-        <li>On the site: install &amp; activate the Connector plugin (v1.7.0+, download link above) if it isn't already.</li>
-        <li>WP Admin → Settings → <span class="font-medium">Ops Dash</span> → type this code → <span class="font-medium">Connect to Ops Dash</span>.</li>
-      </ol>
-      <div class="text-xs text-slate-500 animate-pulse">Waiting for the site… this card connects automatically the moment the code is entered. Code expires in 15 minutes.</div>
-    </div>`}
-
-    ${wp?.token && html`<details class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-      <summary class="cursor-pointer font-semibold text-slate-400 uppercase">Advanced: connection key (manual)</summary>
-      <div class="space-y-1.5 mt-2">
-        <div class="flex items-center gap-2 flex-wrap">
-          <code class="px-2 py-1 bg-white border border-slate-200 rounded break-all">${wp.token}</code>
-          <${Btn} size="sm" onClick=${copy} disabled=${wpBusy}>${copied ? `Copied ✓ ${copied}` : 'Copy'}</${Btn}>
-          <${Btn} size="sm" onClick=${onRotate} disabled=${wpBusy}>🔄 Regenerate</${Btn}>
-        </div>
-        <div>Only needed on plugin versions older than 1.7.0, or when a pairing code can't be used: paste this key in WP Admin → Settings → Ops Dash → <span class="font-medium">Advanced</span>, Save, then click <span class="font-medium">↻ Check connection</span>.</div>
-        ${wp.error && html`<div class="text-amber-700">${wp.error}</div>`}
-      </div>
-    </details>`}
-    ${notice && html`<div class="text-sm text-emerald-700">${notice}</div>`}
-    ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
-  </div></${Card}>`;
 }
 
 // Free-text add for a negative term that may not exist in the GSC keyword list
