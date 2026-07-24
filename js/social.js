@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const PILLAR = {
@@ -118,18 +118,59 @@ const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '�
 export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
   const [driveUrl, setDriveUrl] = useState('');
   const [jtLinked, setJtLinked] = useState(false);
+  const [drive, setDrive] = useState({ connected: false, email: null, folderId: null, folderName: null });
+  const [folders, setFolders] = useState(null);
+  const [folderQ, setFolderQ] = useState('');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
-  const load = () => seoSocialPhotos(site).then((r) => { setPhotos(r.photos || []); setDriveUrl(r.driveFolderUrl || ''); setJtLinked(!!r.jtLinked); }).catch((e) => { setErr(e.message); setPhotos([]); });
-  useEffect(() => { setPhotos(null); setErr(''); setOpen(false); if (site) load(); }, [site]);
+  const load = () => seoSocialPhotos(site).then((r) => {
+    setPhotos(r.photos || []); setDriveUrl(r.driveFolderUrl || ''); setJtLinked(!!r.jtLinked);
+    setDrive({ connected: !!r.driveConnected, email: r.driveEmail || null, folderId: r.driveFolderId || null, folderName: r.driveFolderName || r.driveFolderUrl || null });
+  }).catch((e) => { setErr(e.message); setPhotos([]); });
+  useEffect(() => { setPhotos(null); setErr(''); setOpen(false); setFolders(null); if (site) load(); }, [site]);
 
+  // Google sign-in: open consent in a new tab, poll until the callback lands.
+  const signInGoogle = async () => {
+    setBusy('goauth'); setErr('');
+    try {
+      const r = await seoSocialDriveOauthStart(site);
+      window.open(r.url, '_blank', 'noopener');
+      let ticks = 0;
+      const iv = setInterval(async () => {
+        ticks++;
+        if (ticks > 45) { clearInterval(iv); setBusy(''); return; }
+        try {
+          const s = await seoSocialDriveStatus(site);
+          if (s.connected) {
+            clearInterval(iv); setBusy('');
+            setDrive({ connected: true, email: s.email, folderId: s.folderId, folderName: s.folderName });
+            onBanner(`📁 Google Drive connected${s.email ? ` as ${s.email}` : ''} — now pick the photo folder.`);
+          }
+        } catch (_) { /* keep polling */ }
+      }, 4000);
+    } catch (e) { setErr(e.message); setBusy(''); }
+  };
+  const loadFolders = async () => {
+    setBusy('folders'); setErr('');
+    try { const r = await seoSocialDriveFolders(site, folderQ); setFolders(r.folders || []); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const pickFolder = async (f) => {
+    setBusy('pick'); setErr('');
+    try {
+      await seoSocialDrivePick(site, f.id, f.name);
+      setDrive((d) => ({ ...d, folderId: f.id, folderName: f.name })); setFolders(null);
+      onBanner(`📁 Photo folder set to “${f.name}” — click Sync to import.`);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const saveDrive = async () => {
     setBusy('drive'); setErr('');
     try {
       const r = await seoSocialDriveLink(site, driveUrl.trim());
       onBanner(r.cleared ? 'Drive folder unlinked.' : `📁 Drive folder linked — ${r.imagesVisible} image(s) visible. Click Sync to import.`);
+      await load();
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const sync = async () => {
@@ -155,12 +196,34 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
       </div>
     </div>
     ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
-    ${open && html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-2">
-      <p class="text-xs text-slate-500">Google Drive: share the client's photo folder as <span class="font-medium">“Anyone with the link — Viewer”</span> and paste the folder link. Job Tracker: photos tagged with the <span class="font-medium">social</span> category on the linked company ${jtLinked ? html`<span class="text-emerald-600">(company linked ✓)</span>` : html`<span class="text-amber-600">(link a company in the Business tab first)</span>`} import automatically on Sync.</p>
-      <div class="flex flex-wrap items-end gap-2">
-        <div class="flex-1 min-w-[260px]"><label class="text-[11px] text-slate-400">Google Drive folder link</label><${Input} value=${driveUrl} onInput=${setDriveUrl} placeholder="https://drive.google.com/drive/folders/…" /></div>
-        <${Btn} size="sm" onClick=${saveDrive} disabled=${busy === 'drive'}>${busy === 'drive' ? 'Checking…' : 'Save folder'}</${Btn}>
+    ${open && html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-3">
+      <div class="space-y-2">
+        <div class="text-xs font-medium text-slate-500">Google Drive</div>
+        ${drive.connected ? html`
+          <div class="text-xs text-slate-500">Signed in ✓${drive.email ? ` as ${drive.email}` : ''}${drive.folderName ? html` · folder: <span class="font-medium text-slate-700">${drive.folderName}</span>` : ' · no folder picked yet'}
+            <button onClick=${async () => { if (confirm('Disconnect Google Drive for this business?')) { await seoSocialDriveDisconnect(site); await load(); } }} class="ml-2 text-slate-400 hover:text-rose-600 underline">disconnect</button>
+          </div>
+          <div class="flex flex-wrap items-end gap-2">
+            <div class="min-w-[200px]"><label class="text-[11px] text-slate-400">Find the photo folder</label><${Input} value=${folderQ} onInput=${setFolderQ} placeholder="folder name…" /></div>
+            <${Btn} size="sm" variant="secondary" onClick=${loadFolders} disabled=${busy === 'folders'}>${busy === 'folders' ? 'Loading…' : '🔍 Browse folders'}</${Btn}>
+          </div>
+          ${folders !== null && html`<div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+            ${folders.length === 0 ? html`<div class="text-xs text-slate-400">No folders found.</div>` : folders.map((f) => html`
+              <button onClick=${() => pickFolder(f)} disabled=${busy === 'pick'}
+                class=${cx('text-xs px-2.5 py-1 rounded-full border', drive.folderId === f.id ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>📁 ${f.name}</button>`)}
+          </div>`}`
+        : html`
+          <${Btn} variant="cta" onClick=${signInGoogle} disabled=${busy === 'goauth'}>${busy === 'goauth' ? 'Waiting for Google… (finish sign-in in the other tab)' : '🔑 Sign in with Google'}</${Btn}>
+          <p class="text-xs text-slate-500">Sign in with the Google account that can see the client's photos, then pick the folder — no sharing settings needed.</p>`}
+        <details>
+          <summary class="text-xs text-slate-400 cursor-pointer">Advanced: paste a public folder link instead</summary>
+          <div class="mt-2 flex flex-wrap items-end gap-2">
+            <div class="flex-1 min-w-[260px]"><label class="text-[11px] text-slate-400">Folder link (shared “Anyone with the link — Viewer”)</label><${Input} value=${driveUrl} onInput=${setDriveUrl} placeholder="https://drive.google.com/drive/folders/…" /></div>
+            <${Btn} size="sm" onClick=${saveDrive} disabled=${busy === 'drive'}>${busy === 'drive' ? 'Checking…' : 'Save folder'}</${Btn}>
+          </div>
+        </details>
       </div>
+      <p class="text-xs text-slate-500">Job Tracker: photos tagged with the <span class="font-medium">social</span> category on the linked company ${jtLinked ? html`<span class="text-emerald-600">(company linked ✓)</span>` : html`<span class="text-amber-600">(link a company on this page first)</span>`} import automatically on Sync.</p>
     </div>`}
     ${photos !== null && photos.length > 0 && html`<div class="mt-3 flex flex-wrap gap-2">
       ${photos.slice(0, 24).map((p) => html`<div class="relative group">
@@ -195,6 +258,27 @@ export function GhlCard({ site, onBanner }) {
       await load();
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
+  // OAuth sign-in: open GHL's consent in a new tab, then poll until the
+  // callback stores the connection (or ~3 minutes pass).
+  const signIn = async () => {
+    setBusy('oauth'); setErr('');
+    try {
+      const r = await seoSocialGhlOauthStart(site);
+      window.open(r.url, '_blank', 'noopener');
+      let ticks = 0;
+      const iv = setInterval(async () => {
+        ticks++;
+        if (ticks > 45) { clearInterval(iv); setBusy(''); return; }
+        try {
+          const s = await seoSocialGhlStatus(site);
+          if (s.connected && s.ghl?.authMode === 'oauth') {
+            clearInterval(iv); setBusy(''); setSt(s); setSel(new Set(s.ghl?.selected || []));
+            onBanner(`🔗 GoHighLevel connected via sign-in — ${(s.ghl?.accounts || []).length} social account(s)${s.ghl?.userName ? `, posting as ${s.ghl.userName}` : ''}.`);
+          }
+        } catch (_) { /* keep polling */ }
+      }, 4000);
+    } catch (e) { setErr(e.message); setBusy(''); }
+  };
   const toggleAcc = (id) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const saveSel = async () => {
     setBusy('sel'); setErr('');
@@ -208,7 +292,7 @@ export function GhlCard({ site, onBanner }) {
     <div class="flex items-center justify-between flex-wrap gap-2">
       <div class="min-w-0">
         <div class="font-semibold text-slate-800">🚀 GoHighLevel <span class="text-xs font-normal text-slate-400">— scheduling &amp; publishing</span></div>
-        <div class="text-xs text-slate-400 truncate">${st.connected ? `Connected to location ${g.locationId}${g.userName ? ` · posts as ${g.userName}` : ''}${g.timezone ? ` · ${g.timezone}` : ''}` : 'Connect the client’s GHL sub-account to push approved posts into its Social Planner.'}</div>
+        <div class="text-xs text-slate-400 truncate">${st.connected ? `${g.authMode === 'oauth' ? 'Signed in ✓' : 'Connected'} · location ${g.locationId}${g.userName ? ` · posts as ${g.userName}` : ''}${g.timezone ? ` · ${g.timezone}` : ''}` : 'Sign in to the client’s GHL sub-account to push approved posts into its Social Planner.'}</div>
       </div>
       <div class="flex items-center gap-2">
         ${st.connected && html`<button onClick=${async () => { if (confirm('Disconnect GoHighLevel for this business?')) { await seoSocialGhlDisconnect(site); await load(); } }} class="text-xs text-slate-400 hover:text-rose-600 underline">disconnect</button>`}
@@ -227,12 +311,22 @@ export function GhlCard({ site, onBanner }) {
         <div class="mt-2"><${Btn} size="sm" onClick=${saveSel} disabled=${busy === 'sel'}>${busy === 'sel' ? 'Saving…' : 'Save accounts'}</${Btn}></div>
       </div>`}
       <div class="space-y-2">
-        <p class="text-xs text-slate-500">${st.connected ? 'Reconnect with a new token if it was rotated:' : html`In the client's GHL <span class="font-medium">sub-account</span>: Settings → <span class="font-medium">Private Integrations</span> → New Integration with scopes <span class="font-medium">View Social Planner, Edit Social Planner, View Users, View Locations</span> → copy the token. The Location ID is in Settings → Business Profile.`}</p>
-        <div class="flex flex-wrap items-end gap-2">
-          <div class="min-w-[180px]"><label class="text-[11px] text-slate-400">Location ID</label><${Input} value=${locId} onInput=${setLocId} placeholder="ve9EPM428h8vShlRW1KT" /></div>
-          <div class="flex-1 min-w-[240px]"><label class="text-[11px] text-slate-400">Private Integration token</label><${Input} type="password" value=${token} onInput=${setToken} placeholder="pit-…" /></div>
-          <${Btn} size="sm" variant="cta" onClick=${connect} disabled=${busy === 'conn' || !locId.trim() || !token.trim()}>${busy === 'conn' ? 'Connecting…' : st.connected ? 'Reconnect' : 'Connect'}</${Btn}>
+        <div class="flex flex-wrap items-center gap-2">
+          <${Btn} variant="cta" onClick=${signIn} disabled=${busy === 'oauth'}>${busy === 'oauth' ? 'Waiting for GoHighLevel… (finish sign-in in the other tab)' : st.connected ? '🔑 Sign in again' : '🔑 Sign in with GoHighLevel'}</${Btn}>
+          ${st.connected && st.ghl?.authMode === 'oauth' && html`<${Btn} size="sm" variant="secondary" onClick=${async () => { setBusy('ref'); try { await seoSocialGhlRefreshAccounts(site); await load(); onBanner('↻ Social accounts refreshed from GoHighLevel.'); } catch (e) { setErr(e.message); } finally { setBusy(''); } }} disabled=${!!busy}>↻ Refresh accounts</${Btn}>`}
         </div>
+        <p class="text-xs text-slate-500">Pick the client's sub-account on the GoHighLevel screen — everything else connects automatically.</p>
+        <details>
+          <summary class="text-xs text-slate-400 cursor-pointer">Advanced: connect with a Private Integration token instead</summary>
+          <div class="mt-2 space-y-2">
+            <p class="text-xs text-slate-500">In the client's GHL <span class="font-medium">sub-account</span>: Settings → <span class="font-medium">Private Integrations</span> → New Integration with scopes <span class="font-medium">View Social Planner, Edit Social Planner, View Users, View Locations</span> → copy the token. The Location ID is in Settings → Business Profile.</p>
+            <div class="flex flex-wrap items-end gap-2">
+              <div class="min-w-[180px]"><label class="text-[11px] text-slate-400">Location ID</label><${Input} value=${locId} onInput=${setLocId} placeholder="ve9EPM428h8vShlRW1KT" /></div>
+              <div class="flex-1 min-w-[240px]"><label class="text-[11px] text-slate-400">Private Integration token</label><${Input} type="password" value=${token} onInput=${setToken} placeholder="pit-…" /></div>
+              <${Btn} size="sm" onClick=${connect} disabled=${busy === 'conn' || !locId.trim() || !token.trim()}>${busy === 'conn' ? 'Connecting…' : st.connected ? 'Reconnect' : 'Connect'}</${Btn}>
+            </div>
+          </div>
+        </details>
       </div>
     </div>`}
   </div></${Card}>`;

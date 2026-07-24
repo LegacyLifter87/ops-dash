@@ -612,6 +612,14 @@ export const seoSocialGhlConnect = (siteId, locationId, token) => seoInvokeSocia
 export const seoSocialGhlSetAccounts = (siteId, accountIds) => seoInvokeSocial('ghl_set_accounts', { siteId, accountIds });
 export const seoSocialGhlDisconnect = (siteId) => seoInvokeSocial('ghl_disconnect', { siteId });
 export const seoSocialGhlPush = (siteId, calendarId) => seoInvokeSocial('ghl_push', { siteId, calendarId });
+export const seoSocialGhlOauthStart = (siteId) => seoInvokeSocial('ghl_oauth_start', { siteId });
+export const seoSocialGhlRefreshAccounts = (siteId) => seoInvokeSocial('ghl_refresh_accounts', { siteId });
+// Google Drive OAuth (photo library source).
+export const seoSocialDriveOauthStart = (siteId) => seoInvokeSocial('drive_oauth_start', { siteId });
+export const seoSocialDriveStatus = (siteId) => seoInvokeSocial('drive_status', { siteId });
+export const seoSocialDriveFolders = (siteId, q) => seoInvokeSocial('drive_folders', { siteId, q });
+export const seoSocialDrivePick = (siteId, folderId, folderName) => seoInvokeSocial('drive_pick', { siteId, folderId, folderName });
+export const seoSocialDriveDisconnect = (siteId) => seoInvokeSocial('drive_disconnect', { siteId });
 
 // --- Media generation (kie.ai via seo-media fn) -----------------------------
 async function seoInvokeMedia(action, extra = {}) {
