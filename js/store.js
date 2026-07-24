@@ -293,6 +293,8 @@ async function seoInvokeComp(action, extra = {}) {
 export const seoCompetitorsDiscover = (siteId) => seoInvokeComp('discover', { siteId });
 export const seoCompetitorGap = (siteId, competitor) => seoInvokeComp('gap', { siteId, competitor });
 export const seoAddCompetitor = (siteId, domain) => seoInvokeComp('add_competitor', { siteId, domain });
+// "Not a competitor": hides the domain and drops it from research evidence.
+export const seoDismissCompetitor = (siteId, domain, dismissed = true) => seoInvokeComp('dismiss_competitor', { siteId, domain, dismissed });
 // Skill-driven deep research (docs/competitive-research-skill.md). run blocks
 // ~60-90s while the AI writes the full report.
 export const seoResearchRun = (siteId, inputs) => seoInvokeComp('research_run', { siteId, ...inputs });

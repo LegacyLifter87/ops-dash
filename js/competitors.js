@@ -8,7 +8,7 @@
 // 30/60/90 plan. Report is AI-written server-side from the data on file.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadCompetitors, seoLoadGap, seoCompetitorsDiscover, seoCompetitorGap, seoAddCompetitor, seoResearchRun, seoResearchList, seoResearchGet, seoResearchDelete } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadCompetitors, seoLoadGap, seoCompetitorsDiscover, seoCompetitorGap, seoAddCompetitor, seoDismissCompetitor, seoResearchRun, seoResearchList, seoResearchGet, seoResearchDelete } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -253,6 +253,7 @@ export function Competitors() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
   const [manual, setManual] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
   const sort = useSort('volume', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
@@ -260,7 +261,9 @@ export function Competitors() {
   useEffect(() => { if (site) { loadComps(site); setActive(''); setGap([]); } else setComps([]); }, [site]);
   useEffect(() => { if (site && active) seoLoadGap(site, active).then(setGap); else setGap([]); }, [active, site]);
 
-  const discover = async () => { setBusy('discover'); setErr(''); setBanner(''); try { const r = await seoCompetitorsDiscover(site); setBanner(`Found ${num(r.found)} competitor(s).`); await loadComps(site); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const discover = async () => { setBusy('discover'); setErr(''); setBanner(''); try { const r = await seoCompetitorsDiscover(site); setBanner(`Found ${num(r.found)} local competitor(s)${r.skippedNational ? ` · filtered out ${num(r.skippedNational)} national/directory site(s)` : ''}.`); await loadComps(site); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const dismiss = async (c) => { setErr(''); try { await seoDismissCompetitor(site, c.competitor_domain, true); if (active === c.competitor_domain) { setActive(''); setGap([]); } await loadComps(site); } catch (e) { setErr(e.message); } };
+  const restore = async (c) => { setErr(''); try { await seoDismissCompetitor(site, c.competitor_domain, false); await loadComps(site); } catch (e) { setErr(e.message); } };
   const addManual = async () => { if (!manual.trim()) return; setBusy('add'); setErr(''); try { const r = await seoAddCompetitor(site, manual); setManual(''); await loadComps(site); if (r.competitor) setActive(r.competitor.competitor_domain); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const runGap = async (domain) => { setActive(domain); setBusy('gap:' + domain); setErr(''); try { const r = await seoCompetitorGap(site, domain); setBanner(`${num(r.missing)} keywords they rank for that you don't, ${num(r.gap - r.missing)} where you're weaker.`); setGap(await seoLoadGap(site, domain)); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
 
@@ -277,6 +280,9 @@ export function Competitors() {
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading competitors…</div>`;
+
+  const visible = comps.filter((c) => !c.dismissed);
+  const hidden = comps.filter((c) => c.dismissed);
 
   return html`<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -304,16 +310,25 @@ export function Competitors() {
                 <${Input} value=${manual} onInput=${setManual} placeholder="add a domain…" class="flex-1" />
                 <${Btn} size="sm" onClick=${addManual} disabled=${busy === 'add'}>Add</${Btn}>
               </div>
-              ${comps.length === 0
+              ${visible.length === 0
                 ? html`<div class="text-sm text-slate-400 py-4 text-center">No competitors yet. Click <span class="font-medium">Find competitors</span> or add one above.</div>`
-                : html`<div class="space-y-1">${comps.map((c) => html`<button onClick=${() => runGap(c.competitor_domain)}
-                    class=${cx('w-full text-left px-2.5 py-2 rounded-lg border transition', active === c.competitor_domain ? 'border-brand-300 bg-brand-50' : 'border-slate-100 hover:border-slate-200')}>
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="font-medium text-slate-800 truncate">${c.competitor_domain}</span>
-                      ${busy === 'gap:' + c.competitor_domain ? html`<span class="text-xs text-slate-400">analyzing…</span>` : c.source === 'manual' ? html`<span class="text-[10px] text-slate-400">manual</span>` : ''}
-                    </div>
-                    <div class="text-xs text-slate-500">${num(c.common_keywords)} shared kw · ${c.etv ? money(c.etv) + ' est. traffic' : ''}</div>
-                  </button>`)}</div>`}
+                : html`<div class="space-y-1">${visible.map((c) => html`<div class=${cx('flex items-stretch rounded-lg border transition', active === c.competitor_domain ? 'border-brand-300 bg-brand-50' : 'border-slate-100 hover:border-slate-200')}>
+                    <button onClick=${() => runGap(c.competitor_domain)} class="flex-1 min-w-0 text-left px-2.5 py-2">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-medium text-slate-800 truncate">${c.competitor_domain}</span>
+                        ${busy === 'gap:' + c.competitor_domain ? html`<span class="text-xs text-slate-400">analyzing…</span>` : c.source === 'manual' ? html`<span class="text-[10px] text-slate-400">manual</span>` : ''}
+                      </div>
+                      <div class="text-xs text-slate-500">${num(c.common_keywords)} shared kw · ${c.etv ? money(c.etv) + ' est. traffic' : ''}</div>
+                    </button>
+                    <button title="Not a competitor — hide from the list and from research" onClick=${() => dismiss(c)} class="px-2 text-slate-300 hover:text-rose-600 shrink-0">✕</button>
+                  </div>`)}</div>`}
+              ${hidden.length > 0 && html`<div class="mt-3 pt-2 border-t border-slate-100">
+                <button onClick=${() => setShowHidden(!showHidden)} class="text-xs text-slate-400 hover:text-slate-600 underline">${showHidden ? 'Hide' : 'Show'} ${hidden.length} marked "not a competitor"</button>
+                ${showHidden && html`<div class="mt-1.5 space-y-1">${hidden.map((c) => html`<div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-100 bg-slate-50/50">
+                  <span class="flex-1 min-w-0 text-xs text-slate-400 line-through truncate">${c.competitor_domain}</span>
+                  <button title="Restore as a competitor" onClick=${() => restore(c)} class="text-xs text-slate-400 hover:text-brand-700 underline shrink-0">restore</button>
+                </div>`)}</div>`}
+              </div>`}
             </div></${Card}>
           </div>
 
