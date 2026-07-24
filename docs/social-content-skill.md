@@ -77,9 +77,35 @@ walls of text) → CTA line with phone number → 3–6 niche+local hashtags
 corporate fluff, no hype words ("insane", "game-changer").
 
 **CTA rules:** exactly ONE per post. Rotate: "Call {phone} for a free
-estimate", "Tap the link to book", "Send us a message — we answer fast",
+estimate", "Tap the link to book", "Send us a message. We answer fast",
 "Save this for later", (engagement posts: the question IS the CTA). Promo
 posts always carry phone + website.
+
+**Human voice rules (added 2026-07-24) — never reveal AI authorship.**
+The em dash (—) and double hyphen are banned from ALL published text:
+captions, hooks, on-image headlines, CTAs. Use a period, a comma, or start
+a new sentence instead. Also banned (classic AI tells): delve, elevate,
+unlock, unleash, seamless, effortless, robust, leverage, empower,
+supercharge, revolutionize, transformative, "look no further", "in today's
+fast-paced world", "whether you're X or Y" framings, "it's not just X,
+it's Y" constructions, and rule-of-three adjective triplets ("fast,
+reliable, and affordable"). Write like a real person texting a neighbor:
+contractions, varied sentence lengths, one idea per sentence, plain words.
+
+**Caption formatting (added 2026-07-24) — white space is readability.**
+Never publish a caption as one dense block. Structure with BLANK LINES
+between every thought:
+
+  Hook line.
+
+  First value thought, one or two short sentences.
+
+  Second value thought if needed.
+
+  CTA line.
+
+Each block is 1-2 sentences max. The blank lines are the point: a scanning
+reader catches every thought without effort.
 
 ## 4. Audience targeting from the system
 
