@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch } from './store.js';
-import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
+import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
   educational: ['📘', 'bg-sky-100 text-sky-700'],
@@ -26,6 +26,16 @@ const STATUS = {
   rejected: 'bg-rose-100 text-rose-600',
 };
 const PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['gbp', 'Google Business'], ['tiktok', 'TikTok']];
+// Status filter chips for the calendar card grid.
+const POST_FILTERS = [
+  ['all', 'All', () => true],
+  ['ready', '👀 To review', (p) => p.status === 'ready'],
+  ['approved', '✓ Approved', (p) => p.status === 'approved' && !p.ghl_post_id],
+  ['draft', '✍️ Drafting', (p) => p.status === 'planned' || p.status === 'written'],
+  ['media_pending', '🎨 Generating', (p) => p.status === 'media_pending'],
+  ['pushed', '🚀 Scheduled', (p) => !!p.ghl_post_id],
+  ['rejected', '✕ Rejected', (p) => p.status === 'rejected'],
+];
 // Shown when the browser can't decode a stored photo (e.g. a raw HEIC that
 // hasn't been converted yet) — Sync re-imports/converts and clears these.
 const BROKEN_IMG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112"><rect width="112" height="112" fill="#f1f5f9"/><text x="56" y="50" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">not viewable</text><text x="56" y="68" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">press Sync</text></svg>');
@@ -355,60 +365,128 @@ function photoScore(p, post) {
   return s;
 }
 
-function PostModal({ site, post, onClose, onChanged, library }) {
-  const [f, setF] = useState({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
-  const [refSel, setRefSel] = useState(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
+// Full-screen review mode: one post at a time, big media preview, one-tap
+// decisions with auto-advance and a progress bar — built so a month of
+// content can be reviewed in one fast pass instead of 30 modal round-trips.
+function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged }) {
+  const idx = posts.findIndex((p) => p.id === revId);
+  const post = idx >= 0 ? posts[idx] : null;
+  const [f, setF] = useState(null);
+  const [refSel, setRefSel] = useState(new Set());
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const media = (post.media_urls || [])[0];
-  const toggleRef = (url) => setRefSel((p) => { const n = new Set(p); if (n.has(url)) n.delete(url); else if (n.size < 3) n.add(url); return n; });
-  const doSave = async () => {
-    setBusy('save'); setErr('');
-    try {
-      await seoSocialUpdatePost(site, post.id, {
-        caption: f.caption, overlayText: f.overlay,
-        hashtags: f.tags.split(/[\s,]+/).filter(Boolean),
-        refPhotos: [...refSel],
-        ...(post.format === 'video' ? { videoPrompt: f.prompt } : { imagePrompt: f.prompt }),
-      });
-      await onChanged(); onClose();
-    } catch (e) { setErr(e.message); setBusy(''); }
+  useEffect(() => {
+    if (!post) return;
+    setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
+    setRefSel(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
+    setErr('');
+  }, [revId]);
+  const total = posts.length;
+  const decided = posts.filter((p) => p.status === 'approved' || p.status === 'rejected').length;
+  const readyLeft = posts.filter((p) => p.status === 'ready').length;
+  const go = (d) => { if (!total) return; setRevId(posts[(idx + d + total) % total].id); };
+  // After a decision, jump straight to the next post awaiting review.
+  const advance = () => {
+    const after = [...posts.slice(idx + 1), ...posts.slice(0, idx)];
+    const nxt = after.find((p) => p.status === 'ready');
+    if (nxt) setRevId(nxt.id);
   };
-  const doAct = async (fn, name) => { setBusy(name); setErr(''); try { await fn(); await onChanged(); onClose(); } catch (e) { setErr(e.message); setBusy(''); } };
-  return html`<${Modal} wide title=${`${post.post_date} · ${post.post_time} · ${post.pillar}${post.format === 'video' ? ' · 🎬 Reel' : ''}`} onClose=${onClose}>
-    <div class="space-y-3">
-      ${post.topic && html`<div class="text-xs text-slate-500">Brief: ${post.topic}${post.target_city ? ` · 📍 ${post.target_city}` : ''}${post.target_service ? ` · 🛠 ${post.target_service}` : ''}</div>`}
-      ${post.reject_reason && html`<div class="text-xs text-rose-600 bg-rose-50 rounded px-2 py-1">${post.reject_reason}</div>`}
-      ${media && (post.format === 'video'
-        ? html`<video src=${media} controls class="max-h-72 rounded-lg mx-auto"></video>`
-        : html`<img src=${media} alt="post media" class="max-h-72 rounded-lg mx-auto" />`)}
-      <${Field} label="Caption"><${Textarea} value=${f.caption} onInput=${(v) => setF({ ...f, caption: v })} rows=${6} /></${Field}>
-      <div class="grid sm:grid-cols-2 gap-3">
-        ${post.format === 'image' && html`<${Field} label="On-image text (≤7 words)"><${Input} value=${f.overlay} onInput=${(v) => setF({ ...f, overlay: v })} /></${Field}>`}
-        <${Field} label="Hashtags"><${Input} value=${f.tags} onInput=${(v) => setF({ ...f, tags: v })} placeholder="#roofrepairocala #ocalaroofer" /></${Field}>
-      </div>
-      <details><summary class="text-xs text-slate-400 cursor-pointer">${post.format === 'video' ? 'Video' : 'Image'} generation prompt</summary>
-        <div class="mt-2"><${Textarea} value=${f.prompt} onInput=${(v) => setF({ ...f, prompt: v })} rows=${4} /></div>
-      </details>
-      ${post.format === 'image' && (library || []).length > 0 && html`<div>
-        <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— best matches first, pick up to 3 (save, then regenerate)</span></div>
-        <div class="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-          ${(library || []).map((p) => ({ p, s: photoScore(p, post) })).sort((a, b) => b.s - a.s).map(({ p, s }) => html`<button onClick=${() => toggleRef(p.url)} title=${p.description || p.name || ''}
-            class=${cx('relative rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
-            <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-28 w-28 object-cover" />
-            ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}
-            ${!refSel.has(p.url) && s > 0 && html`<span class="absolute top-1 right-1 bg-white/85 rounded-full px-1 text-xs" title="matches this topic">✨</span>`}</button>`)}
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '')) return;
+      if (e.key === 'ArrowRight') go(1);
+      if (e.key === 'ArrowLeft') go(-1);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  });
+  if (!post || !f) return null;
+  const media = (post.media_urls || [])[0];
+  const [pic, ptone] = PILLAR[post.pillar] || ['📄', 'bg-slate-100 text-slate-600'];
+  const toggleRef = (url) => setRefSel((p) => { const n = new Set(p); if (n.has(url)) n.delete(url); else if (n.size < 3) n.add(url); return n; });
+  const saveFields = () => seoSocialUpdatePost(site, post.id, {
+    caption: f.caption, overlayText: f.overlay, cta: f.cta,
+    hashtags: f.tags.split(/[\s,]+/).filter(Boolean),
+    refPhotos: [...refSel],
+    ...(post.format === 'video' ? { videoPrompt: f.prompt } : { imagePrompt: f.prompt }),
+  });
+  const run = async (name, fn, next) => { setBusy(name); setErr(''); try { await fn(); await onChanged(); if (next) advance(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const doSave = () => run('save', saveFields, false);
+  const doApprove = () => run('ok', async () => { await saveFields(); await seoSocialApprove(site, post.id); }, true);
+  const doReject = () => run('no', () => seoSocialReject(site, post.id, 'rejected in review'), true);
+  const doRegen = () => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id); }, false);
+  const dateLabel = new Date(post.post_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return html`<div class="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[94vh] flex flex-col overflow-hidden fade-in">
+      <div class="px-4 pt-3 pb-2 border-b border-slate-100">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <button onClick=${() => go(-1)} title="Previous (←)" class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 hover:border-brand-400 hover:text-brand-600">‹</button>
+            <button onClick=${() => go(1)} title="Next (→)" class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 hover:border-brand-400 hover:text-brand-600">›</button>
+            <div class="text-sm font-semibold text-slate-800 truncate">${dateLabel} · ${post.post_time}${post.format === 'video' ? ' · 🎬 Reel' : ''}</div>
+            <span class=${cx('text-[11px] px-2 py-0.5 rounded-full shrink-0', ptone)}>${pic} ${post.pillar}</span>
+            <span class=${cx('text-[11px] px-2 py-0.5 rounded-full shrink-0', post.ghl_post_id ? 'bg-emerald-600 text-white' : STATUS[post.status] || '')}>${post.ghl_post_id ? '🚀 scheduled' : post.status.replace('_', ' ')}</span>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="text-xs text-slate-400 whitespace-nowrap hidden sm:block">${decided}/${total} decided${readyLeft ? ` · ${readyLeft} to review` : ''}</div>
+            <button onClick=${onClose} class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          </div>
         </div>
-      </div>`}
-      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
-      <div class="flex flex-wrap gap-2">
-        <${Btn} size="sm" onClick=${doSave} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : 'Save edits'}</${Btn}>
-        ${(post.status === 'written' || post.status === 'ready' || post.status === 'rejected') && html`<${Btn} size="sm" variant="secondary" onClick=${() => doAct(() => seoSocialRegenMedia(site, post.id), 'regen')} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate media' : '🎨 Generate media'}</${Btn}>`}
-        ${post.status === 'ready' && html`<${Btn} size="sm" variant="success" onClick=${() => doAct(() => seoSocialApprove(site, post.id), 'ok')} disabled=${!!busy}>✓ Approve</${Btn}>`}
-        ${post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${() => doAct(() => seoSocialReject(site, post.id, 'rejected in review'), 'no')} disabled=${!!busy}>✕ Reject</${Btn}>`}
+        <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-emerald-400 transition-all" style=${`width:${total ? Math.round((decided / total) * 100) : 0}%`}></div></div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4">
+        ${readyLeft === 0 && html`<div class="mb-3 rounded-lg bg-emerald-50 text-emerald-800 text-sm px-3 py-2">🎉 Every post has a decision — close this and hit <span class="font-semibold">Push to GHL</span> to schedule the approved ones.</div>`}
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center min-h-[280px] overflow-hidden self-start">
+            ${media ? (post.format === 'video'
+              ? html`<video src=${media} controls class="max-h-[62vh] w-full object-contain"></video>`
+              : html`<img src=${media} alt="post media" onError=${imgFallback} class="max-h-[62vh] w-full object-contain" />`)
+            : post.status === 'media_pending' ? html`<div class="text-center text-sm text-slate-400 animate-pulse py-16 px-6">🎨 Generating media…<div class="text-xs mt-1">this updates by itself when it finishes</div></div>`
+            : html`<div class=${cx('text-center py-16 px-6 w-full h-full flex flex-col items-center justify-center', ptone)}><div class="text-4xl">${pic}</div><div class="text-xs mt-2 opacity-80">No media yet — write/generate first</div></div>`}
+          </div>
+          <div class="space-y-3 min-w-0">
+            ${post.topic && html`<div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">📋 ${post.topic}${post.target_city ? ` · 📍 ${post.target_city}` : ''}${post.target_service ? ` · 🛠 ${post.target_service}` : ''}</div>`}
+            ${post.reject_reason && html`<div class="text-xs text-rose-600 bg-rose-50 rounded px-2 py-1">${post.reject_reason}</div>`}
+            <${Field} label="Caption"><${Textarea} value=${f.caption} onInput=${(v) => setF({ ...f, caption: v })} rows=${7} /></${Field}>
+            <div class="grid sm:grid-cols-2 gap-3">
+              ${post.format === 'image' && html`<${Field} label="On-image headline (3-8 words)"><${Input} value=${f.overlay} onInput=${(v) => setF({ ...f, overlay: v })} /></${Field}>`}
+              ${post.format === 'image' && html`<${Field} label="CTA button text (2-5 words)"><${Input} value=${f.cta} onInput=${(v) => setF({ ...f, cta: v })} placeholder="Get Your Free Estimate" /></${Field}>`}
+            </div>
+            <${Field} label="Hashtags"><${Input} value=${f.tags} onInput=${(v) => setF({ ...f, tags: v })} placeholder="#roofrepairocala #ocalaroofer" /></${Field}>
+            <details><summary class="text-xs text-slate-400 cursor-pointer">${post.format === 'video' ? 'Video' : 'Image'} generation prompt</summary>
+              <div class="mt-2"><${Textarea} value=${f.prompt} onInput=${(v) => setF({ ...f, prompt: v })} rows=${4} /></div>
+            </details>
+            ${post.format === 'image' && (library || []).length > 0 && html`<div>
+              <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— best matches first, pick up to 3 (then Regenerate)</span></div>
+              <div class="flex flex-wrap gap-2 max-h-64 overflow-y-auto pr-1">
+                ${(library || []).map((p) => ({ p, s: photoScore(p, post) })).sort((a, b) => b.s - a.s).map(({ p, s }) => html`<button onClick=${() => toggleRef(p.url)} title=${p.description || p.name || ''}
+                  class=${cx('relative rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
+                  <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-24 w-24 object-cover" />
+                  ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}
+                  ${!refSel.has(p.url) && s > 0 && html`<span class="absolute top-1 right-1 bg-white/85 rounded-full px-1 text-xs" title="matches this topic">✨</span>`}</button>`)}
+              </div>
+            </div>`}
+          </div>
+        </div>
+      </div>
+      <div class="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          ${post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${doReject} disabled=${!!busy}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
+          ${(post.status === 'written' || post.status === 'ready' || post.status === 'rejected') && html`<${Btn} size="sm" variant="secondary" onClick=${doRegen} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
+          ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-slate-300 hidden md:block">← → to browse</span>
+          <${Btn} size="sm" onClick=${doSave} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : '💾 Save'}</${Btn}>
+          ${post.status === 'approved'
+            ? html`<${Btn} size="sm" variant="success" disabled=${true}>✓ Approved</${Btn}>`
+            : html`<${Btn} variant="success" onClick=${doApprove} disabled=${!!busy || !media}>${busy === 'ok' ? '…' : '✓ Approve & next'}</${Btn}>`}
+        </div>
       </div>
     </div>
-  </${Modal}>`;
+  </div>`;
 }
 
 export function Social() {
@@ -419,8 +497,9 @@ export function Social() {
   const [month, setMonth] = useState(nextMonth());
   const [cal, setCal] = useState(null);   // calendar row or null
   const [posts, setPosts] = useState([]);
-  const [photos, setPhotos] = useState(null); // real-photo library (shared w/ PostModal)
-  const [sel, setSel] = useState(null);
+  const [photos, setPhotos] = useState(null); // real-photo library (shared w/ ReviewModal)
+  const [revId, setRevId] = useState(null);   // post open in review mode
+  const [filter, setFilter] = useState('all');
   const [busy, setBusy] = useState('');
   const [prog, setProg] = useState('');
   const [err, setErr] = useState('');
@@ -493,9 +572,9 @@ export function Social() {
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading social manager…</div>`;
   if (sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
 
-  const byDate = {};
-  posts.forEach((p) => { (byDate[p.post_date] = byDate[p.post_date] || []).push(p); });
   const counts = posts.reduce((m, p) => { m[p.status] = (m[p.status] || 0) + 1; return m; }, {});
+  const activeFilter = POST_FILTERS.find(([k]) => k === filter) || POST_FILTERS[0];
+  const shown = filter === 'all' ? posts : posts.filter(activeFilter[2]);
   const readyCount = counts.ready || 0;
   const toPush = posts.filter((p) => p.status === 'approved' && !p.ghl_post_id).length;
   const pushedCount = posts.filter((p) => p.ghl_post_id).length;
@@ -535,7 +614,8 @@ export function Social() {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           ${cal && posts.some((p) => p.status === 'written') && html`<${Btn} size="sm" variant="cta" onClick=${genMedia} disabled=${!!busy}>${busy === 'media' ? 'Generating…' : '🎨 Generate all media'}</${Btn}>`}
-          ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="success" onClick=${async () => { await seoSocialApproveAll(site, cal.id); setBanner(`✓ ${readyCount} posts approved.`); await load(); }} disabled=${!!busy}>✓ Approve all ready</${Btn}>`}
+          ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="cta" onClick=${() => setRevId((posts.find((p) => p.status === 'ready') || posts[0]).id)} disabled=${!!busy}>👀 Review ${readyCount}</${Btn}>`}
+          ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="success" onClick=${async () => { await seoSocialApproveAll(site, cal.id); setBanner(`✓ ${readyCount} posts approved.`); await load(); }} disabled=${!!busy}>✓ Approve all</${Btn}>`}
           ${cal && toPush > 0 && html`<${Btn} size="sm" variant="cta" onClick=${pushGhl} disabled=${!!busy}>${busy === 'push' ? 'Pushing…' : `🚀 Push ${toPush} to GHL`}</${Btn}>`}
           ${cal && pushedCount > 0 && toPush === 0 && html`<span class="text-xs text-emerald-600">🚀 ${pushedCount} scheduled in GHL</span>`}
           <${Btn} size="sm" onClick=${planMonth} disabled=${!!busy}>${busy === 'plan' ? 'Planning…' : cal ? '↻ Re-plan month' : '🧠 Plan this month'}</${Btn}>
@@ -543,24 +623,38 @@ export function Social() {
       </div>
       ${!cal ? html`<div class="text-sm text-slate-400 py-8 text-center">No calendar for this month yet — set up the brand kit above, then click <span class="font-medium">Plan this month</span>.</div>` : html`
         ${cal.strategy?.idealClient && html`<div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3"><span class="font-medium">Ideal client:</span> ${cal.strategy.idealClient}${cal.strategy.themes?.length ? html`<span class="font-medium"> · Themes:</span> ${cal.strategy.themes.join(' · ')}` : ''}</div>`}
-        <div class="space-y-1.5">
-          ${Object.keys(byDate).sort().map((d) => html`<div class="flex items-start gap-2 flex-wrap">
-            <div class="w-20 shrink-0 text-xs text-slate-400 pt-1.5">${new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</div>
-            <div class="flex-1 flex flex-wrap gap-1.5">
-              ${byDate[d].map((p) => { const [ic, tone] = PILLAR[p.pillar] || ['📄', 'bg-slate-100 text-slate-600']; return html`
-                <button onClick=${() => setSel(p)} title=${p.topic || ''}
-                  class=${cx('text-left text-xs px-2 py-1.5 rounded-lg border border-slate-100 hover:border-brand-300 flex items-center gap-1.5 max-w-full', p.status === 'rejected' && 'opacity-50')}>
-                  <span>${ic}</span>
-                  <span class="text-slate-400">${p.post_time}</span>
-                  ${p.format === 'video' && html`<span>🎬</span>`}
-                  <span class="truncate max-w-[180px] text-slate-700">${p.hook || p.topic || p.pillar}</span>
-                  <span class=${cx('px-1.5 py-0.5 rounded-full text-[10px]', STATUS[p.status] || '')}>${p.status.replace('_', ' ')}</span>
-                </button>`; })}
-            </div>
-          </div>`)}
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          ${POST_FILTERS.map(([k, label, fn]) => {
+            const n = k === 'all' ? posts.length : posts.filter(fn).length;
+            if (!n && k !== 'all') return null;
+            return html`<button onClick=${() => setFilter(k)} class=${cx('text-xs px-2.5 py-1 rounded-full border transition-colors', filter === k ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300')}>${label} ${n}</button>`;
+          })}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          ${shown.map((p) => {
+            const [ic, tone] = PILLAR[p.pillar] || ['📄', 'bg-slate-100 text-slate-600'];
+            const m = (p.media_urls || [])[0];
+            return html`<button onClick=${() => setRevId(p.id)} title=${p.topic || ''}
+              class=${cx('group text-left rounded-xl overflow-hidden border bg-white hover:shadow-md transition-shadow', p.status === 'rejected' ? 'opacity-50 border-slate-100' : 'border-slate-200 hover:border-brand-400')}>
+              <div class=${cx('relative h-40 flex items-center justify-center overflow-hidden', !m && tone)}>
+                ${m ? (p.format === 'video'
+                  ? html`<video src=${m} muted playsinline preload="metadata" class="h-full w-full object-cover"></video>`
+                  : html`<img src=${m} alt="" loading="lazy" onError=${imgFallback} class="h-full w-full object-cover" />`)
+                : p.status === 'media_pending' ? html`<div class="text-xs text-slate-500 animate-pulse text-center px-3">🎨 Generating…</div>`
+                : html`<div class="text-center px-3"><div class="text-3xl">${ic}</div><div class="text-[11px] mt-1 opacity-80 overflow-hidden max-h-8">${p.topic || p.pillar}</div></div>`}
+                ${p.format === 'video' && html`<span class="absolute top-1.5 left-1.5 text-xs bg-slate-900/50 text-white rounded px-1">🎬</span>`}
+                <span class=${cx('absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium', p.ghl_post_id ? 'bg-emerald-600 text-white' : STATUS[p.status] || '')}>${p.ghl_post_id ? '🚀' : p.status.replace('_', ' ')}</span>
+              </div>
+              <div class="px-2.5 py-2">
+                <div class="text-[11px] text-slate-400">${new Date(p.post_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${p.post_time} ${ic}</div>
+                <div class="text-xs text-slate-700 truncate">${p.hook || p.overlay_text || p.topic || p.pillar}</div>
+              </div>
+            </button>`;
+          })}
+          ${shown.length === 0 && html`<div class="col-span-full text-sm text-slate-400 py-8 text-center">Nothing in this filter.</div>`}
         </div>`}
     </div></${Card}>
 
-    ${sel && html`<${PostModal} site=${site} post=${sel} library=${photos || []} onClose=${() => setSel(null)} onChanged=${load} />`}
+    ${revId && html`<${ReviewModal} site=${site} posts=${posts} revId=${revId} setRevId=${setRevId} library=${photos || []} onClose=${() => setRevId(null)} onChanged=${load} />`}
   </div>`;
 }
