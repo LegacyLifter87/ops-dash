@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const PILLAR = {
@@ -184,6 +184,15 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
       onBanner(`📷 Imported ${r.imported} new photo(s) — ${r.driveSeen} image(s) across ${r.foldersScanned || 1} Drive folder(s), ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
       if (r.errors?.length) setErr(r.errors.join(' · '));
       await load();
+      // AI-label anything not yet analyzed so the post matcher can use it.
+      let labeled = 0;
+      for (let i = 0; i < 12; i++) {
+        const a = await seoPhotoAnalyze(site);
+        labeled += a.analyzed || 0;
+        if (!a.remaining) break;
+        onBanner(`🧠 Reading photos so AI can match them to posts… ${a.remaining} left`);
+      }
+      if (labeled > 0) onBanner(`🧠 ${labeled} photo(s) analyzed — AI can now match them to posts automatically.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const del = async (p) => { try { await seoSocialPhotoDelete(site, p.id); await load(); } catch (e) { setErr(e.message); } };
@@ -336,6 +345,16 @@ export function GhlCard({ site, onBanner }) {
   </div></${Card}>`;
 }
 
+// Relevance of a library photo to a post, from the AI description/tags —
+// used only to ORDER the picker (selection stays fully manual).
+function photoScore(p, post) {
+  const hay = `${(Array.isArray(p.tags) ? p.tags.join(' ') : '')} ${p.description || ''} ${p.name || ''}`.toLowerCase();
+  const needles = `${post.topic || ''} ${post.target_service || ''} ${post.target_city || ''}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+  let s = 0;
+  for (const w of new Set(needles)) if (hay.includes(w)) s++;
+  return s;
+}
+
 function PostModal({ site, post, onClose, onChanged, library }) {
   const [f, setF] = useState({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
   const [refSel, setRefSel] = useState(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
@@ -372,12 +391,13 @@ function PostModal({ site, post, onClose, onChanged, library }) {
         <div class="mt-2"><${Textarea} value=${f.prompt} onInput=${(v) => setF({ ...f, prompt: v })} rows=${4} /></div>
       </details>
       ${post.format === 'image' && (library || []).length > 0 && html`<div>
-        <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— pick up to 3 to build the image from (save, then regenerate)</span></div>
+        <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— best matches first, pick up to 3 (save, then regenerate)</span></div>
         <div class="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-          ${(library || []).map((p) => html`<button onClick=${() => toggleRef(p.url)} title=${p.name || ''}
+          ${(library || []).map((p) => ({ p, s: photoScore(p, post) })).sort((a, b) => b.s - a.s).map(({ p, s }) => html`<button onClick=${() => toggleRef(p.url)} title=${p.description || p.name || ''}
             class=${cx('relative rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
             <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-28 w-28 object-cover" />
-            ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}</button>`)}
+            ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}
+            ${!refSel.has(p.url) && s > 0 && html`<span class="absolute top-1 right-1 bg-white/85 rounded-full px-1 text-xs" title="matches this topic">✨</span>`}</button>`)}
         </div>
       </div>`}
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
@@ -414,7 +434,8 @@ export function Social() {
   };
   useEffect(() => { setCal(null); setPosts([]); setErr(''); if (site) load(site, month); }, [site, month]);
   // Photo library feeds the per-post picker (managed in the Business tab).
-  useEffect(() => { setPhotos(null); if (site) seoSocialPhotos(site).then((r) => setPhotos(r.photos || [])).catch(() => setPhotos([])); }, [site]);
+  // Catalog includes AI descriptions/tags so the picker can sort by relevance.
+  useEffect(() => { setPhotos(null); if (site) seoPhotoCatalog(site).then((r) => setPhotos(r.photos || [])).catch(() => setPhotos([])); }, [site]);
 
   // Poll while media is generating.
   useEffect(() => {
@@ -446,6 +467,13 @@ export function Social() {
   const genMedia = async () => {
     setBusy('media'); setErr('');
     try {
+      // Before generating, let AI assign real customer photos to posts that
+      // don't have any picked yet — real photos beat pure AI imagery.
+      try {
+        setProg('🔍 Matching real photos from the library to this month’s posts…');
+        const m = await seoPhotoMatch(site, month);
+        if (m.matched > 0) setBanner(`✨ ${m.matched} post(s) will be built from real customer photos.`);
+      } catch (_) { /* matching is best-effort — generation proceeds regardless */ }
       const pending = posts.filter((p) => p.status === 'written').length;
       setProg(`🎨 Generating media for ${pending} posts (runs in batches)…`);
       let started = 1;

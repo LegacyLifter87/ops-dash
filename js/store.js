@@ -603,6 +603,16 @@ export const seoSocialReject = (siteId, postId, reason) => seoInvokeSocial('reje
 export const seoSocialApproveAll = (siteId, calendarId) => seoInvokeSocial('approve_all', { siteId, calendarId });
 // Real-photo library (Drive folder + Job Tracker social-tagged photos).
 export const seoSocialPhotos = (siteId) => seoInvokeSocial('photos_list', { siteId });
+// AI photo understanding + post matching (seo-photo-ai fn).
+async function seoInvokePhotoAi(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-photo-ai', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoPhotoCatalog = (siteId) => seoInvokePhotoAi('catalog', { siteId });
+export const seoPhotoAnalyze = (siteId) => seoInvokePhotoAi('analyze', { siteId });
+export const seoPhotoMatch = (siteId, month) => seoInvokePhotoAi('match', { siteId, month });
 export const seoSocialDriveLink = (siteId, folderUrl) => seoInvokeSocial('drive_link', { siteId, folderUrl });
 export const seoSocialPhotosSync = (siteId) => seoInvokeSocial('photos_sync', { siteId });
 export const seoSocialPhotoDelete = (siteId, photoId) => seoInvokeSocial('photo_delete', { siteId, photoId });
