@@ -26,6 +26,10 @@ const STATUS = {
   rejected: 'bg-rose-100 text-rose-600',
 };
 const PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['gbp', 'Google Business'], ['tiktok', 'TikTok']];
+// Shown when the browser can't decode a stored photo (e.g. a raw HEIC that
+// hasn't been converted yet) — Sync re-imports/converts and clears these.
+const BROKEN_IMG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112"><rect width="112" height="112" fill="#f1f5f9"/><text x="56" y="50" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">not viewable</text><text x="56" y="68" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">press Sync</text></svg>');
+const imgFallback = (e) => { if (e.target.src !== BROKEN_IMG) e.target.src = BROKEN_IMG; };
 const nextMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
 export function BrandKit({ site, onBanner }) {
@@ -227,10 +231,10 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
     </div>`}
     ${photos !== null && photos.length > 0 && html`<div class="mt-3 flex flex-wrap gap-2">
       ${photos.slice(0, 24).map((p) => html`<div class="relative group">
-        <img src=${p.url} alt=${p.name || 'photo'} title=${`${p.source === 'drive' ? '📁 Drive' : p.source === 'jobtracker' ? '🧰 Job Tracker' : 'Upload'}${p.name ? ' · ' + p.name : ''}`} class="h-16 w-16 object-cover rounded-lg border border-slate-100" />
+        <img src=${p.url} alt=${p.name || 'photo'} loading="lazy" onError=${imgFallback} title=${`${p.source === 'drive' ? '📁 Drive' : p.source === 'jobtracker' ? '🧰 Job Tracker' : 'Upload'}${p.name ? ' · ' + p.name : ''}`} class="h-28 w-28 object-cover rounded-lg border border-slate-100" />
         <button onClick=${() => del(p)} class="absolute -top-1.5 -right-1.5 hidden group-hover:block bg-rose-600 text-white rounded-full w-5 h-5 text-xs leading-none">✕</button>
       </div>`)}
-      ${photos.length > 24 && html`<div class="h-16 w-16 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-400">+${photos.length - 24}</div>`}
+      ${photos.length > 24 && html`<div class="h-28 w-28 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-400">+${photos.length - 24}</div>`}
     </div>`}
   </div></${Card}>`;
 }
@@ -369,10 +373,11 @@ function PostModal({ site, post, onClose, onChanged, library }) {
       </details>
       ${post.format === 'image' && (library || []).length > 0 && html`<div>
         <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— pick up to 3 to build the image from (save, then regenerate)</span></div>
-        <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+        <div class="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
           ${(library || []).map((p) => html`<button onClick=${() => toggleRef(p.url)} title=${p.name || ''}
-            class=${cx('rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
-            <img src=${p.url} alt="" class="h-12 w-12 object-cover" /></button>`)}
+            class=${cx('relative rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
+            <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-28 w-28 object-cover" />
+            ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}</button>`)}
         </div>
       </div>`}
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
