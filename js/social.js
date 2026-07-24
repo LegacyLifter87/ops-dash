@@ -67,7 +67,7 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []) });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '' });
       if (!r.profile) setOpen(true);
     }).catch((e) => { setErr(e.message); setP({}); });
   }, [site]);
@@ -75,7 +75,7 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, aesthetics: [...(f.aesthetics || [])], plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, aesthetics: [...(f.aesthetics || [])], commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
       onBanner('✅ Brand kit saved.'); setOpen(false);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -197,6 +197,18 @@ export function BrandKit({ site, onBanner }) {
             class=${cx('text-xs px-2.5 py-1 rounded-full border', f.aesthetics?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>${label}</button>`)}
         </div>
         ${f.aesthetics?.size > 0 && html`<div class="text-[11px] text-slate-400 mt-1">The AI will only design within ${f.aesthetics.size === 1 ? 'this style' : `these ${f.aesthetics.size} styles`}.</div>`}
+      </div>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">Image sources <span class="text-slate-300">— company-only builds every image strictly over your real photos; AI-only never uses them</span></label>
+        <div class="flex flex-wrap gap-1.5">
+          ${[['company', '📷 Company photos'], ['ai', '🤖 AI imagery']].map(([id, label]) => html`<button
+            onClick=${() => setF((x) => { const n = new Set(x.imageSources); if (n.has(id)) { if (n.size > 1) n.delete(id); } else n.add(id); return { ...x, imageSources: n }; })}
+            class=${cx('text-xs px-2.5 py-1 rounded-full border', f.imageSources?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>${label}</button>`)}
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <${Field} label="Comment trigger word (optional — pairs with your comment automation)"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
+        <${Field} label="What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
       </div>
       <div class="flex flex-wrap gap-1.5">
         ${PLATFORMS.map(([id, label]) => html`<button onClick=${() => togglePlat(id)}
