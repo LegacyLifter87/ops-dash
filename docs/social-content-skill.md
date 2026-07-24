@@ -177,3 +177,93 @@ image-to-video: 1 image = animate, 2 = first→last frame transition).
   an actual completed job by this business — proof posts use REAL uploaded
   photos when available, generated imagery is for concept/educational/promo
   visuals.
+
+## 9. Marketing-first graphic design framework (added 2026-07-24)
+
+A graphic can be beautiful and still fail. Every social graphic has exactly
+three jobs: **stop the scroll, communicate ONE valuable idea, move the viewer
+toward one action.** The working formula is **STOP → CONNECT → PROVE →
+DIRECT**: interrupt the feed, show we understand the viewer's problem or
+goal, show the result/expertise/offer, then give one clear next step.
+
+### The one-message rule
+Each graphic carries ONE audience, ONE problem or desire, ONE promise, ONE
+CTA. Never stack every service, location, credential, and contact method into
+one design — visually equal elements mean nothing feels important. Extra
+detail lives in the caption or landing page.
+
+### Three-layer message (what actually goes on the graphic)
+1. **Hook headline — 3–8 words**, conversational, in the customer's own
+   words. A hook, never a service label: "Is Your Driveway Making Your Home
+   Look Older?" beats "Professional Pressure Washing Services". Categories:
+   problem, question, desired result ("Come Home to a Lawn You're Proud
+   Of"), transformation, warning, specific-audience callout ("{City}
+   Homeowners: Need More Space?"), curiosity, relief, offer. The strongest
+   hook is the clearest connection to the customer's current concern — not
+   the cleverest line.
+2. **Payoff — one short supporting line** answering "why should I care".
+   Emotional benefit over technical service: save time, avoid stress,
+   protect the home, prevent a larger expense, feel prepared, better first
+   impression. "More Room Without Leaving the Home You Love" beats "Custom
+   Home Additions" — the service is the mechanism, not the value.
+3. **CTA — 2–5 words**, rendered as ONE high-contrast rounded button/chip
+   with comfortable padding, visually separate from the headline. Specific
+   and matched to the viewer's commitment level: someone who just learned
+   about chimney leaks books an INSPECTION, not a rebuild. Never bare "Learn
+   more"/"Contact us". Phone/website may appear as small secondary info
+   (promo bottom bar) but never compete with the CTA.
+
+### CTA by pillar (match the post's goal, not always a sale)
+- **educational** (trust): "Save this for later", "Send us a photo",
+  "Schedule an inspection", "Ask if this applies to your home"
+- **proof** (consideration): "Request a quote", "See what yours could look
+  like", "Get your free estimate"
+- **local** (consideration): "Check availability in {city}", "Schedule your
+  visit", "Request a quote"
+- **bts** (awareness): "Follow for more", "Meet the crew", "Know someone who
+  needs this?"
+- **engagement**: the question IS the CTA — "Which would you choose?", "When
+  was yours last inspected?", "Comment INFO and we'll send details"
+- **promo** (conversion): "Call today", "Claim the offer", "Book your
+  cleaning", "Reserve your date"
+
+### Design for the thumbnail, not the canvas
+The graphic must survive: a phone, at arm's length, mid-scroll, under two
+seconds, among dozens of competitors. One dominant focal point; viewing
+order **visual/headline → benefit → CTA → small brand mark**. The logo
+establishes ownership and never competes with the message. Before approving:
+can you identify the subject, read the headline, know the offer, and see the
+CTA at thumbnail size? If anything feels crowded, simplify.
+
+### Contrast that stops the scroll (pick 1–2, not all)
+Color (light-on-dark blocks), size (one huge headline vs small support),
+shape (rounded CTA chip on a photo), emotional (calm homeowner vs storm),
+condition (dirty vs clean, outdated vs modern — before/after splits), and
+directional (a person looking/pointing toward the headline or CTA). Too many
+competing high-contrast elements = noise.
+
+### Photography that converts
+The image shows one of four things: the **problem** (algae-covered deck,
+overflowing gutter), the **process** (tech inspecting, crew mid-job), the
+**result** (clean driveway, bright bathroom), or the **feeling after**
+(homeowner relaxed, family in the finished space). Scenes must look like the
+business's real region and customers — believable local homes and
+businesses, never generic luxury stock that feels disconnected. Real
+customer photos beat generated imagery whenever one fits.
+
+### Design families (rotate to prevent template blindness)
+Keep fonts, colors, logo treatment, and CTA chip style constant; rotate the
+layout across: hero-photo, question card, before/after split, educational
+tip card, offer card, team/behind-the-scenes, minimal headline. Consistency
+without repetition.
+
+### The 10-point scorecard (a post should pass ≥8)
+1 subject understood in one second · 2 one clear focal point · 3 headline
+readable on a phone · 4 headline addresses a real customer concern ·
+5 believable, relevant image · 6 enough contrast · 7 nothing unnecessary ·
+8 business identifiable without the logo dominating · 9 next action clear ·
+10 a reason to stop, care, and act.
+
+### Reels structure
+The opening frame must work as a headline on its own. Beat order: hook →
+problem → demonstration → result → CTA. Never open on a logo card.
