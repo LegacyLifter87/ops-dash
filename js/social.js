@@ -177,7 +177,7 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
     setBusy('sync'); setErr('');
     try {
       const r = await seoSocialPhotosSync(site);
-      onBanner(`📷 Imported ${r.imported} new photo(s) — ${r.driveSeen} seen in Drive, ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
+      onBanner(`📷 Imported ${r.imported} new photo(s) — ${r.driveSeen} image(s) across ${r.foldersScanned || 1} Drive folder(s), ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
       if (r.errors?.length) setErr(r.errors.join(' · '));
       await load();
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
