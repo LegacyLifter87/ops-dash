@@ -267,3 +267,106 @@ readable on a phone · 4 headline addresses a real customer concern ·
 ### Reels structure
 The opening frame must work as a headline on its own. Beat order: hook →
 problem → demonstration → result → CTA. Never open on a logo card.
+
+## 10. Visual style system — aesthetics, families, attention (added 2026-07-24)
+
+Style has layers that combine — never conflate them:
+**aesthetic** (what it visually resembles) · **communication style** (how the
+message is structured) · **format** (photo/carousel/video/before-after) ·
+**marketing goal** (awareness/trust/education/conversion/engagement) ·
+**brand personality**. "Minimalist" is an aesthetic; "before/after" is a
+format — a before/after can be minimalist, editorial, or industrial.
+
+### The four spectrums (place every brand deliberately)
+- **Minimal ↔ maximal** — restraint/negative space (clarity, premium,
+  professional) vs layered abundance (energy, youth, events). Maximalism is
+  organized excess, never random: one message stays dominant.
+- **Structured ↔ expressive** — grid/consistency (orderly, dependable) vs
+  rotation/overlap/hand-drawn (personal, creative, youthful).
+- **Polished ↔ native** — produced-ad look vs looks-like-the-feed (phone
+  photo, screenshot, candid). Native often out-performs polish because it
+  reduces the distance between ad and ordinary content.
+- **Timeless ↔ trend-driven** — brand consistency vs borrowed current visual
+  language (collage, analog texture, neo-brutalism). Trend can stop the
+  scroll but must stay believable for the brand.
+
+### ONE brand aesthetic per business (picked at plan time, kept all month)
+Choose from this menu by industry + positioning; design families rotate the
+LAYOUT while the aesthetic keeps fonts/colors/mood constant:
+- **industrial-rugged** — dark neutrals + safety accent, heavy condensed
+  type, worksite photography, high contrast → contractors, electrical,
+  pressure washing, chimney, generators. Tough/reliable/capable. Never
+  militaristic or grungy-dirty; show care, not just toughness.
+- **documentary** — real crew, real sites, natural light, location labels,
+  minimal overlays → all trades; authentic/trustworthy/local. Authenticity
+  never excuses bad lighting, unsafe practices in frame, or no benefit.
+- **organic-natural** — earth tones, soft greens, sunlight, rounded shapes,
+  humanist type → lawn care, landscaping, outdoor. Watch contrast — never
+  all-beige.
+- **luxury-minimal / editorial** — generous negative space, refined serif +
+  small uppercase labels, deep neutrals, elegant photography, restrained CTA
+  → custom remodeling, premium flooring, high-end offices, real estate.
+  Luxury = restraint + material quality, NOT gold-on-black decoration.
+- **corporate-clean** — brand-color blocks, clean sans, icons, predictable
+  layout → professional/B2B services. Risk: invisibility — always include
+  one ownable brand asset (signature accent, photo treatment, CTA style).
+- **bold-minimalism** — one saturated brand color, oversized type, cropped
+  photo, very few elements. Minimalism that speaks instead of whispers →
+  promos, announcements, trades needing energy.
+- **retro-local** — vintage badge, "Serving X since YYYY", warm grading,
+  heritage type → long-established family businesses; history as social
+  proof.
+- **playful-pop** — primary colors, halftone, starbursts, thick outlines →
+  giveaways, events, school/youth campaigns. NEVER for safety warnings.
+Minimalism traps: weak hierarchy, undersized text, pale contrast, purposeless
+emptiness. Maximalism traps: equal visual weight everywhere, vanishing CTA.
+
+### The 8 design families (rotate layouts inside the aesthetic)
+1. **Hero transformation** — full-bleed result photo, short emotional
+   headline, small support line, CTA → flooring, remodel, lawn, washing.
+2. **Problem question** — close-up of the ISSUE + large question headline +
+   one educational line + inspection/estimate CTA → leaks, vents, gutters,
+   weeds.
+3. **Documentary proof** — real technician/site + location label ("TODAY IN
+   OCALA") + brief process note + trust CTA. Real photos mandatory.
+4. **Before/after** — same angle, same lighting, same zoom (the proof IS the
+   comparison); headline adds meaning ("ONE CLEANING. A DIFFERENT FIRST
+   IMPRESSION."), never just "Before & After". Splits: vertical/horizontal/
+   carousel-reveal.
+5. **Offer graphic** — the offer is the focal point + one image + deadline +
+   one CTA. Use SPARINGLY (promo ≤1 in 6) so the brand isn't
+   discount-dependent.
+6. **Editorial authority** — category label ("HOME / DESIGN / OCALA"),
+   serif headline, art-directed photo, insight caption → premium positioning
+   and thought leadership.
+7. **Community & personality** — team photos, light collage, handwritten
+   accents, informal copy → bts, culture, events, appreciation.
+8. **Minimal statement / typography-first** — the headline IS the design;
+   oversized or stacked type, one color field, tiny CTA → strong opinions,
+   questions, brand beliefs.
+(Testimonial/social-proof designs use ONLY real supplied review text — never
+generate one.)
+
+### Attention mechanisms (every graphic uses at least one, on purpose)
+visual contrast · pattern interruption (different from adjacent feed
+content) · human presence (faces, hands, eye direction) · novelty ·
+personal relevance ("SELLING YOUR HOME THIS FALL?") · open loop ("THREE
+SIGNS YOUR DRYER VENT IS RESTRICTED") · transformation · specificity
+(numbers, dates, named places: "$250 OFF THROUGH AUGUST 31") · emotional
+tension (risk↔safety, chaos↔control, frustration↔relief).
+
+### Style by marketing goal
+awareness → cinematic, typography-first, bold-minimalism · trust →
+documentary, testimonial(real), editorial, photography-led · education →
+infographic-simple, comparison, illustration · conversion → offer-led,
+bold-minimalism, before/after, hero photo · engagement → question-led,
+comparison, meme-adjacent, UGC-feel · premium → luxury-minimal, editorial,
+restrained typography.
+
+### The four-question test (replaces "does it look good?")
+1. Recognizable as THIS brand? 2. Does it make THIS audience stop?
+3. Message understood in a second? 4. Does the next action feel natural?
+A style that wins design compliments but fails these four is the wrong
+style. Match seriousness to subject: playful pop for a giveaway, never for
+a carbon-monoxide warning; a casual phone-photo look can beat a cinematic
+ad because it's more believable in the feed.
