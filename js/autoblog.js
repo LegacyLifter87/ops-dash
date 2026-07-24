@@ -221,7 +221,10 @@ export function Autoblog() {
             return html`<div class="py-2.5 flex items-start gap-3 flex-wrap">
               <span class=${cx('text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap mt-0.5', tone)}>${emoji} ${label}</span>
               <div class="flex-1 min-w-0">
-                <div class="text-sm text-slate-800 truncate">${q.title || q.keyword}</div>
+                <div class="text-sm text-slate-800 truncate">
+                  ${q.title || q.keyword}
+                  ${(q.cluster || '').startsWith('Competitor gap') && html` <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 align-middle" title=${q.cluster}>⚔️ ${q.cluster.replace('Competitor gap · ', 'gap vs ')}</span>`}
+                </div>
                 <div class="text-[11px] text-slate-400 truncate">
                   ${q.title ? `${q.keyword} · ` : ''}${q.status === 'approved' && q.scheduled_for ? `publishes ${when(q.scheduled_for)}` : ''}
                   ${q.status === 'published' && q.wp_link ? html`<a href=${q.wp_link} target="_blank" class="text-brand-600 hover:underline">view live ↗</a>` : ''}
