@@ -293,6 +293,12 @@ async function seoInvokeComp(action, extra = {}) {
 export const seoCompetitorsDiscover = (siteId) => seoInvokeComp('discover', { siteId });
 export const seoCompetitorGap = (siteId, competitor) => seoInvokeComp('gap', { siteId, competitor });
 export const seoAddCompetitor = (siteId, domain) => seoInvokeComp('add_competitor', { siteId, domain });
+// Skill-driven deep research (docs/competitive-research-skill.md). run blocks
+// ~60-90s while the AI writes the full report.
+export const seoResearchRun = (siteId, inputs) => seoInvokeComp('research_run', { siteId, ...inputs });
+export const seoResearchList = (siteId) => seoInvokeComp('research_list', { siteId });
+export const seoResearchGet = (siteId, researchId) => seoInvokeComp('research_get', { siteId, researchId });
+export const seoResearchDelete = (siteId, researchId) => seoInvokeComp('research_delete', { siteId, researchId });
 export async function seoLoadCompetitors(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_competitors').select('*').eq('site_id', siteId).order('common_keywords', { ascending: false });
