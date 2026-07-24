@@ -4,7 +4,8 @@
 // (Volume/CPC columns light up once Google Ads Keyword Planner is connected.)
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefResearch, seoBriefGenerate, seoBriefRefine, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpStatus, seoWpPublish, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpStatus, seoWpPublish, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
+import { ContentModal, generateBrief } from './briefs.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -86,20 +87,9 @@ export function Keywords() {
   };
   const genBrief = async (key, kind, format) => {
     setBriefBusy(key); setErr('');
-    const target = kind === 'keyword' ? { keyword: key } : { cluster: key };
     try {
-      // Pass 1: research authority sources (web search lives in its own fast request).
-      let sources = [];
-      try { const res = await seoBriefResearch(site, target); sources = res?.sources || []; }
-      catch (_) { /* research is best-effort — generate falls back to official-homepage citations */ }
-      // Pass 2: write the draft with verified sources injected (saved server-side immediately).
-      const r = await seoBriefGenerate(site, target, format, sources);
-      if (r?.brief) setBriefs(await seoLoadBriefs(site));
-      // Pass 3: only when the draft misses a hard requirement — separate fast request.
-      if (r?.issues?.length) {
-        try { await seoBriefRefine(site, key, sources); setBriefs(await seoLoadBriefs(site)); }
-        catch (_) { /* draft is already saved and shown — quality pass is best-effort */ }
-      }
+      await generateBrief(site, key, kind, format); // research → write → refine (shared with Autoblogger)
+      setBriefs(await seoLoadBriefs(site));
     } catch (e) { setErr(e.message); } finally { setBriefBusy(''); }
   };
   const briefFor = (cl) => briefs.some((x) => x.cluster === cl);
@@ -195,7 +185,7 @@ export function Keywords() {
 
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex gap-1 border-b border-slate-200">
-            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['briefs', `Briefs (${briefs.length})`], ['negatives', `Negatives (${negatives.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
+            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['negatives', `Negatives (${negatives.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
           </div>
           ${view === 'keywords' && html`<div class="ml-auto flex flex-wrap items-center gap-2">
             <${Input} value=${q} onInput=${setQ} placeholder="Search…" class="w-40" />
@@ -241,8 +231,7 @@ export function Keywords() {
                 <td class="py-1.5 pr-3 text-right"><button onClick=${() => openContent(c.cluster, 'cluster')} class=${cx('text-xs px-2 py-1 rounded-lg border whitespace-nowrap', briefFor(c.cluster) ? 'border-brand-200 text-brand-700 bg-brand-50' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>${briefFor(c.cluster) ? 'View content' : '✨ Write'}</button></td>
               </tr>`)}</tbody>
             </table></div></${Card}>`
-          : view === 'negatives'
-          ? html`<${Card}><div class="p-4 space-y-3">
+          : html`<${Card}><div class="p-4 space-y-3">
               <div>
                 <div class="text-sm font-medium text-slate-700">Negative keywords</div>
                 <p class="text-xs text-slate-500 mt-0.5">Blocked from blogging — auto <span class="italic">and</span> manual, regardless of opportunity score. Match is phrase-level, so “${negatives[0]?.keyword || 'cheap'}” also blocks any keyword that contains it. ${adsConn ? 'Queued to push to your Google Ads campaigns as campaign negatives.' : 'They’ll push to Google Ads as campaign negatives once Ads is connected for this account.'}</p>
@@ -254,27 +243,8 @@ export function Keywords() {
                     <button onClick=${() => removeNeg(n.keyword)} disabled=${negBusy === n.keyword} title="Remove — allow blogging & drop the Ads negative" class="w-5 h-5 rounded-full hover:bg-rose-100 text-rose-500 disabled:opacity-40">${negBusy === n.keyword ? '·' : '✕'}</button>
                   </span>`)}</div>`}
               <div class="pt-1"><${NegAdd} onAdd=${(kw) => toggleNeg(kw)} busy=${!!negBusy} existing=${negWords} /></div>
-            </div></${Card}>`
-          : html`<div class="space-y-3">
-            <${Card}><div class="p-4 flex items-center justify-between flex-wrap gap-2">
-              <div class="min-w-0">
-                <div class="font-semibold text-slate-800">WordPress publishing</div>
-                <div class="text-xs truncate ${wp?.live ? 'text-emerald-600' : 'text-slate-400'}">${wp === null ? 'Checking connection…' : wp?.live ? `Connected ✓ ${wp.wp_url || ''} · plugin v${wp.info?.plugin_version || '?'}` : wp?.connected ? 'Connected, but the plugin is not reachable right now.' : 'Not connected.'}</div>
-              </div>
-              <a href="#/profile" class="text-xs text-brand-700 underline shrink-0">Manage connection in 🏢 Business →</a>
-            </div></${Card}>
-            <${Card}><div class="p-3">
-              ${briefs.length === 0
-                ? html`<div class="p-6 text-center text-sm text-slate-500">No briefs yet. Open <span class="font-medium">Clusters</span> and click ✨ Brief on a topic to generate a page brief with AI.</div>`
-                : html`<div class="divide-y divide-slate-100">${briefs.map((b) => html`<button onClick=${() => openContent(b.cluster, clusters.some((c) => c.cluster === b.cluster) ? 'cluster' : 'keyword')} class="w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded">
-                    <div class="min-w-0"><div class="font-medium text-slate-800">${b.cluster}</div><div class="text-xs text-slate-500 truncate">${b.title}</div></div>
-                    <div class="flex items-center gap-2 shrink-0">
-                      ${b.wp_post_id && html`<${Pill} cls="bg-sky-100 text-sky-700">WP ✓</${Pill}>`}
-                      <${Pill} cls="bg-slate-100 text-slate-600">${(b.format || b.page_type || '').replace('_', ' ')}</${Pill}>
-                    </div>
-                  </button>`)}</div>`}
-            </div></${Card}>
-          </div>`}
+            </div></${Card}>`}
+        <div class="text-xs text-slate-400">📄 Written briefs now live in the <span class="font-medium">🤖 Autoblogger</span> tab.</div>
       `}
     ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl, imageSource) => wpPublish(openCluster, mode, imgUrl, imageSource)} onSave=${(patch) => saveBrief(openCluster, patch)} />`}
   </div>`;
@@ -350,163 +320,7 @@ function NegAdd({ onAdd, busy, existing }) {
   </div>`;
 }
 
-// Mirrors the generator's server-side counter: strips markdown syntax so link
-// URLs, table pipes and image placeholders don't inflate the number. The count
-// shown here is the same one the quality checker enforces.
-function proseWordCount(md) {
-  let t = String(md || '');
-  t = t.replace(/```[\s\S]*?```/g, ' ');
-  t = t.replace(/^[^\S\n]*\*?[^\S\n]*\[IMAGE:[^\]]*\][^\S\n]*\*?[^\S\n]*$/gim, ' ');
-  t = t.replace(/\{#[^}]*\}/g, ' ');
-  t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
-  t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-  t = t.replace(/^[^\S\n]*\|[\s:|-]+\|[^\S\n]*$/gm, ' ');
-  t = t.replace(/\|/g, ' ');
-  t = t.replace(/^[^\S\n]{0,3}#{1,6}[^\S\n]+/gm, ' ');
-  t = t.replace(/^[^\S\n]*>[^\S\n]?/gm, ' ');
-  t = t.replace(/^[^\S\n]*(?:[-*+]|\d+\.)[^\S\n]+/gm, ' ');
-  t = t.replace(/[*_`~]/g, ' ');
-  t = t.replace(/\s+/g, ' ').trim();
-  return t ? t.split(' ').length : 0;
-}
-const Counter = ({ n, lo, hi, unit }) => html`<span class=${cx('tabular-nums text-[11px]', !n ? 'text-slate-300' : n >= lo && n <= hi ? 'text-emerald-600' : 'text-amber-600')}>${n}${unit || ''}</span>`;
+// proseWordCount, Counter, and ContentModal moved to briefs.js (shared with
+// the Autoblogger tab's briefs library).
 
-function ContentModal({ cluster, brief, busy, error, onClose, onGen, wpConnected, wpBusy, onWp, onSave }) {
-  const [copied, setCopied] = useState(false);
-  const [wpRes, setWpRes] = useState(null);
-  const [wpSendErr, setWpSendErr] = useState('');
-  const [imgUrl, setImgUrl] = useState('');
-  const [imgSource, setImgSource] = useState('stock');
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveErr, setSaveErr] = useState('');
-  const [savedNote, setSavedNote] = useState('');
-  const has = brief && brief.content;
-  const fields = (b) => ({ title: b.title || '', h1: b.h1 || '', meta: b.meta || '', slug: b.slug || '', content: b.content || '' });
-  const dirty = editing && draft && brief && JSON.stringify(draft) !== JSON.stringify(fields(brief));
-  const startEdit = () => { setDraft(fields(brief)); setSaveErr(''); setSavedNote(''); setEditing(true); };
-  const cancelEdit = () => { if (dirty && !confirm('Discard your unsaved edits?')) return; setEditing(false); setDraft(null); setSaveErr(''); };
-  const save = async () => {
-    setSaving(true); setSaveErr(''); setSavedNote('');
-    try { await onSave(draft); setEditing(false); setDraft(null); setSavedNote('Saved. Send it to WordPress when you\'re ready.'); }
-    catch (e) { setSaveErr(e.message); } finally { setSaving(false); }
-  };
-  const close = () => { if (dirty && !confirm('You have unsaved edits. Close anyway?')) return; onClose(); };
-  const copy = async () => { try { await navigator.clipboard.writeText(brief.content); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ } };
-  const sendWp = async (mode) => { setWpSendErr(''); setWpRes(null); try { setWpRes(await onWp(mode, imgUrl.trim(), imgSource)); } catch (e) { setWpSendErr(e.message); } };
-  const footer = !has ? null : editing ? html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
-    <span class="text-xs text-slate-400">${dirty ? 'Unsaved changes' : 'No changes yet'}</span>
-    <div class="flex gap-2">
-      <${Btn} size="sm" onClick=${cancelEdit} disabled=${saving}>Cancel</${Btn}>
-      <${Btn} size="sm" onClick=${save} disabled=${saving || !dirty}>${saving ? 'Saving…' : '💾 Save changes'}</${Btn}>
-    </div>
-  </div>` : html`<div class="flex justify-between items-center w-full gap-2 flex-wrap">
-    <div class="flex gap-2 flex-wrap items-center">
-      <${Btn} size="sm" onClick=${startEdit}>✏️ Edit</${Btn}>
-      <${Btn} size="sm" onClick=${() => onGen('blog')} disabled=${busy}>${busy ? '…' : 'Rewrite as blog'}</${Btn}>
-      <${Btn} size="sm" onClick=${() => onGen('service')} disabled=${busy}>${busy ? '…' : 'Rewrite as page'}</${Btn}>
-      ${wpConnected && html`
-        <${Btn} size="sm" onClick=${() => sendWp('draft')} disabled=${wpBusy}>${wpBusy ? 'Sending…' : brief.wp_post_id ? '↻ Update WP draft' : '→ WP draft'}</${Btn}>
-        <${Btn} size="sm" onClick=${() => sendWp('publish')} disabled=${wpBusy}>${wpBusy ? '…' : '🚀 Publish live'}</${Btn}>`}
-    </div>
-    <${Btn} size="sm" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy markdown'}</${Btn}>
-  </div>`;
-  if (has && editing && draft) {
-    const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
-    const words = proseWordCount(draft.content);
-    const ta = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200';
-    return html`<${Modal} title=${`Edit — ${cluster}`} wide onClose=${close} footer=${footer}>
-      <div class="space-y-3 text-sm">
-        ${saveErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${saveErr}</div>`}
-        <div class="space-y-1">
-          <div class="flex justify-between text-[11px] text-slate-400"><span>SEO title (50–60 chars)</span><${Counter} n=${draft.title.length} lo=${50} hi=${60} /></div>
-          <${Input} value=${draft.title} onInput=${set('title')} placeholder="Shown in Google results" />
-        </div>
-        <div class="space-y-1">
-          <div class="flex justify-between text-[11px] text-slate-400"><span>H1 — on-page headline (must differ from the SEO title)</span><span class=${cx('text-[11px]', draft.h1.trim() && draft.h1.trim().toLowerCase() === draft.title.trim().toLowerCase() ? 'text-amber-600' : 'text-slate-300')}>${draft.h1.trim() && draft.h1.trim().toLowerCase() === draft.title.trim().toLowerCase() ? 'identical to title' : ''}</span></div>
-          <${Input} value=${draft.h1} onInput=${set('h1')} placeholder="Becomes the post title in WordPress" />
-        </div>
-        <div class="space-y-1">
-          <div class="flex justify-between text-[11px] text-slate-400"><span>Meta description (150–155 chars)</span><${Counter} n=${draft.meta.length} lo=${150} hi=${155} /></div>
-          <textarea value=${draft.meta} onInput=${set('meta')} rows="2" class=${ta}></textarea>
-        </div>
-        <div class="space-y-1">
-          <div class="text-[11px] text-slate-400">URL slug</div>
-          <${Input} value=${draft.slug} onInput=${set('slug')} placeholder="lawn-mowing-ocala-fl" />
-        </div>
-        <div class="space-y-1">
-          <div class="flex justify-between text-[11px] text-slate-400">
-            <span>Article (Markdown) — <span class="text-slate-500">## Heading {#anchor}</span> sets a heading's link target; <span class="text-slate-500">*[IMAGE: …]*</span> lines become photos on publish</span>
-            <span>body prose <${Counter} n=${words} lo=${1500} hi=${2000} /> words</span>
-          </div>
-          <textarea value=${draft.content} onInput=${set('content')} rows="22" spellcheck="true" class=${cx(ta, 'font-mono text-xs leading-relaxed')}></textarea>
-        </div>
-        <div class="text-[11px] text-slate-400">Word count ignores headings, table cells and link URLs — it counts what a reader actually reads, same as the quality checker.</div>
-      </div>
-    </${Modal}>`;
-  }
-  return html`<${Modal} title=${`Content — ${cluster}`} wide onClose=${close} footer=${footer}>
-    ${!has ? html`<div class="text-center space-y-4 py-4">
-        <div class="text-sm text-slate-600">Generate publish-ready copy for <span class="font-medium">${cluster}</span>. Pick the format:</div>
-        <div class="flex justify-center gap-3">
-          <${Btn} onClick=${() => onGen('blog')} disabled=${busy}>${busy ? 'Writing…' : '📝 Blog post'}</${Btn}>
-          <${Btn} onClick=${() => onGen('service')} disabled=${busy}>${busy ? 'Writing…' : '🧰 Service page'}</${Btn}>
-        </div>
-        ${busy && html`<div class="text-xs text-slate-500 animate-pulse">Researching authorities, writing, and quality-checking — usually 1–3 minutes. You can close this and check the Briefs tab later.</div>`}
-        ${error && html`<div class="text-sm text-rose-600">${error}</div>`}
-        <div class="text-xs text-slate-400">Rank Math-style structure: SEO title + distinct H1, answer-first intro, Key Takeaways, quick-answer sections, tables + FAQ, internal links to your pages, and researched authority citations.</div>
-      </div>`
-      : html`<div class="space-y-4 text-sm">
-        ${wpRes && html`<div class="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800">
-          ${wpRes.status === 'publish' ? '🚀 Published live on WordPress.' : wpRes.updated ? 'WordPress draft updated.' : 'Sent to WordPress as a draft.'}
-          ${wpRes.edit_link && html` <a href=${wpRes.edit_link} target="_blank" rel="noopener" class="underline font-medium">Open in WP editor</a>`}
-          ${wpRes.link && html` · <a href=${wpRes.link} target="_blank" rel="noopener" class="underline">${wpRes.status === 'publish' ? 'View live' : 'Preview'}</a>`}
-          ${wpRes.images_added > 0 && html`<span class="block text-xs text-emerald-700 mt-1">${wpRes.images_added} image${wpRes.images_added === 1 ? '' : 's'} added to the article + featured image set.</span>`}
-          ${wpRes.image_note && html`<span class="block text-xs text-amber-700 mt-1">${wpRes.image_note}</span>`}
-          ${wpRes.featured_image?.error && html`<span class="block text-xs text-amber-700 mt-1">Featured image failed: ${wpRes.featured_image.error}</span>`}
-          ${wpRes.status !== 'publish' && !wpRes.images_added && html`<span class="block text-xs text-emerald-700 mt-1">Replace the [IMAGE: …] placeholders with real photos before publishing.</span>`}
-        </div>`}
-        ${wpSendErr && html`<div class="rounded-lg bg-rose-50 border border-rose-100 p-3 text-sm text-rose-700">${wpSendErr}</div>`}
-        ${savedNote && html`<div class="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800">${savedNote}</div>`}
-        ${wpConnected && html`<div class="flex items-center gap-3 flex-wrap">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-slate-400 shrink-0">Article images</span>
-            <${Select} value=${imgSource} onChange=${setImgSource} options=${[
-              { value: 'stock', label: '📷 Stock photos (Pexels)' },
-              { value: 'ai', label: '🎨 AI-generated' },
-              { value: 'client', label: '🏗 Client job photos' },
-              { value: 'none', label: 'None — keep placeholders' },
-            ]} />
-          </div>
-          <div class="flex items-center gap-2 flex-1 min-w-48">
-            <span class="text-xs text-slate-400 shrink-0">Featured image URL (optional override)</span>
-            <div class="flex-1"><${Input} value=${imgUrl} onInput=${setImgUrl} placeholder="https://…" /></div>
-          </div>
-        </div>`}
-        <div class="flex flex-wrap gap-2 items-center">
-          <${Pill} cls="bg-brand-100 text-brand-700">${(brief.format || brief.page_type || '').replace('_', ' ')}</${Pill}>
-          <${Pill} cls="bg-slate-100 text-slate-600">Schema: ${brief.schema_type}</${Pill}>
-          ${brief.slug && html`<span class="text-xs text-slate-400">/${brief.slug}</span>`}
-          ${!wpRes && brief.wp_link && html`<a href=${brief.wp_link} target="_blank" rel="noopener" class="text-xs text-sky-700 underline">On WordPress ↗</a>`}
-        </div>
-        <div class="rounded-lg bg-slate-50 p-3 space-y-1">
-          <div><span class="text-xs font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>
-          ${brief.h1 && html`<div><span class="text-xs font-semibold text-slate-400 uppercase">H1</span> <span class="text-slate-800">${brief.h1}</span></div>`}
-          <div><span class="text-xs font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
-        </div>
-        <article class="space-y-2">${mdRender(brief.content)}</article>
-        ${(brief.internal_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100">
-          <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Internal links used</div>
-          <ul class="list-disc ml-5 text-slate-600">${brief.internal_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
-        </div>`}
-        ${(brief.external_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100">
-          <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Authority citations <span class="font-normal normal-case text-slate-400">— researched &amp; verified external sources</span></div>
-          <ul class="list-disc ml-5 text-slate-600">${brief.external_links.map((l) => html`<li>
-            <a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a>
-            ${l.source_type && html`<span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">${String(l.source_type).replace('_', ' ')}</span>`}
-          </li>`)}</ul>
-        </div>`}
-      </div>`}
-  </${Modal}>`;
-}
+

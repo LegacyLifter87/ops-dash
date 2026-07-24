@@ -8,6 +8,7 @@ import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove } from './store.js';
 import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
 import { mdRender } from './keywords.js';
+import { BriefsLibrary } from './briefs.js';
 
 const REJECT_REASONS = ['Off-topic / wrong angle', 'Weak or generic writing', 'Wrong tone or voice', 'Factually off', 'Not worth targeting'];
 
@@ -135,7 +136,7 @@ export function Autoblog() {
   return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="text-xl font-bold text-slate-800">Blog Automation 🤖</h1>
+        <h1 class="text-xl font-bold text-slate-800">Autoblogger 🤖</h1>
         <p class="text-sm text-slate-500">Auto-select strategic keywords, write on a cadence, and publish to WordPress — with optional approval.</p>
       </div>
       ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((x) => ({ value: x.id, label: x.display_name || x.domain }))} />`}
@@ -243,6 +244,8 @@ export function Autoblog() {
           })}
         </div>`}
     </div></${Card}>`}
+
+    ${site && html`<${BriefsLibrary} site=${site} />`}
 
     ${preview && html`<${PreviewModal} row=${preview.row} brief=${preview.brief} busy=${pvBusy === preview.row.id}
       onClose=${() => setPreview(null)}

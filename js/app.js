@@ -29,7 +29,7 @@ const NAV = [
   { id: 'profile', label: 'Business', icon: '🏢' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
   { id: 'social', label: 'Social', icon: '📣' },
-  { id: 'autoblog', label: 'Automation', icon: '🤖' },
+  { id: 'autoblog', label: 'Autoblogger', icon: '🤖' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
   { id: 'local', label: 'Local', icon: '📍' },
