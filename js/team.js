@@ -1,18 +1,19 @@
 // ---------------------------------------------------------------------------
-// team.js — user control panel. Tiers:
-//  1) This account's team: invite users by email (creates the login with a
-//     one-time temp password), set role (owner/admin/member), remove.
-//  2) Agency staff (owner-only): OWNERS have blanket access to ALL accounts;
-//     MEMBERS are employees with per-account access (all accounts by default,
-//     or an owner-assigned subset). Owners grant / limit / promote / revoke.
+// team.js — THIS business's team only. Users here can access just this
+// business (agency staff are managed in Agency settings ⚙, platform admins in
+// the All-agencies console). Invite by email (creates the login with a
+// one-time temp password), set role (owner/admin/member), tab access, remove.
+// A read-only "Your agency" card shows the managing agency's contact details.
+// Shared pieces (TempPw, PwModal, AccountsModal, JtAgencyCard) are exported
+// for agency.js.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, getUserEmail, getCurrentAgency, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs, seoUserAccounts, seoUserSetAccounts, jtAgencyStatus, jtAgencySet, jtAgencyUsers, jtAgencyTaskCreate } from './store.js';
+import { useStore, getActiveAccountId, activeAccount, seoTeamList, seoTeamAdd, seoTeamSetRole, seoTeamRemove, seoTeamSetPassword, seoTeamSendReset, seoTeamDeleteUser, seoTeamSetTabs, seoUserAccounts, seoUserSetAccounts, seoAgencyInfo, jtAgencyStatus, jtAgencySet, jtAgencyUsers, jtAgencyTaskCreate } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const ROLE_OPTS = [{ value: 'member', label: 'Member' }, { value: 'admin', label: 'Admin' }, { value: 'owner', label: 'Owner' }];
 const roleTone = (r) => r === 'owner' ? 'bg-violet-100 text-violet-700' : r === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600';
-const TAB_OPTS = [['dashboard', '▣ Dashboard'], ['seo', '🔍 SEO'], ['keywords', '🔑 Keywords'], ['autoblog', '🤖 Automation'], ['competitors', '⚔️ Competitors'], ['ranks', '📈 Ranks'], ['local', '📍 Local'], ['audit', '🩺 Audit'], ['backlinks', '🔗 Backlinks'], ['ads', '💰 Google Ads'], ['analytics', '📶 Analytics'], ['jt', '📊 Business'], ['team', '👥 Team']];
+const TAB_OPTS = [['dashboard', '▣ Dashboard'], ['seo', '🔍 SEO'], ['profile', '🏢 Business'], ['keywords', '🔑 Keywords'], ['social', '📣 Social'], ['autoblog', '🤖 Autoblogger'], ['competitors', '⚔️ Competitors'], ['ranks', '📈 Ranks'], ['local', '📍 Local'], ['audit', '🩺 Audit'], ['backlinks', '🔗 Backlinks'], ['ads', '💰 Google Ads'], ['analytics', '📶 Analytics'], ['jt', '📊 Job Tracker'], ['team', '👥 Team']];
 
 // Per-member tab access editor. null / all-checked = full access.
 function TabsModal({ m, onClose, onSave }) {
@@ -43,8 +44,8 @@ function TabsModal({ m, onClose, onSave }) {
   </${Modal}>`;
 }
 
-// Agency-only: directly set a member's password.
-function PwModal({ m, onClose, onSave }) {
+// Owner-level only: directly set a user's password.
+export function PwModal({ m, onClose, onSave }) {
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -63,8 +64,8 @@ function PwModal({ m, onClose, onSave }) {
   </${Modal}>`;
 }
 
-// Owner-only: pick which accounts an agency member can access (or all).
-function AccountsModal({ m, accounts, onClose, onSave }) {
+// Owner-only: pick which businesses an agency member can access (or all).
+export function AccountsModal({ m, accounts, onClose, onSave }) {
   const [mode, setMode] = useState(m.unrestricted ? 'all' : 'some');
   const [sel, setSel] = useState(new Set((m.accounts || []).map((a) => a.id)));
   const [busy, setBusy] = useState(false);
@@ -75,20 +76,20 @@ function AccountsModal({ m, accounts, onClose, onSave }) {
     try { await onSave(mode === 'all' ? null : [...sel]); onClose(); }
     catch (e) { setErr(e.message); setBusy(false); }
   };
-  return html`<${Modal} title=${`Account access — ${m.email || 'member'}`} onClose=${onClose}>
+  return html`<${Modal} title=${`Business access — ${m.email || 'member'}`} onClose=${onClose}>
     <div class="space-y-3">
       <div class="flex gap-2">
-        <button onClick=${() => setMode('all')} class=${cx('flex-1 px-3 py-2 rounded-lg border text-sm', mode === 'all' ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>All accounts</button>
-        <button onClick=${() => setMode('some')} class=${cx('flex-1 px-3 py-2 rounded-lg border text-sm', mode === 'some' ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>Only chosen accounts</button>
+        <button onClick=${() => setMode('all')} class=${cx('flex-1 px-3 py-2 rounded-lg border text-sm', mode === 'all' ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>All businesses</button>
+        <button onClick=${() => setMode('some')} class=${cx('flex-1 px-3 py-2 rounded-lg border text-sm', mode === 'some' ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>Only chosen businesses</button>
       </div>
       ${mode === 'all'
-        ? html`<p class="text-xs text-slate-500">This member is added to every account — including accounts you create later.</p>`
+        ? html`<p class="text-xs text-slate-500">This member is added to every business — including ones you create later.</p>`
         : html`<div class="space-y-1.5 max-h-64 overflow-y-auto">
-            <p class="text-xs text-slate-500">Tick the accounts this member may work on. New accounts will <span class="font-medium">not</span> be added automatically.</p>
+            <p class="text-xs text-slate-500">Tick the businesses this member may work on. New businesses will <span class="font-medium">not</span> be added automatically.</p>
             ${(accounts || []).map((a) => html`<label class=${cx('flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer', sel.has(a.id) ? 'border-brand-300 bg-brand-50/50 text-slate-800' : 'border-slate-200 text-slate-500')}>
               <input type="checkbox" checked=${sel.has(a.id)} onChange=${() => toggle(a.id)} class="accent-brand-600" />${a.name}
             </label>`)}
-            <div class="text-xs text-slate-400">${sel.size} account(s) selected</div>
+            <div class="text-xs text-slate-400">${sel.size} business(es) selected</div>
           </div>`}
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
       <${Btn} class="w-full" onClick=${save} disabled=${busy || (mode === 'some' && sel.size === 0)}>${busy ? 'Saving…' : 'Save access'}</${Btn}>
@@ -97,8 +98,8 @@ function AccountsModal({ m, accounts, onClose, onSave }) {
 }
 
 // Owner-only: pick which of this agency's businesses a REGULAR user (client
-// login, not agency staff) can view. Staff access is managed in the members
-// card instead.
+// login, not agency staff) can view. Staff access is managed in Agency
+// settings instead.
 function BizAccessModal({ m, onClose, onSave }) {
   const [rows, setRows] = useState(null);
   const [sel, setSel] = useState(new Set());
@@ -134,7 +135,7 @@ function BizAccessModal({ m, onClose, onSave }) {
 
 // Agency ↔ Job Tracker: link the agency's own JT company, then assign tasks
 // from Ops Dash that land in that company's Tasks tab / My Day.
-function JtAgencyCard({ onBanner }) {
+export function JtAgencyCard({ onBanner }) {
   const [st, setSt] = useState(null); // { companyId, companyName, canPick, companies }
   const [pick, setPick] = useState('');
   const [users, setUsers] = useState(null);
@@ -212,7 +213,7 @@ function JtAgencyCard({ onBanner }) {
   </div></${Card}>`;
 }
 
-function TempPw({ cred, onClose }) {
+export function TempPw({ cred, onClose }) {
   const copy = () => { try { navigator.clipboard.writeText(`${cred.email} / ${cred.password}`); } catch { /* ignore */ } };
   return html`<div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm">
     <div class="font-medium text-emerald-800">Login created for ${cred.email}</div>
@@ -224,38 +225,41 @@ function TempPw({ cred, onClose }) {
   </div>`;
 }
 
+// Read-only card for business users: who runs this account + how to reach them.
+function YourAgencyCard({ accountId }) {
+  const [ag, setAg] = useState(undefined); // undefined = loading, null = none
+  useEffect(() => { setAg(undefined); seoAgencyInfo(accountId).then((r) => setAg(r.agency || null)).catch(() => setAg(null)); }, [accountId]);
+  if (!ag) return null;
+  const hasContact = ag.contactName || ag.contactEmail || ag.contactPhone || ag.contactWebsite;
+  return html`<${Card}><div class="p-4 border-l-4 border-slate-200">
+    <div class="font-semibold text-slate-800 mb-1">Your agency</div>
+    <p class="text-xs text-slate-400 mb-2">This business is managed by <span class="font-medium text-slate-600">${ag.name}</span>.</p>
+    ${hasContact ? html`<div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-700">
+      ${ag.contactName && html`<div>👤 ${ag.contactName}</div>`}
+      ${ag.contactEmail && html`<div>✉ <a href=${`mailto:${ag.contactEmail}`} class="text-brand-700 hover:underline">${ag.contactEmail}</a></div>`}
+      ${ag.contactPhone && html`<div>📞 <a href=${`tel:${ag.contactPhone}`} class="text-brand-700 hover:underline">${ag.contactPhone}</a></div>`}
+      ${ag.contactWebsite && html`<div>🌐 <a href=${ag.contactWebsite.startsWith('http') ? ag.contactWebsite : `https://${ag.contactWebsite}`} target="_blank" rel="noopener" class="text-brand-700 hover:underline">${ag.contactWebsite.replace(/^https?:\/\//, '')}</a></div>`}
+    </div>` : html`<div class="text-xs text-slate-400">No contact details on file.</div>`}
+  </div></${Card}>`;
+}
+
 export function Team() {
   useStore();
   const accountId = getActiveAccountId();
   const acct = activeAccount();
-  const myEmail = getUserEmail();
   const [data, setData] = useState(null); // { members, admin, agency }
-  const [agencyName, setAgencyName] = useState('');
-  const [owners, setOwners] = useState(null);
-  const [members, setMembers] = useState(null);
-  const [accounts, setAccounts] = useState([]);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('member');
-  const [aEmail, setAEmail] = useState('');
-  const [mEmail, setMEmail] = useState('');
-  const [mScope, setMScope] = useState('all'); // 'all' | 'some'
-  const [mSel, setMSel] = useState(new Set());
   const [cred, setCred] = useState(null);
   const [banner, setBanner] = useState('');
   const [tabsFor, setTabsFor] = useState(null);
   const [pwFor, setPwFor] = useState(null);
-  const [acctFor, setAcctFor] = useState(null);
   const [bizFor, setBizFor] = useState(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
-  const loadAgency = async () => { const a = await seoAgencyList(); setOwners(a.owners || []); setMembers(a.members || []); setAccounts((a.accounts || []).sort((x, y) => (x.name || '').localeCompare(y.name || '', undefined, { sensitivity: 'base' }))); setAgencyName(a.agencyName || ''); };
-  const load = async () => {
-    const d = await seoTeamList();
-    setData(d);
-    if (d.agency) { try { await loadAgency(); } catch { /* non-fatal */ } }
-  };
-  useEffect(() => { setData(null); setOwners(null); setMembers(null); setErr(''); setCred(null); if (accountId) load().catch((e) => { setErr(e.message); setData({ members: [], admin: false, agency: false }); }); }, [accountId]);
+  const load = async () => { setData(await seoTeamList()); };
+  useEffect(() => { setData(null); setErr(''); setCred(null); if (accountId) load().catch((e) => { setErr(e.message); setData({ members: [], admin: false, agency: false }); }); }, [accountId]);
 
   const add = async () => {
     if (!email.trim()) return;
@@ -267,30 +271,7 @@ export function Team() {
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const setMemberRole = async (m, newRole) => { setErr(''); try { await seoTeamSetRole(m.userId, newRole); await load(); } catch (e) { setErr(e.message); } };
-  const remove = async (m) => { if (!confirm(`Remove ${m.email || 'this user'} from ${acct?.name || 'this account'}?`)) return; setErr(''); try { await seoTeamRemove(m.userId); await load(); } catch (e) { setErr(e.message); } };
-  const grantOwner = async () => {
-    if (!aEmail.trim()) return;
-    setBusy('grant'); setErr(''); setCred(null);
-    try {
-      const r = await seoAgencyGrant(aEmail.trim());
-      if (r.created && r.tempPassword) setCred({ email: aEmail.trim(), password: r.tempPassword });
-      setAEmail(''); await loadAgency(); await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(''); }
-  };
-  const grantMember = async () => {
-    if (!mEmail.trim()) return;
-    if (mScope === 'some' && mSel.size === 0) { setErr('Pick at least one account, or choose All accounts.'); return; }
-    setBusy('mgrant'); setErr(''); setCred(null);
-    try {
-      const r = await seoMemberGrant(mEmail.trim(), mScope === 'all', mScope === 'some' ? [...mSel] : undefined);
-      if (r.created && r.tempPassword) setCred({ email: mEmail.trim(), password: r.tempPassword });
-      setMEmail(''); setMScope('all'); setMSel(new Set()); await loadAgency(); await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(''); }
-  };
-  const revokeOwner = async (s) => { if (!confirm(`Revoke agency-owner access for ${s.email || 'this user'}? They will be removed from every business in this agency.`)) return; setErr(''); try { await seoAgencyRevoke(s.userId); await loadAgency(); await load(); } catch (e) { setErr(e.message); } };
-  const revokeMember = async (s) => { if (!confirm(`Remove agency member ${s.email || 'this user'}? They lose access to their accounts.`)) return; setErr(''); try { await seoMemberRevoke(s.userId); await loadAgency(); await load(); } catch (e) { setErr(e.message); } };
-  const promote = async (s) => { if (!confirm(`Promote ${s.email || 'this member'} to agency OWNER (full access to every account)?`)) return; setErr(''); try { await seoMemberSetTier(s.userId, 'owner'); await loadAgency(); await load(); } catch (e) { setErr(e.message); } };
-  const demote = async (s) => { if (!confirm(`Demote ${s.email || 'this owner'} to agency MEMBER? They keep all accounts but lose staff-management powers.`)) return; setErr(''); try { await seoMemberSetTier(s.userId, 'member'); await loadAgency(); await load(); } catch (e) { setErr(e.message); } };
+  const remove = async (m) => { if (!confirm(`Remove ${m.email || 'this user'} from ${acct?.name || 'this business'}?`)) return; setErr(''); try { await seoTeamRemove(m.userId); await load(); } catch (e) { setErr(e.message); } };
   const sendReset = async (m) => { setErr(''); setBanner(''); try { const r = await seoTeamSendReset(m.userId); setBanner(`✉ Password-reset email sent to ${r.email || m.email}.`); } catch (e) { setErr(e.message); } };
   const copyResetLink = async (m) => {
     setErr(''); setBanner('');
@@ -302,57 +283,50 @@ export function Team() {
     } catch (e) { setErr(e.message); }
   };
   const delUser = async (m) => {
-    if (!confirm(`Permanently DELETE the login for ${m.email || 'this user'}?\n\nThis removes them from EVERY account and cannot be undone.`)) return;
+    if (!confirm(`Permanently DELETE the login for ${m.email || 'this user'}?\n\nThis removes them from EVERY business and cannot be undone.`)) return;
     setErr(''); setBanner('');
-    try { await seoTeamDeleteUser(m.userId); setBanner(`Deleted ${m.email}.`); await loadAgency(); await load(); } catch (e) { setErr(e.message); }
+    try { await seoTeamDeleteUser(m.userId); setBanner(`Deleted ${m.email}.`); await load(); } catch (e) { setErr(e.message); }
   };
 
-  if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
+  if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create a business first.</div>`;
   if (!data) return html`<div class="p-8 text-sm text-slate-400">Loading team…</div>`;
 
-  const mToggle = (id) => setMSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // Agency staff (owners + members) have access through the agency, not this
+  // business — they're managed in Agency settings and hidden here.
+  const bizMembers = (data.members || []).filter((m) => !m.isAgency && !m.agencyTier);
+  const staffCount = (data.members || []).length - bizMembers.length;
 
   return html`<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
     <div>
       <h1 class="text-xl font-bold text-slate-800">Team</h1>
-      <p class="text-sm text-slate-500">Who can access <span class="font-medium">${acct?.name || 'this business'}</span>${data.agency ? html` — plus staff across <span class="font-medium">${agencyName || getCurrentAgency()?.name || 'your agency'}</span>.` : '.'}</p>
+      <p class="text-sm text-slate-500">People who can access <span class="font-medium">${acct?.name || 'this business'}</span> — just this business, nothing else.</p>
     </div>
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800 flex items-center justify-between"><span class="break-all">${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 hover:opacity-100 ml-2">✕</button></div>`}
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}
 
     <${Card}><div class="p-4">
-      <div class="font-semibold text-slate-800 mb-1">This account's team</div>
+      <div class="font-semibold text-slate-800 mb-1">This business's team</div>
       <p class="text-xs text-slate-400 mb-3">Members see data; admins can run tools and connect integrations; owners can also manage the team.</p>
       <div class="divide-y divide-slate-50">
-        ${(data.members || []).map((m) => html`<div class="flex items-center gap-3 py-2.5 flex-wrap">
+        ${bizMembers.length === 0 && html`<div class="text-sm text-slate-400 py-1">No business-level users yet — invite the first one below.</div>`}
+        ${bizMembers.map((m) => html`<div class="flex items-center gap-3 py-2.5 flex-wrap">
           <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm text-slate-500 shrink-0">${(m.email || '?')[0].toUpperCase()}</div>
           <div class="flex-1 min-w-0">
             <div class="text-sm text-slate-800 truncate">${m.email || m.userId}${m.you ? html`<span class="text-xs text-slate-400"> (you)</span>` : ''}</div>
-            <div class="flex items-center gap-1.5">
-              ${m.agencyTier === 'owner' && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">AGENCY OWNER — all accounts</span>`}
-              ${m.agencyTier === 'member' && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">AGENCY MEMBER</span>`}
-              ${m.tabAccess && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${m.tabAccess.length} tabs</span>`}
-            </div>
+            ${m.tabAccess && html`<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${m.tabAccess.length} tabs</span>`}
           </div>
-          ${data.admin && !m.you && !m.isAgency
+          ${data.admin && !m.you
             ? html`<${Select} value=${m.role} onChange=${(v) => setMemberRole(m, v)} options=${ROLE_OPTS} />`
             : html`<span class=${cx('text-[11px] font-semibold px-2 py-0.5 rounded-full', roleTone(m.role))}>${m.role}</span>`}
-          ${data.admin && !m.you && !m.isAgency && html`<div class="flex items-center gap-2 text-sm">
-            ${data.agency && !m.agencyTier && html`<button title="Which businesses this user can view" onClick=${() => setBizFor(m)} class="text-slate-400 hover:text-slate-700">🏢</button>`}
+          ${data.admin && !m.you && html`<div class="flex items-center gap-2 text-sm">
+            ${data.agency && html`<button title="Which businesses this user can view" onClick=${() => setBizFor(m)} class="text-slate-400 hover:text-slate-700">🏢</button>`}
             <button title="Tab access" onClick=${() => setTabsFor(m)} class="text-slate-400 hover:text-slate-700">🗂</button>
             <button title="Send password-reset email" onClick=${() => sendReset(m)} class="text-slate-400 hover:text-slate-700">✉</button>
             <button title="Copy a reset link" onClick=${() => copyResetLink(m)} class="text-slate-400 hover:text-slate-700">🔗</button>
             ${data.agency && html`<button title="Set password directly" onClick=${() => setPwFor(m)} class="text-slate-400 hover:text-slate-700">🔑</button>`}
-            <button title="Remove from this account" onClick=${() => remove(m)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>
-            ${data.agency && m.agencyTier !== 'member' && html`<button title="Delete login entirely (all accounts)" onClick=${() => delUser(m)} class="text-slate-300 hover:text-rose-600">🗑</button>`}
-          </div>`}
-          ${data.agency && !m.you && m.isAgency && html`<div class="flex items-center gap-2 text-sm">
-            <button title="Tab access (this account)" onClick=${() => setTabsFor(m)} class="text-slate-400 hover:text-slate-700">🗂</button>
-            <button title="Send password-reset email" onClick=${() => sendReset(m)} class="text-slate-400 hover:text-slate-700">✉</button>
-            <button title="Copy a reset link" onClick=${() => copyResetLink(m)} class="text-slate-400 hover:text-slate-700">🔗</button>
-            <button title="Set password directly" onClick=${() => setPwFor(m)} class="text-slate-400 hover:text-slate-700">🔑</button>
-            <span class="text-[11px] text-slate-400" title="Agency owners are on every account. Manage them in Agency staff below.">agency ↓</span>
+            <button title="Remove from this business" onClick=${() => remove(m)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>
+            ${data.agency && html`<button title="Delete login entirely (all businesses)" onClick=${() => delUser(m)} class="text-slate-300 hover:text-rose-600">🗑</button>`}
           </div>`}
         </div>`)}
       </div>
@@ -362,74 +336,17 @@ export function Team() {
           <${Input} value=${email} onInput=${setEmail} placeholder="teammate@company.com" />
         </div>
         <${Select} value=${role} onChange=${setRole} options=${ROLE_OPTS} />
-        <${Btn} size="sm" onClick=${add} disabled=${busy === 'add'}>${busy === 'add' ? 'Adding…' : '+ Add to this account'}</${Btn}>
+        <${Btn} size="sm" onClick=${add} disabled=${busy === 'add'}>${busy === 'add' ? 'Adding…' : '+ Add to this business'}</${Btn}>
+      </div>`}
+      ${data.agency && staffCount > 0 && html`<div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">
+        ${staffCount} agency staff also ${staffCount === 1 ? 'has' : 'have'} access through the agency — manage them in <a href="#/agency" class="text-brand-700 hover:underline">⚙ Agency settings</a>.
       </div>`}
     </div></${Card}>
 
-    ${data.agency && html`<${Card}><div class="p-4 border-l-4 border-amber-300">
-      <div class="font-semibold text-slate-800 mb-1">Agency owners${agencyName ? html` <span class="text-xs font-normal text-slate-500">· ${agencyName}</span>` : ''} <span class="text-xs font-normal text-slate-400">— full access to every business in this agency + staff management</span></div>
-      <p class="text-xs text-slate-400 mb-3">Owners are added as admins to every business in this agency automatically (including new ones), receive the End-of-Day activity digest, and can manage all agency staff, businesses, and integrations.</p>
-      ${owners === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
-        <div class="divide-y divide-slate-50">
-          ${owners.map((s) => html`<div class="flex items-center gap-3 py-2.5">
-            <div class="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-sm text-amber-700 shrink-0">${(s.email || '?')[0].toUpperCase()}</div>
-            <div class="flex-1 min-w-0 text-sm text-slate-800 truncate">${s.email || s.userId}${s.email === myEmail ? html`<span class="text-xs text-slate-400"> (you)</span>` : ''}</div>
-            <span class="text-[11px] text-slate-400">since ${new Date(s.grantedAt).toLocaleDateString()}</span>
-            ${s.email !== myEmail && html`<button title="Demote to agency member" onClick=${() => demote(s)} class="text-xs text-slate-400 hover:text-indigo-600 underline">demote</button>`}
-            ${s.email !== myEmail && html`<button onClick=${() => revokeOwner(s)} class="text-xs text-slate-400 hover:text-rose-600 underline">revoke</button>`}
-          </div>`)}
-        </div>
-        <div class="flex flex-wrap items-end gap-2 mt-3 pt-3 border-t border-slate-100">
-          <div class="flex-1 min-w-[220px]">
-            <label class="text-[11px] text-slate-400">Grant owner access by email</label>
-            <${Input} value=${aEmail} onInput=${setAEmail} placeholder="owner@youragency.com" />
-          </div>
-          <${Btn} size="sm" variant="cta" onClick=${grantOwner} disabled=${busy === 'grant'}>${busy === 'grant' ? 'Granting…' : '★ Grant owner'}</${Btn}>
-        </div>
-      `}
-    </div></${Card}>
-
-    <${Card}><div class="p-4 border-l-4 border-indigo-300">
-      <div class="font-semibold text-slate-800 mb-1">Agency members <span class="text-xs font-normal text-slate-400">— employees who work on this agency's businesses</span></div>
-      <p class="text-xs text-slate-400 mb-3">Members get every business in this agency by default, or limit them to specific ones. Their activity shows up in your End-of-Day digest, broken down per person.</p>
-      ${members === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
-        <div class="divide-y divide-slate-50">
-          ${members.length === 0 && html`<div class="text-sm text-slate-400 py-1">No agency members yet.</div>`}
-          ${members.map((s) => html`<div class="flex items-center gap-3 py-2.5 flex-wrap">
-            <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm text-indigo-700 shrink-0">${(s.email || '?')[0].toUpperCase()}</div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm text-slate-800 truncate">${s.email || s.userId}</div>
-              <span class=${cx('text-[10px] px-1.5 py-0.5 rounded', s.unrestricted ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-700')}>${s.unrestricted ? 'All accounts' : `${(s.accounts || []).length} account(s)`}</span>
-            </div>
-            <button title="Set account access" onClick=${() => setAcctFor(s)} class="text-xs text-slate-500 hover:text-indigo-700 underline">accounts</button>
-            <button title="Send password-reset email" onClick=${() => sendReset(s)} class="text-slate-400 hover:text-slate-700">✉</button>
-            <button title="Promote to agency owner" onClick=${() => promote(s)} class="text-xs text-slate-400 hover:text-amber-600 underline">make owner</button>
-            <button onClick=${() => revokeMember(s)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>
-          </div>`)}
-        </div>
-        <div class="mt-3 pt-3 border-t border-slate-100 space-y-2">
-          <div class="flex flex-wrap items-end gap-2">
-            <div class="flex-1 min-w-[220px]">
-              <label class="text-[11px] text-slate-400">Add member by email</label>
-              <${Input} value=${mEmail} onInput=${setMEmail} placeholder="employee@youragency.com" />
-            </div>
-            <${Select} value=${mScope} onChange=${setMScope} options=${[{ value: 'all', label: 'All accounts' }, { value: 'some', label: 'Choose accounts' }]} />
-            <${Btn} size="sm" variant="cta" onClick=${grantMember} disabled=${busy === 'mgrant'}>${busy === 'mgrant' ? 'Adding…' : '+ Add member'}</${Btn}>
-          </div>
-          ${mScope === 'some' && html`<div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            ${accounts.map((a) => html`<label class=${cx('flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer', mSel.has(a.id) ? 'border-indigo-300 bg-indigo-50/50 text-slate-800' : 'border-slate-200 text-slate-500')}>
-              <input type="checkbox" checked=${mSel.has(a.id)} onChange=${() => mToggle(a.id)} class="accent-indigo-600" />${a.name}
-            </label>`)}
-          </div>`}
-        </div>
-      `}
-    </div></${Card}>`}
-
-    ${data.agency && html`<${JtAgencyCard} onBanner=${setBanner} />`}
+    <${YourAgencyCard} accountId=${accountId} />
 
     ${tabsFor && html`<${TabsModal} m=${tabsFor} onClose=${() => setTabsFor(null)} onSave=${async (tabs) => { await seoTeamSetTabs(tabsFor.userId, tabs); await load(); }} />`}
     ${pwFor && html`<${PwModal} m=${pwFor} onClose=${() => setPwFor(null)} onSave=${async (pw) => { await seoTeamSetPassword(pwFor.userId, pw); setBanner(`🔑 Password updated for ${pwFor.email}.`); }} />`}
-    ${acctFor && html`<${AccountsModal} m=${acctFor} accounts=${accounts} onClose=${() => setAcctFor(null)} onSave=${async (ids) => { await seoMemberSetAccounts(acctFor.userId, ids); await loadAgency(); await load(); }} />`}
     ${bizFor && html`<${BizAccessModal} m=${bizFor} onClose=${() => setBizFor(null)} onSave=${async (ids) => { await seoUserSetAccounts(bizFor.userId, ids); setBanner(`🏢 Business access updated for ${bizFor.email}.`); await load(); }} />`}
   </div>`;
 }

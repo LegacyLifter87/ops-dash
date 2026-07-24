@@ -542,6 +542,12 @@ export const seoMemberGrant = (email, unrestricted, accountIds) => seoInvokeTeam
 export const seoMemberSetAccounts = (userId, accountIds) => seoInvokeTeam('member_set_accounts', { userId, accountIds });
 export const seoMemberSetTier = (userId, tier) => seoInvokeTeam('member_set_tier', { userId, tier });
 export const seoMemberRevoke = (userId) => seoInvokeTeam('member_revoke', { userId });
+// Platform admins (console) + agency contact details (Agency settings / Team tab).
+export const seoSuperListAdmins = () => seoInvokeTeam('super_list_admins', {});
+export const seoSuperAddAdmin = (email) => seoInvokeTeam('super_add_admin', { email });
+export const seoSuperRemoveAdmin = (userId) => seoInvokeTeam('super_remove_admin', { userId });
+export const seoAgencyInfo = (accountId) => seoInvokeTeam('agency_info', accountId ? { accountId } : {});
+export const seoAgencyUpdateInfo = (fields) => seoInvokeTeam('agency_update_info', fields);
 
 // ── Blog automation (seo-autoblog) ──────────────────────────────────────────
 async function seoInvokeAutoblog(action, extra = {}) {

@@ -18,6 +18,7 @@ import { Ads } from './ads.js';
 import { Analytics } from './analytics.js';
 import { Autoblog } from './autoblog.js';
 import { Team } from './team.js';
+import { AgencySettings } from './agency.js';
 import { Strategy } from './strategy.js';
 import { Social } from './social.js';
 import { Profile } from './profile.js';
@@ -152,10 +153,12 @@ function App() {
   const navigate = (view) => { location.hash = `/${view}`; setMobileOpen(false); };
   // Per-member tab access (null = all). Dashboard is always available.
   const nav = s.myTabs ? NAV.filter((n) => s.myTabs.includes(n.id) || n.id === 'dashboard') : NAV;
-  const view = nav.some((n) => n.id === route.view) ? route.view : 'dashboard';
   const acct = activeAccount();
   const superInAgency = s.identity.superAdmin && !!s.curAgency;
   const canManageBiz = s.identity.superAdmin || s.identity.staffRole === 'owner';
+  // 'agency' (⚙ Agency settings) is deliberately NOT in NAV — it's reached via
+  // the sidebar cogwheel and only exists for agency owners + supers.
+  const view = nav.some((n) => n.id === route.view) ? route.view : (route.view === 'agency' && canManageBiz ? 'agency' : 'dashboard');
   const accts = visibleAccounts();
 
   return html`
@@ -169,7 +172,10 @@ function App() {
 
         <div class="px-3 pt-3">
           ${superInAgency && html`<button onClick=${exitAgency} class="block text-xs text-slate-400 hover:text-white underline mb-1 px-1">← All agencies</button>`}
-          ${s.curAgency && html`<div class="px-1 text-[11px] text-brand-300 font-medium truncate">${s.curAgency.name}</div>`}
+          ${s.curAgency && html`<div class="px-1 flex items-center gap-1.5">
+            <div class="text-[11px] text-brand-300 font-medium truncate flex-1">${s.curAgency.name}</div>
+            ${canManageBiz && html`<button onClick=${() => navigate('agency')} title="Agency settings — staff & contact details" class=${cx('text-sm leading-none', view === 'agency' ? 'text-white' : 'text-slate-400 hover:text-white')}>⚙</button>`}
+          </div>`}
           <label class="text-[11px] uppercase tracking-wide text-slate-500 px-1">Business</label>
           <${Select} value=${s.activeAccountId || ''} onChange=${(v) => setActiveAccount(v)}
             options=${accts.map((a) => ({ value: a.id, label: a.name }))} class="mt-1 text-slate-800" />
@@ -224,7 +230,8 @@ function App() {
             ${view === 'ads' && html`<${Ads} />`}
             ${view === 'analytics' && html`<${Analytics} />`}
             ${view === 'jt' && html`<${JobTracker} />`}
-            ${view === 'team' && html`<${Team} />`}`}
+            ${view === 'team' && html`<${Team} />`}
+            ${view === 'agency' && html`<${AgencySettings} />`}`}
         </main>
       </div>
 

@@ -5,7 +5,7 @@
 // it. Inside, "← All agencies" (in the sidebar) exits back to this screen.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency } from './store.js';
+import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency, seoSuperListAdmins, seoSuperAddAdmin, seoSuperRemoveAdmin } from './store.js';
 import { Btn, Input, Field, Modal } from './ui.js';
 
 function OwnerCred({ cred, onClose }) {
@@ -62,6 +62,56 @@ function DeleteAgencyModal({ agency, onClose, onDone }) {
       <${Btn} variant="danger" class="w-full" onClick=${del} disabled=${busy || confirm !== agency.name}>${busy ? 'Deleting…' : 'Delete agency permanently'}</${Btn}>
     </div>
   </${Modal}>`;
+}
+
+// Overall (platform) admins: full access to every agency and business. Logins
+// are shared with Job Tracker — an admin here is a JT overall admin too.
+function PlatformAdmins() {
+  const [admins, setAdmins] = useState(null);
+  const [email, setEmail] = useState('');
+  const [cred, setCred] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const load = async () => { try { const r = await seoSuperListAdmins(); setAdmins(r.admins || []); } catch (e) { setErr(e.message); setAdmins([]); } };
+  useEffect(() => { load(); }, []);
+  const add = async () => {
+    if (!email.trim()) return;
+    setBusy(true); setErr(''); setCred(null);
+    try {
+      const r = await seoSuperAddAdmin(email.trim());
+      if (r.created && r.tempPassword) setCred({ email: email.trim(), password: r.tempPassword });
+      setEmail(''); await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const remove = async (a) => {
+    if (!confirm(`Remove platform-admin access for ${a.email || 'this user'}?\n\nThey lose access to every agency here AND their overall-admin role in Job Tracker (logins are shared).`)) return;
+    setErr('');
+    try { await seoSuperRemoveAdmin(a.userId); await load(); } catch (e) { setErr(e.message); }
+  };
+  return html`<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+    <div class="font-semibold text-slate-800 mb-1">Platform admins <span class="text-xs font-normal text-slate-400">— full access to every agency and business</span></div>
+    <p class="text-xs text-slate-400 mb-3">Overall admins can open any agency, manage all staff and businesses, and create or delete agencies. One login is shared with Job Tracker, so this also grants Job Tracker overall-admin.</p>
+    ${err && html`<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700 mb-2">${err}</div>`}
+    ${cred && html`<div class="mb-2"><${OwnerCred} cred=${cred} onClose=${() => setCred(null)} /></div>`}
+    ${admins === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
+      <div class="divide-y divide-slate-50">
+        ${admins.map((a) => html`<div class="flex items-center gap-3 py-2.5">
+          <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm text-white shrink-0">${(a.email || '?')[0].toUpperCase()}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm text-slate-800 truncate">${a.email || a.userId}${a.you ? html`<span class="text-xs text-slate-400"> (you)</span>` : ''}</div>
+            ${a.name && html`<div class="text-xs text-slate-400 truncate">${a.name}</div>`}
+          </div>
+          ${!a.you && html`<button onClick=${() => remove(a)} class="text-xs text-slate-400 hover:text-rose-600 underline">remove</button>`}
+        </div>`)}
+      </div>
+      <div class="flex flex-wrap items-end gap-2 mt-3 pt-3 border-t border-slate-100">
+        <div class="flex-1 min-w-[220px]">
+          <label class="text-[11px] text-slate-400">Add platform admin by email</label>
+          <${Input} value=${email} onInput=${setEmail} placeholder="admin@yourplatform.com" />
+        </div>
+        <${Btn} size="sm" variant="cta" onClick=${add} disabled=${busy}>${busy ? 'Adding…' : '★ Add admin'}</${Btn}>
+      </div>`}
+  </div>`;
 }
 
 export function AgencyConsole() {
@@ -151,6 +201,8 @@ export function AgencyConsole() {
             </div>
           </div>`)}
         </div>`}
+
+      <${PlatformAdmins} />
     </main>
 
     ${renaming && html`<${RenameAgencyModal} agency=${renaming} onClose=${() => setRenaming(null)} onDone=${load} />`}
