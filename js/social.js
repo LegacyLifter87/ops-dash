@@ -75,10 +75,15 @@ export function BrandKit({ site, onBanner }) {
     rd.onload = async () => {
       try {
         const b64 = String(rd.result).split(',')[1];
-        const r = await seoSocialLogoUpload(site, b64, file.type);
-        setLogoUrl(r.logoUrl); onBanner('🖼 Logo uploaded — it will be placed on every generated image.');
-      } catch (e) { setErr(e.message); } finally { setBusy(''); }
+        await seoSocialLogoUpload(site, b64, file.type);
+        // Trust only what the server persisted — re-read the profile so the
+        // preview can never show a logo the database doesn't actually have.
+        const r = await seoSocialProfile(site);
+        if (r.logoUrl) { setLogoUrl(r.logoUrl); onBanner('🖼 Logo saved — it will be placed on every generated image.'); }
+        else { setLogoUrl(null); setErr('The logo did not persist — please try the upload again.'); }
+      } catch (e) { setErr(`Logo upload failed: ${e.message}`); } finally { setBusy(''); }
     };
+    rd.onerror = () => { setErr('Could not read that file — try a PNG or JPEG.'); setBusy(''); };
     rd.readAsDataURL(file);
   };
   const togglePlat = (id) => setF((x) => { const n = new Set(x.platforms); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, platforms: n }; });
@@ -110,7 +115,10 @@ export function BrandKit({ site, onBanner }) {
       <div class="flex flex-wrap items-end gap-3">
         <div>
           <label class="text-[11px] text-slate-400 block mb-1">Logo (PNG with transparency works best)</label>
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange=${(e) => upload(e.target.files?.[0])} class="text-xs" />
+          <div class="flex items-center gap-2">
+            <input type="file" accept="image/png,image/jpeg,image/webp" disabled=${busy === 'logo'} onChange=${(e) => upload(e.target.files?.[0])} class="text-xs" />
+            ${busy === 'logo' && html`<span class="text-xs text-sky-600 animate-pulse whitespace-nowrap">Uploading…</span>`}
+          </div>
         </div>
         <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
         <${Select} value=${String(f.reelsPerMonth)} onChange=${(v) => setF({ ...f, reelsPerMonth: v })} options=${[0, 2, 3, 4, 6, 8, 12].map((n) => ({ value: String(n), label: `${n} Reels / month` }))} />
