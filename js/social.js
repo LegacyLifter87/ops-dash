@@ -79,27 +79,19 @@ export function BrandKit({ site, onBanner }) {
       onBanner('✅ Brand kit saved.'); setOpen(false);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
-  // Any file size is accepted: oversized or oddly-typed logos are decoded and
+  // Any file size is accepted: oversized or oddly-typed images are decoded and
   // downscaled in the browser (max 1500px, transparency kept) before upload,
-  // so the transfer always fits the server's limit.
-  const upload = (file) => {
-    if (!file) return;
-    setBusy('logo'); setErr('');
-    const sendBlob = async (blob, ct) => {
-      try {
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        let bin = '';
-        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-        await seoSocialLogoUpload(site, btoa(bin), ct);
-        // Trust only what the server persisted — re-read the profile so the
-        // preview can never show a logo the database doesn't actually have.
-        const r = await seoSocialProfile(site);
-        if (r.logoUrl) { setLogoUrl(r.logoUrl); onBanner('🖼 Logo saved — it will be placed on every generated image.'); }
-        else { setLogoUrl(null); setErr('The logo did not persist — please try the upload again.'); }
-      } catch (e) { setErr(`Logo upload failed: ${e.message}`); } finally { setBusy(''); }
+  // so the transfer always fits the server's limit. send(b64, contentType)
+  // does the actual API call; failures land in the shared err line.
+  const optimize = (file, send) => {
+    const toB64 = async (blob) => {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
     };
     const okType = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
-    if (okType && file.size <= 2.5 * 1024 * 1024) { sendBlob(file, file.type); return; }
+    if (okType && file.size <= 2.5 * 1024 * 1024) { toB64(file).then((b64) => send(b64, file.type)); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -111,15 +103,44 @@ export function BrandKit({ site, onBanner }) {
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       c.toBlob((png) => {
         if (!png) { setErr('Could not process that image — try a PNG or JPEG.'); setBusy(''); return; }
-        if (png.size <= 2.8 * 1024 * 1024) { sendBlob(png, 'image/png'); return; }
+        if (png.size <= 2.8 * 1024 * 1024) { toB64(png).then((b64) => send(b64, 'image/png')); return; }
         c.toBlob((jpg) => {
-          if (jpg && jpg.size <= 2.8 * 1024 * 1024) sendBlob(jpg, 'image/jpeg');
-          else { setErr('Could not compress that image enough — try a simpler version of the logo.'); setBusy(''); }
+          if (jpg && jpg.size <= 2.8 * 1024 * 1024) toB64(jpg).then((b64) => send(b64, 'image/jpeg'));
+          else { setErr('Could not compress that image enough — try a simpler version.'); setBusy(''); }
         }, 'image/jpeg', 0.9);
       }, 'image/png');
     };
     img.onerror = () => { URL.revokeObjectURL(url); setErr('Could not read that image — use a PNG, JPEG, or WebP file.'); setBusy(''); };
     img.src = url;
+  };
+  const upload = (file) => {
+    if (!file) return;
+    setBusy('logo'); setErr('');
+    optimize(file, async (b64, ct) => {
+      try {
+        await seoSocialLogoUpload(site, b64, ct);
+        // Trust only what the server persisted — re-read the profile so the
+        // preview can never show a logo the database doesn't actually have.
+        const r = await seoSocialProfile(site);
+        if (r.logoUrl) { setLogoUrl(r.logoUrl); onBanner('🖼 Logo saved — it will be placed on every generated image.'); }
+        else { setLogoUrl(null); setErr('The logo did not persist — please try the upload again.'); }
+      } catch (e) { setErr(`Logo upload failed: ${e.message}`); } finally { setBusy(''); }
+    });
+  };
+  const badgeUpload = (file) => {
+    if (!file) return;
+    setBusy('badge'); setErr('');
+    optimize(file, async (b64, ct) => {
+      try {
+        const r = await seoSocialBadgeUpload(site, b64, ct, file.name);
+        setP((x) => ({ ...x, badges: r.badges }));
+        onBanner('🏆 Badge saved — it will appear on proof, local, and promo images beside the logo.');
+      } catch (e) { setErr(`Badge upload failed: ${e.message}`); } finally { setBusy(''); }
+    });
+  };
+  const badgeDel = async (path) => {
+    try { const r = await seoSocialBadgeDelete(site, path); setP((x) => ({ ...x, badges: r.badges })); }
+    catch (e) { setErr(e.message); }
   };
   const togglePlat = (id) => setF((x) => { const n = new Set(x.platforms); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, platforms: n }; });
 
@@ -153,6 +174,17 @@ export function BrandKit({ site, onBanner }) {
           <div class="flex items-center gap-2">
             <input type="file" accept="image/png,image/jpeg,image/webp" disabled=${busy === 'logo'} onChange=${(e) => upload(e.target.files?.[0])} class="text-xs" />
             ${busy === 'logo' && html`<span class="text-xs text-sky-600 animate-pulse whitespace-nowrap">Uploading…</span>`}
+          </div>
+        </div>
+        <div>
+          <label class="text-[11px] text-slate-400 block mb-1">🏆 Awards & badges <span class="text-slate-300">— "Best of" wins, certifications; added to proof, local and promo images beside the logo (up to 6)</span></label>
+          <div class="flex flex-wrap items-center gap-2">
+            ${(p?.badges || []).map((b) => html`<div class="relative group">
+              <img src=${b.url} alt=${b.name || 'badge'} title=${b.name || ''} class="h-14 w-14 object-contain rounded-lg border border-slate-100 bg-white" />
+              <button onClick=${() => badgeDel(b.path)} class="absolute -top-1.5 -right-1.5 hidden group-hover:block bg-rose-600 text-white rounded-full w-5 h-5 text-xs leading-none">✕</button>
+            </div>`)}
+            ${(p?.badges || []).length < 6 && html`<input type="file" accept="image/png,image/jpeg,image/webp" disabled=${busy === 'badge'} onChange=${(e) => { badgeUpload(e.target.files?.[0]); e.target.value = ''; }} class="text-xs" />`}
+            ${busy === 'badge' && html`<span class="text-xs text-sky-600 animate-pulse whitespace-nowrap">Uploading…</span>`}
           </div>
         </div>
         <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
