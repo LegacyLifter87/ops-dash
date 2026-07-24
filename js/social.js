@@ -26,6 +26,18 @@ const STATUS = {
   rejected: 'bg-rose-100 text-rose-600',
 };
 const PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['gbp', 'Google Business'], ['tiktok', 'TikTok']];
+// Visual aesthetics the owner can approve for image generation (skill doc §10).
+const AESTHETICS = [
+  ['industrial-rugged', '🔧 Industrial / Rugged', 'Dark neutrals + safety accent, heavy type, worksite photos — contractors, electrical, washing, generators'],
+  ['documentary', '📷 Documentary / Real', 'Real crew and job sites, natural light, location labels — authentic and trustworthy'],
+  ['organic-natural', '🌿 Organic / Natural', 'Earth tones, soft greens, sunlight — lawn, landscape, outdoor'],
+  ['luxury-minimal', '✨ Luxury Minimal', 'Negative space, refined serif, deep neutrals — premium remodel, flooring, offices'],
+  ['editorial', '📰 Editorial', 'Magazine labels, serif headlines, art-directed photos — authority and premium positioning'],
+  ['corporate-clean', '🏢 Corporate Clean', 'Brand-color blocks, clean sans, icons — professional and B2B'],
+  ['bold-minimalism', '🎯 Bold Minimal', 'One saturated color, oversized type, few elements — energy without clutter'],
+  ['retro-local', '🏷 Retro Local', 'Vintage badge, "since YYYY", warm grading — established family businesses'],
+  ['playful-pop', '🎉 Playful Pop', 'Primary colors, halftone, starbursts — events and giveaways only'],
+];
 // Status filter chips for the calendar card grid.
 const POST_FILTERS = [
   ['all', 'All', () => true],
@@ -55,7 +67,7 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']) });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []) });
       if (!r.profile) setOpen(true);
     }).catch((e) => { setErr(e.message); setP({}); });
   }, [site]);
@@ -63,7 +75,7 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, aesthetics: [...(f.aesthetics || [])], plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms] } });
       onBanner('✅ Brand kit saved.'); setOpen(false);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -145,6 +157,14 @@ export function BrandKit({ site, onBanner }) {
         </div>
         <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
         <${Select} value=${String(f.reelsPerMonth)} onChange=${(v) => setF({ ...f, reelsPerMonth: v })} options=${[0, 2, 3, 4, 6, 8, 12].map((n) => ({ value: String(n), label: `${n} Reels / month` }))} />
+      </div>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">Visual styles you approve for generated images <span class="text-slate-300">— pick any; leave all off to let AI choose</span></label>
+        <div class="flex flex-wrap gap-1.5">
+          ${AESTHETICS.map(([id, label, hint]) => html`<button onClick=${() => setF((x) => { const n = new Set(x.aesthetics); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, aesthetics: n }; })} title=${hint}
+            class=${cx('text-xs px-2.5 py-1 rounded-full border', f.aesthetics?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>${label}</button>`)}
+        </div>
+        ${f.aesthetics?.size > 0 && html`<div class="text-[11px] text-slate-400 mt-1">The AI will only design within ${f.aesthetics.size === 1 ? 'this style' : `these ${f.aesthetics.size} styles`}.</div>`}
       </div>
       <div class="flex flex-wrap gap-1.5">
         ${PLATFORMS.map(([id, label]) => html`<button onClick=${() => togglePlat(id)}
