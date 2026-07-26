@@ -13,7 +13,14 @@ import { BriefsLibrary } from './briefs.js';
 const REJECT_REASONS = ['Off-topic / wrong angle', 'Weak or generic writing', 'Wrong tone or voice', 'Factually off', 'Not worth targeting'];
 
 const CADENCE_OPTS = [[1, '1 / week'], [3, '3 / week'], [7, 'Daily'], [21, '3 / day']];
-const IMG_OPTS = [{ value: 'stock', label: 'Stock photos (Pexels, free)' }, { value: 'ai', label: 'AI-generated (uses credits)' }, { value: 'client', label: 'Client photos (Job Tracker)' }, { value: 'none', label: 'No images' }];
+// Image sources are checkboxes now — pick any mix. The publisher always
+// prioritizes customer photos first, then AI, then stock, using each source
+// to fill whatever slots the one before it couldn't.
+const IMG_OPTS = [
+  ['client', '📷 Customer photos', 'real photos from the linked Job Tracker company'],
+  ['ai', '✨ AI generated', 'kie.ai images tailored to the article'],
+  ['stock', '🖼 Stock photos', 'Pexels, free'],
+];
 const PUB_OPTS = [{ value: 'publish', label: 'Publish live' }, { value: 'draft', label: 'Save as WP draft' }];
 // status → [emoji, label, tone]
 const SMETA = {
@@ -56,7 +63,7 @@ export function Autoblog() {
       const d = await seoAutoblogStatus(sid);
       setSt(d);
       const s = d.schedule || {};
-      setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_source: s.image_source || 'stock' });
+      setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_sources: Array.isArray(s.image_sources) ? s.image_sources : (s.image_source && s.image_source !== 'none' ? [s.image_source] : ['stock']) });
     } catch (e) { setErr(e.message); }
   };
   useEffect(() => { if (site) { setSt(null); setCfg(null); setBriefs(null); setPreview(null); load(site); } }, [site]);
@@ -163,11 +170,24 @@ export function Autoblog() {
         </div>
       </div>
 
-      <div class="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label class="text-[11px] uppercase tracking-wide text-slate-400">Images</label>
-          <${Select} value=${cfg.image_source} onChange=${(v) => setC('image_source', v)} options=${IMG_OPTS} class="mt-1" />
+      <div>
+        <label class="text-[11px] uppercase tracking-wide text-slate-400">Image sources</label>
+        <div class="grid sm:grid-cols-3 gap-1.5 mt-1">
+          ${IMG_OPTS.map(([id, label, hint]) => {
+            const on = (cfg.image_sources || []).includes(id);
+            const toggle = () => setC('image_sources', on ? (cfg.image_sources || []).filter((x) => x !== id) : [...(cfg.image_sources || []), id]);
+            return html`<label class=${cx('flex items-start gap-2 px-2.5 py-2 rounded-lg border text-sm cursor-pointer', on ? 'border-brand-300 bg-brand-50/50 text-slate-800' : 'border-slate-200 text-slate-500')}>
+              <input type="checkbox" checked=${on} onChange=${toggle} class="accent-brand-600 mt-0.5" />
+              <span class="min-w-0"><span class="block">${label}</span><span class="block text-[10px] text-slate-400">${hint}</span></span>
+            </label>`;
+          })}
         </div>
+        <p class="text-[11px] text-slate-400 mt-1">${(cfg.image_sources || []).length === 0
+          ? 'No sources checked — posts publish without images.'
+          : 'Customer photos are always used first; the other checked sources fill any slots left over.'}</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-[11px] uppercase tracking-wide text-slate-400">Publish as</label>
           <${Select} value=${cfg.publish_mode} onChange=${(v) => setC('publish_mode', v)} options=${PUB_OPTS} class="mt-1" />
