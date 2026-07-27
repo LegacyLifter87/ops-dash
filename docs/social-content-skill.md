@@ -396,3 +396,37 @@ A style that wins design compliments but fails these four is the wrong
 style. Match seriousness to subject: playful pop for a giveaway, never for
 a carbon-monoxide warning; a casual phone-photo look can beat a cinematic
 ad because it's more believable in the feed.
+
+## 11. Brand kit — full-kit steering (added 2026-07-25)
+
+The brand kit (Social tab → Brand kit & plan; `seo_social_profiles`) is the
+single source of brand truth, and EVERY field of it steers both the social
+planner/writer (seo-social `brandLines`) and the blog writer (seo-brief
+`brandKitBlock`). All fields optional — absent fields simply do not constrain.
+
+- **Ideal client profile (`icp`)** — owner-written description of who the
+  content speaks to. Every post and article is written FOR this person: their
+  vocabulary, worries, and decision factors. The planner's own idealClient
+  output refines it, never contradicts it.
+- **Brand voices (`voices`)** — owner-approved voice keys, mirroring the
+  visual-style selector. Menu: neighborly-expert, straight-shooter,
+  premium-concierge, coach-educator, family-values, high-energy (events/
+  giveaways only, never safety), calm-reassuring, witty-playful,
+  technical-authority. The planner picks ONE voice per month (strategy.voice)
+  from the approved set (or freely when none picked); the writer writes every
+  caption in it; blogs use an approved voice too. HUMAN VOICE rules (§3)
+  always apply on top.
+- **Warranty (`warranty`)** — a REAL proof/objection-handling asset. Cited
+  accurately where relevant (proof posts, blog trust points); never
+  embellished or extended.
+- **Certifications (`certifications`)** — [{id, name, number, required,
+  path/url}] with optional badge icon uploads (cert_upload). Cited by exact
+  name/number only, never invented. Icons join the award badges as reference
+  images on proof/local/promo generations (required certs first, ≤2 badge
+  refs total). `required: true` (e.g. a contractor license) means legally
+  required on advertising: every promo/offer caption ENDS with the license
+  line (small, matter-of-fact), promo image prompts include it as small
+  legible text, and blog conclusions carry it near the CTA.
+
+Keep this section in sync with seo-social `brandLines`/PLAN_SYSTEM/
+WRITE_SYSTEM and seo-brief `brandKitBlock` whenever either changes.

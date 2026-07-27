@@ -607,6 +607,9 @@ export const seoSocialProfileSave = (siteId, fields) => seoInvokeSocial('profile
 export const seoSocialLogoUpload = (siteId, dataBase64, contentType) => seoInvokeSocial('logo_upload', { siteId, dataBase64, contentType });
 export const seoSocialBadgeUpload = (siteId, dataBase64, contentType, name) => seoInvokeSocial('badge_upload', { siteId, dataBase64, contentType, name });
 export const seoSocialBadgeDelete = (siteId, path) => seoInvokeSocial('badge_delete', { siteId, path });
+// Certification badge icons (certifications live in the brand-kit profile;
+// icons attach per-cert after the cert row is saved).
+export const seoSocialCertUpload = (siteId, certId, dataBase64, contentType) => seoInvokeSocial('cert_upload', { siteId, certId, dataBase64, contentType });
 export const seoSocialPlanMonth = (siteId, month) => seoInvokeSocial('plan_month', { siteId, month });
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });

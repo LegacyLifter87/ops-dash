@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -38,6 +38,20 @@ const AESTHETICS = [
   ['retro-local', '🏷 Retro Local', 'Vintage badge, "since YYYY", warm grading — established family businesses'],
   ['playful-pop', '🎉 Playful Pop', 'Primary colors, halftone, starbursts — events and giveaways only'],
 ];
+// Brand voices the owner can approve — mirrors the visual style selector.
+// Pick any; the AI chooses ONE per month from the approved set (or freely
+// when none are picked) and every caption is written in it.
+const VOICES = [
+  ['neighborly-expert', '🏡 Neighborly Expert', 'The trusted pro next door — warm plain talk, practical tips'],
+  ['straight-shooter', '🎯 Straight Shooter', 'No fluff — short blunt sentences, facts and honest prices up front'],
+  ['premium-concierge', '🤵 Premium Concierge', 'Polished, gracious, white-glove calm — never salesy'],
+  ['coach-educator', '📚 Coach / Educator', 'Teaches first — step-by-step, empowering'],
+  ['family-values', '👨‍👩‍👧 Family Values', 'Community-rooted, multi-generation warmth, "since YYYY" pride'],
+  ['high-energy', '⚡ High Energy', 'Fast, punchy, exclamation-friendly — giveaways and events only'],
+  ['calm-reassuring', '🕊 Calm & Reassuring', 'Steady empathy for stressful jobs — storm damage, repairs'],
+  ['witty-playful', '😄 Witty & Playful', 'Light humor and personality, still professional'],
+  ['technical-authority', '🔬 Technical Authority', 'Specs, standards and code references — engineering-minded buyers'],
+];
 // Status filter chips for the calendar card grid.
 const POST_FILTERS = [
   ['all', 'All', () => true],
@@ -67,7 +81,7 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '' });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '' });
       if (!r.profile) setOpen(true);
     }).catch((e) => { setErr(e.message); setP({}); });
   }, [site]);
@@ -75,7 +89,11 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, aesthetics: [...(f.aesthetics || [])], commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
+      // Re-read so persisted cert rows (and their badge slots) are current.
+      const r2 = await seoSocialProfile(site);
+      setP(r2.profile || {});
+      setF((x) => ({ ...x, certs: (Array.isArray(r2.profile?.certifications) ? r2.profile.certifications : []).map((c) => ({ ...c })) }));
       onBanner('✅ Brand kit saved.'); setOpen(false);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -142,6 +160,21 @@ export function BrandKit({ site, onBanner }) {
     try { const r = await seoSocialBadgeDelete(site, path); setP((x) => ({ ...x, badges: r.badges })); }
     catch (e) { setErr(e.message); }
   };
+  const certUpload = (certId, file) => {
+    if (!file) return;
+    setBusy('cert'); setErr('');
+    optimize(file, async (b64, ct) => {
+      try {
+        const r = await seoSocialCertUpload(site, certId, b64, ct);
+        setP((x) => ({ ...x, certifications: r.certifications }));
+        setF((x) => ({ ...x, certs: r.certifications.map((c) => ({ ...c })) }));
+        onBanner('📜 Certification badge saved — it joins the awards on proof, local and promo images.');
+      } catch (e) { setErr(`Badge upload failed: ${e.message}`); } finally { setBusy(''); }
+    });
+  };
+  const setCert = (i, k, v) => setF((x) => { const certs = (x.certs || []).slice(); certs[i] = { ...certs[i], [k]: v }; return { ...x, certs }; });
+  const addCert = () => setF((x) => ({ ...x, certs: [...(x.certs || []), { id: crypto.randomUUID(), name: '', number: '', required: false }] }));
+  const rmCert = (i) => setF((x) => ({ ...x, certs: (x.certs || []).filter((_, j) => j !== i) }));
   const togglePlat = (id) => setF((x) => { const n = new Set(x.platforms); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, platforms: n }; });
 
   if (p === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading brand kit…</div></${Card}>`;
@@ -168,6 +201,41 @@ export function BrandKit({ site, onBanner }) {
         </div>
       </div>
       <${Field} label="Voice notes (optional — tone, do/don't say)"><${Textarea} value=${f.voiceNotes} onInput=${(v) => setF({ ...f, voiceNotes: v })} rows=${2} placeholder="Family-owned since 2004; never mention competitor names; friendly but no slang…" /></${Field}>
+      <${Field} label="Ideal client profile (optional — who every post and blog should speak to)"><${Textarea} value=${f.icp} onInput=${(v) => setF({ ...f, icp: v })} rows=${2} placeholder="Homeowners 35-65 in Marion County with 1+ acre properties; value reliability over lowest price; worried about curb appeal and protecting their biggest investment…" /></${Field}>
+      <${Field} label="Warranty / guarantee (optional — used as real proof in posts and blogs, never embellished)"><${Textarea} value=${f.warranty} onInput=${(v) => setF({ ...f, warranty: v })} rows=${2} placeholder="5-year workmanship warranty on all installs; 30-day satisfaction guarantee on cleanings…" /></${Field}>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">Brand voices you approve for the writing <span class="text-slate-300">— pick any; the AI writes each month in ONE of them. Leave all off to let AI choose</span></label>
+        <div class="flex flex-wrap gap-1.5">
+          ${VOICES.map(([id, label, hint]) => html`<button onClick=${() => setF((x) => { const n = new Set(x.voices); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, voices: n }; })} title=${hint}
+            class=${cx('text-xs px-2.5 py-1 rounded-full border', f.voices?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>${label}</button>`)}
+        </div>
+        ${f.voices?.size > 0 && html`<div class="text-[11px] text-slate-400 mt-1">Captions and blogs will only be written in ${f.voices.size === 1 ? 'this voice' : `one of these ${f.voices.size} voices`}.</div>`}
+      </div>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">📜 Certifications & licenses <span class="text-slate-300">— cited as real proof in posts and blogs; check "must be listed" for legally required numbers (e.g. contractor license)</span></label>
+        <div class="space-y-1.5">
+          ${(f.certs || []).map((c, i) => {
+            const saved = (p?.certifications || []).find((x) => x?.id === c.id);
+            return html`<div class="flex items-center gap-2 flex-wrap rounded-lg border border-slate-100 px-2.5 py-2">
+              ${saved?.url
+                ? html`<img src=${saved.url} alt="badge" class="h-10 w-10 object-contain rounded bg-white border border-slate-100 shrink-0" />`
+                : saved
+                  ? html`<label class="h-10 w-10 rounded border border-dashed border-slate-200 flex items-center justify-center text-slate-300 cursor-pointer shrink-0" title="Add a badge or icon image">📜<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`
+                  : html`<div class="h-10 w-10 rounded border border-dashed border-slate-100 flex items-center justify-center text-slate-200 shrink-0" title="Save the brand kit first, then add its badge">📜</div>`}
+              <${Input} value=${c.name || ''} onInput=${(v) => setCert(i, 'name', v)} placeholder="Certification name (e.g. FL Certified General Contractor)" class="flex-1 min-w-[180px]" />
+              <${Input} value=${c.number || ''} onInput=${(v) => setCert(i, 'number', v)} placeholder="Number (CGC123456)" class="w-40" />
+              <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer whitespace-nowrap" title="Legally required on advertising — the AI ends every promo caption with it">
+                <input type="checkbox" checked=${!!c.required} onChange=${(e) => setCert(i, 'required', e.target.checked)} class="accent-brand-600" />must be listed
+              </label>
+              ${saved?.url && html`<label class="text-[11px] text-slate-400 underline cursor-pointer" title="Replace the badge image">replace<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`}
+              <button onClick=${() => rmCert(i)} class="text-slate-300 hover:text-rose-600" title="Remove this certification">✕</button>
+            </div>`;
+          })}
+          ${busy === 'cert' && html`<span class="text-xs text-sky-600 animate-pulse">Uploading badge…</span>`}
+          ${(f.certs || []).length < 12 && html`<button onClick=${addCert} class="text-xs text-slate-400 hover:text-brand-700 underline">+ Add certification</button>`}
+          ${(f.certs || []).some((c) => !((p?.certifications || []).find((x) => x?.id === c.id))) && html`<div class="text-[11px] text-slate-400">Save the brand kit to lock in new certifications — then you can add their badge icons.</div>`}
+        </div>
+      </div>
       <div class="flex flex-wrap items-end gap-3">
         <div>
           <label class="text-[11px] text-slate-400 block mb-1">Logo (PNG with transparency works best — any file size, big files are optimized automatically)</label>
