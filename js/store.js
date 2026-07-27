@@ -610,6 +610,10 @@ export const seoSocialBadgeDelete = (siteId, path) => seoInvokeSocial('badge_del
 // Certification badge icons (certifications live in the brand-kit profile;
 // icons attach per-cert after the cert row is saved).
 export const seoSocialCertUpload = (siteId, certId, dataBase64, contentType) => seoInvokeSocial('cert_upload', { siteId, certId, dataBase64, contentType });
+// Real 5-star Google reviews for REVIEW HIGHLIGHT posts. sync is task-based:
+// the first call starts collection, a later call imports the results.
+export const seoSocialReviewsSync = (siteId) => seoInvokeSocial('reviews_sync', { siteId });
+export const seoSocialReviewsList = (siteId) => seoInvokeSocial('reviews_list', { siteId });
 export const seoSocialPlanMonth = (siteId, month) => seoInvokeSocial('plan_month', { siteId, month });
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });

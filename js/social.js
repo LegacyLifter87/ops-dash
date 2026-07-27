@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -162,9 +162,17 @@ export function BrandKit({ site, onBanner }) {
   };
   const certUpload = (certId, file) => {
     if (!file) return;
+    const row = (f.certs || []).find((x) => x.id === certId);
+    if (row && !String(row.name || '').trim()) { setErr('Give the certification a name first, then add its badge.'); return; }
     setBusy('cert'); setErr('');
     optimize(file, async (b64, ct) => {
       try {
+        // A brand-new cert row isn't on the server yet — persist the profile
+        // first so the upload has a row to attach to.
+        const saved = (p?.certifications || []).some((x) => x?.id === certId);
+        if (!saved) {
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
+        }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
         setF((x) => ({ ...x, certs: r.certifications.map((c) => ({ ...c })) }));
@@ -184,7 +192,7 @@ export function BrandKit({ site, onBanner }) {
         ${logoUrl ? html`<img src=${logoUrl} alt="logo" class="h-9 w-9 rounded-lg object-contain bg-white border border-slate-100" />` : html`<div class="h-9 w-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">🏷</div>`}
         <div class="min-w-0">
           <div class="font-semibold text-slate-800">Brand kit & plan</div>
-          <div class="text-xs text-slate-400 truncate">${[f.phone, f.website].filter(Boolean).join(' · ') || 'Phone, website, logo and colors — injected into every generated image.'} · ${f.postsPerDay}/day · ${f.reelsPerMonth} Reels/mo</div>
+          <div class="text-xs text-slate-400 truncate">${[f.phone, f.website].filter(Boolean).join(' · ') || 'Phone, website, logo and colors — injected into every generated image.'} · posting plan lives on the Social tab</div>
         </div>
       </div>
       <${Btn} size="sm" variant=${open ? 'ghost' : 'secondary'} onClick=${() => setOpen(!open)}>${open ? 'Close' : '✏️ Edit'}</${Btn}>
@@ -219,21 +227,18 @@ export function BrandKit({ site, onBanner }) {
             return html`<div class="flex items-center gap-2 flex-wrap rounded-lg border border-slate-100 px-2.5 py-2">
               ${saved?.url
                 ? html`<img src=${saved.url} alt="badge" class="h-10 w-10 object-contain rounded bg-white border border-slate-100 shrink-0" />`
-                : saved
-                  ? html`<label class="h-10 w-10 rounded border border-dashed border-slate-200 flex items-center justify-center text-slate-300 cursor-pointer shrink-0" title="Add a badge or icon image">📜<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`
-                  : html`<div class="h-10 w-10 rounded border border-dashed border-slate-100 flex items-center justify-center text-slate-200 shrink-0" title="Save the brand kit first, then add its badge">📜</div>`}
+                : html`<label class="h-10 w-10 rounded border border-dashed border-slate-200 flex items-center justify-center text-slate-300 cursor-pointer shrink-0" title="Upload this certification's badge image (PNG or JPEG)">📜<input type="file" accept="image/png,image/jpeg" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`}
               <${Input} value=${c.name || ''} onInput=${(v) => setCert(i, 'name', v)} placeholder="Certification name (e.g. FL Certified General Contractor)" class="flex-1 min-w-[180px]" />
               <${Input} value=${c.number || ''} onInput=${(v) => setCert(i, 'number', v)} placeholder="Number (CGC123456)" class="w-40" />
               <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer whitespace-nowrap" title="Legally required on advertising — the AI ends every promo caption with it">
                 <input type="checkbox" checked=${!!c.required} onChange=${(e) => setCert(i, 'required', e.target.checked)} class="accent-brand-600" />must be listed
               </label>
-              ${saved?.url && html`<label class="text-[11px] text-slate-400 underline cursor-pointer" title="Replace the badge image">replace<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`}
+              ${saved?.url && html`<label class="text-[11px] text-slate-400 underline cursor-pointer" title="Replace the badge image (PNG or JPEG)">replace<input type="file" accept="image/png,image/jpeg" class="hidden" disabled=${busy === 'cert'} onChange=${(e) => { certUpload(c.id, e.target.files?.[0]); e.target.value = ''; }} /></label>`}
               <button onClick=${() => rmCert(i)} class="text-slate-300 hover:text-rose-600" title="Remove this certification">✕</button>
             </div>`;
           })}
           ${busy === 'cert' && html`<span class="text-xs text-sky-600 animate-pulse">Uploading badge…</span>`}
           ${(f.certs || []).length < 12 && html`<button onClick=${addCert} class="text-xs text-slate-400 hover:text-brand-700 underline">+ Add certification</button>`}
-          ${(f.certs || []).some((c) => !((p?.certifications || []).find((x) => x?.id === c.id))) && html`<div class="text-[11px] text-slate-400">Save the brand kit to lock in new certifications — then you can add their badge icons.</div>`}
         </div>
       </div>
       <div class="flex flex-wrap items-end gap-3">
@@ -255,8 +260,6 @@ export function BrandKit({ site, onBanner }) {
             ${busy === 'badge' && html`<span class="text-xs text-sky-600 animate-pulse whitespace-nowrap">Uploading…</span>`}
           </div>
         </div>
-        <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
-        <${Select} value=${String(f.reelsPerMonth)} onChange=${(v) => setF({ ...f, reelsPerMonth: v })} options=${[0, 2, 3, 4, 6, 8, 12].map((n) => ({ value: String(n), label: `${n} Reels / month` }))} />
       </div>
       <div>
         <label class="text-[11px] text-slate-400 block mb-1">Visual styles you approve for generated images <span class="text-slate-300">— pick any; leave all off to let AI choose</span></label>
@@ -274,10 +277,6 @@ export function BrandKit({ site, onBanner }) {
             class=${cx('text-xs px-2.5 py-1 rounded-full border', f.imageSources?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>${label}</button>`)}
         </div>
       </div>
-      <div class="grid sm:grid-cols-2 gap-3">
-        <${Field} label="Comment trigger word (optional — pairs with your comment automation)"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
-        <${Field} label="What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
-      </div>
       <div class="flex flex-wrap gap-1.5">
         ${PLATFORMS.map(([id, label]) => html`<button onClick=${() => togglePlat(id)}
           class=${cx('text-xs px-2.5 py-1 rounded-full border', f.platforms?.has(id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500')}>${label}</button>`)}
@@ -288,6 +287,68 @@ export function BrandKit({ site, onBanner }) {
 }
 
 const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '🅶', tiktok: '🎵', 'tiktok-business': '🎵', linkedin: '💼', twitter: '🐦' };
+
+// Posting plan — lives on the Social tab (moved out of the brand kit): how
+// much to post, how many Reels, how many review highlights, and the comment
+// automation trigger. Saves through profile_save with the FULL profile so
+// nothing else gets clobbered.
+export function PlanCard({ site, onBanner }) {
+  const [f, setF] = useState(null); // full profile form (subset edited here)
+  const [reviews, setReviews] = useState(null); // { count, pending, syncedAt }
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  const loadReviews = () => seoSocialReviewsList(site).then((r) => setReviews({ count: (r.reviews || []).length, pending: r.pending, syncedAt: r.syncedAt })).catch(() => setReviews({ count: 0, pending: false, syncedAt: null }));
+  useEffect(() => {
+    setF(null); setReviews(null); setErr('');
+    if (!site) return;
+    seoSocialProfile(site).then((r) => {
+      const pr = r.profile || {};
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'] });
+    }).catch((e) => { setErr(e.message); });
+    loadReviews();
+  }, [site]);
+
+  const save = async () => {
+    setBusy('save'); setErr('');
+    try {
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources } });
+      onBanner('✅ Posting plan saved — it applies from the next month you plan.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const syncReviews = async () => {
+    setBusy('reviews'); setErr('');
+    try {
+      const r = await seoSocialReviewsSync(site);
+      if (r.pending) onBanner(`⭐ ${r.note || 'Collecting Google reviews — press Sync again in a minute or two.'}`);
+      else onBanner(`⭐ Imported ${r.imported} five-star review(s) — ${r.fiveStarOnFile} on file for review-highlight posts.`);
+      await loadReviews();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  if (f === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading posting plan…</div></${Card}>`;
+  return html`<${Card}><div class="p-4">
+    <div class="font-semibold text-slate-800 mb-1">🗓 Posting plan</div>
+    <p class="text-xs text-slate-400 mb-3">How much gets created each month. Review highlights quote your real 5-star Google reviews — sync them below.</p>
+    ${err && html`<div class="text-xs text-rose-600 mb-2">${err}</div>`}
+    <div class="flex flex-wrap items-end gap-3">
+      <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
+      <${Select} value=${String(f.reelsPerMonth)} onChange=${(v) => setF({ ...f, reelsPerMonth: v })} options=${[0, 2, 3, 4, 6, 8, 12].map((n) => ({ value: String(n), label: `${n} Reels / month` }))} />
+      <${Select} value=${String(f.reviewsPerMonth)} onChange=${(v) => setF({ ...f, reviewsPerMonth: v })} options=${[0, 1, 2, 3, 4, 6, 8].map((n) => ({ value: String(n), label: `${n} review highlight${n === 1 ? '' : 's'} / month` }))} />
+    </div>
+    ${Number(f.reviewsPerMonth) > 0 && html`<div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      ${reviews === null ? html`<span class="text-slate-400">Checking review library…</span>` : html`
+        <span class=${reviews.count > 0 ? 'text-emerald-700' : 'text-amber-700'}>⭐ ${reviews.count} five-star Google review${reviews.count === 1 ? '' : 's'} on file${reviews.syncedAt ? ` (synced ${new Date(reviews.syncedAt).toLocaleDateString()})` : ''}</span>
+        <${Btn} size="sm" variant="secondary" onClick=${syncReviews} disabled=${busy === 'reviews'}>${busy === 'reviews' ? 'Syncing…' : reviews.pending ? '⭐ Finish review sync' : '⭐ Sync Google reviews'}</${Btn}>
+        ${reviews.count === 0 && !reviews.pending && html`<span class="text-slate-400">Sync pulls them from Google (takes a minute or two).</span>`}`}
+    </div>`}
+    <div class="grid sm:grid-cols-2 gap-3 mt-3">
+      <${Field} label="Comment trigger word (optional — pairs with your comment automation)"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
+      <${Field} label="What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
+    </div>
+    <div class="mt-3"><${Btn} size="sm" onClick=${save} disabled=${busy === 'save'}>${busy === 'save' ? 'Saving…' : 'Save posting plan'}</${Btn}></div>
+  </div></${Card}>`;
+}
 
 // Real-photo library: pull from a link-shared Google Drive folder and/or the
 // linked Job Tracker company's photos tagged "social". These photos become
@@ -768,7 +829,9 @@ export function Social() {
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-800 flex items-center justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60 ml-2">✕</button></div>`}
     ${prog && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-sky-50 text-sky-800">${prog}</div>`}
 
-    <div class="text-xs text-slate-400">Brand kit, photo sources, and integrations now live in the <span class="font-medium">🏢 Business</span> tab.</div>
+    <div class="text-xs text-slate-400">Brand kit, photo sources, and integrations live in the <span class="font-medium">🏢 Business</span> tab.</div>
+
+    <${PlanCard} site=${site} onBanner=${setBanner} key=${site} />
 
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
