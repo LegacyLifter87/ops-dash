@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.7.3
+ * Version: 1.8.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.7.3');
+define('OPSDASH_VERSION', '1.8.0');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -269,7 +269,7 @@ function opsdash_seo_plugin() {
 	return 'none';
 }
 
-function opsdash_set_seo_meta($post_id, $seo_title, $meta_desc) {
+function opsdash_set_seo_meta($post_id, $seo_title, $meta_desc, $focus_kw = '') {
 	$which = opsdash_seo_plugin();
 	if ($seo_title !== '') {
 		if ($which === 'yoast')      update_post_meta($post_id, '_yoast_wpseo_title', $seo_title);
@@ -282,6 +282,14 @@ function opsdash_set_seo_meta($post_id, $seo_title, $meta_desc) {
 		elseif ($which === 'rankmath') update_post_meta($post_id, 'rank_math_description', $meta_desc);
 		elseif ($which === 'aioseo')   update_post_meta($post_id, '_aioseo_description', $meta_desc);
 		update_post_meta($post_id, '_opsdash_meta_desc', $meta_desc);
+	}
+	// Focus keyword: without it Rank Math/Yoast show the post as having no SEO
+	// data at all (no keyword, no score), even when title/description are set.
+	if ($focus_kw !== '') {
+		if ($which === 'yoast')      update_post_meta($post_id, '_yoast_wpseo_focuskw', $focus_kw);
+		elseif ($which === 'rankmath') update_post_meta($post_id, 'rank_math_focus_keyword', $focus_kw);
+		elseif ($which === 'aioseo')   update_post_meta($post_id, '_aioseo_keyphrases', opsdash_json(['focus' => ['keyphrase' => $focus_kw], 'additional' => []]));
+		update_post_meta($post_id, '_opsdash_focus_keyword', $focus_kw);
 	}
 }
 
@@ -317,6 +325,17 @@ add_action('wp_head', function () {
 	if (opsdash_seo_plugin() === 'none') {
 		$d = get_post_meta($pid, '_opsdash_meta_desc', true);
 		if ($d) echo '<meta name="description" content="' . esc_attr($d) . '" />' . "\n";
+		// Social share (Open Graph / Twitter) tags — an SEO plugin normally
+		// provides these; without one, shared links would have no preview.
+		$t = get_post_meta($pid, '_opsdash_seo_title', true);
+		if (!$t) $t = get_the_title($pid);
+		echo '<meta property="og:type" content="article" />' . "\n";
+		echo '<meta property="og:title" content="' . esc_attr($t) . '" />' . "\n";
+		if ($d) echo '<meta property="og:description" content="' . esc_attr($d) . '" />' . "\n";
+		echo '<meta property="og:url" content="' . esc_url(get_permalink($pid)) . '" />' . "\n";
+		$thumb = get_the_post_thumbnail_url($pid, 'large');
+		if ($thumb) echo '<meta property="og:image" content="' . esc_url($thumb) . '" />' . "\n";
+		echo '<meta name="twitter:card" content="summary_large_image" />' . "\n";
 	}
 	$schema = get_post_meta($pid, '_opsdash_schema', true);
 	if ($schema) {
@@ -715,8 +734,11 @@ function opsdash_publish(WP_REST_Request $req) {
 	$post_id = wp_insert_post($args, true);
 	if (is_wp_error($post_id)) return $post_id;
 
-	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''));
+	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''), sanitize_text_field($p['focus_keyword'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);
+	// Self-referencing canonical: SEO plugins emit one automatically; on sites
+	// without one, our own head output covers it.
+	if (opsdash_seo_plugin() === 'none') update_post_meta($post_id, '_opsdash_canonical', get_permalink($post_id));
 
 	$featured = null;
 	if (!empty($p['featured_image_url'])) {
@@ -807,7 +829,7 @@ function opsdash_update_seo(WP_REST_Request $req) {
 	$post_id = opsdash_resolve_post($p);
 	if (!$post_id) return new WP_Error('opsdash_not_found', 'no post or page found for that id/url', ['status' => 404]);
 
-	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''));
+	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''), sanitize_text_field($p['focus_keyword'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);
 	if (!empty($p['canonical'])) update_post_meta($post_id, '_opsdash_canonical', esc_url_raw($p['canonical']));
 
