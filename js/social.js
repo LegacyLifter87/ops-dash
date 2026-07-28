@@ -298,7 +298,7 @@ export function PlanCard({ site, onBanner }) {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
-  const loadReviews = () => seoSocialReviewsList(site).then((r) => setReviews({ count: (r.reviews || []).length, pending: r.pending, syncedAt: r.syncedAt })).catch(() => setReviews({ count: 0, pending: false, syncedAt: null }));
+  const loadReviews = () => seoSocialReviewsList(site).then((r) => setReviews({ count: (r.reviews || []).length, fresh: (r.reviews || []).filter((x) => !x.used_month).length, pending: r.pending, syncedAt: r.syncedAt })).catch(() => setReviews({ count: 0, fresh: 0, pending: false, syncedAt: null }));
   useEffect(() => {
     setF(null); setReviews(null); setErr('');
     if (!site) return;
@@ -338,7 +338,7 @@ export function PlanCard({ site, onBanner }) {
     </div>
     ${Number(f.reviewsPerMonth) > 0 && html`<div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
       ${reviews === null ? html`<span class="text-slate-400">Checking review library…</span>` : html`
-        <span class=${reviews.count > 0 ? 'text-emerald-700' : 'text-amber-700'}>⭐ ${reviews.count} five-star Google review${reviews.count === 1 ? '' : 's'} on file${reviews.syncedAt ? ` (synced ${new Date(reviews.syncedAt).toLocaleDateString()})` : ''}</span>
+        <span class=${(reviews.fresh ?? reviews.count) > 0 ? 'text-emerald-700' : 'text-amber-700'}>⭐ ${reviews.count} five-star review${reviews.count === 1 ? '' : 's'} on file${reviews.count > 0 ? ` · ${reviews.fresh} not yet used` : ''}${reviews.syncedAt ? ` (synced ${new Date(reviews.syncedAt).toLocaleDateString()})` : ''}</span>
         <${Btn} size="sm" variant="secondary" onClick=${syncReviews} disabled=${busy === 'reviews'}>${busy === 'reviews' ? 'Syncing…' : reviews.pending ? '⭐ Finish review sync' : '⭐ Sync Google reviews'}</${Btn}>
         ${reviews.count === 0 && !reviews.pending && html`<span class="text-slate-400">Sync pulls them from Google (takes a minute or two).</span>`}`}
     </div>`}
