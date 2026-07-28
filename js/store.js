@@ -483,6 +483,7 @@ export const seoAdsConnect = () => seoInvokeAds('ads_connect');
 export const seoAdsCustomers = () => seoInvokeAds('ads_customers');
 export const seoAdsSelectCustomer = (c) => seoInvokeAds('ads_select_customer', c);
 export const seoAdsSync = () => seoInvokeAds('ads_sync');
+export const seoAdsSyncNegatives = () => seoInvokeAds('ads_sync_negatives');
 export const seoAdsDisconnect = () => seoInvokeAds('ads_disconnect');
 // BYO developer token (agency only). Default is the shared platform token.
 export const seoAdsSetDevToken = (token, label) => seoInvokeAds('ads_set_dev_token', { token, label });

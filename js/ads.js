@@ -5,7 +5,7 @@
 // Live data needs app_secrets.google_ads_developer_token (Google-approved).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsDisconnect, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
+import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsSyncNegatives, seoAdsDisconnect, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -61,6 +61,14 @@ export function Ads() {
     try { const r = await seoAdsSync(); setBanner(`Synced — ${num(r.counts?.campaigns)} campaigns, ${num(r.counts?.keywords)} keywords, ${num(r.counts?.search_terms)} search terms.`); await load(); }
     catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
+  const syncNegs = async () => {
+    setBusy('negs'); setErr(''); setBanner('');
+    try {
+      const r = await seoAdsSyncNegatives();
+      setBanner(r.attempted ? `Pushed ${num(r.attempted)} negative keyword${r.attempted === 1 ? '' : 's'} to "${r.listName}" (${num(r.added)} new) — applied to ${num(r.searchCampaigns)} Search campaign${r.searchCampaigns === 1 ? '' : 's'}.` : (r.note || 'Nothing to push.'));
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const disconnect = async () => {
     if (!confirm('Disconnect Google Ads for this account? Stored report data is removed.')) return;
     setBusy('disc'); setErr('');
@@ -81,6 +89,7 @@ export function Ads() {
       ${st?.connected && st?.customer && html`<div class="flex items-center gap-2 flex-wrap">
         <${Pill} cls="bg-slate-100 text-slate-600">${st.customer.name || st.customer.id}</${Pill}>
         <${Btn} onClick=${sync} disabled=${!!busy}>${busy === 'sync' ? 'Syncing…' : '↻ Sync'}</${Btn}>
+        ${(st.negatives_unsynced || 0) > 0 && html`<${Btn} onClick=${syncNegs} disabled=${!!busy}>${busy === 'negs' ? 'Pushing…' : `🚫 Push ${num(st.negatives_unsynced)} negatives`}</${Btn}>`}
         <${Btn} size="sm" onClick=${disconnect} disabled=${!!busy}>Disconnect</${Btn}>
       </div>`}
     </div>
