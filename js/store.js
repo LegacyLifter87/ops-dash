@@ -665,6 +665,9 @@ export const seoSocialGhlSetAccounts = (siteId, accountIds) => seoInvokeSocial('
 export const seoSocialGhlDisconnect = (siteId) => seoInvokeSocial('ghl_disconnect', { siteId });
 export const seoSocialGhlPush = (siteId, calendarId) => seoInvokeSocial('ghl_push', { siteId, calendarId });
 export const seoSocialGhlOauthStart = (siteId) => seoInvokeSocial('ghl_oauth_start', { siteId });
+// Agency sign-in returns a company token + a list of sub-accounts; picking one
+// exchanges it for that location's token and finishes the connection.
+export const seoSocialGhlPickLocation = (siteId, locationId) => seoInvokeSocial('ghl_pick_location', { siteId, locationId });
 export const seoSocialGhlRefreshAccounts = (siteId) => seoInvokeSocial('ghl_refresh_accounts', { siteId });
 // Google Drive OAuth (photo library source).
 export const seoSocialDriveOauthStart = (siteId) => seoInvokeSocial('drive_oauth_start', { siteId });
