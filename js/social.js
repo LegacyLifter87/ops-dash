@@ -730,11 +730,13 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [zoom, setZoom] = useState(false); // full-screen media lightbox
+  const [regenOpen, setRegenOpen] = useState(false); // in-dashboard regenerate-with-feedback composer
+  const [regenFb, setRegenFb] = useState('');
   useEffect(() => {
     if (!post) return;
     setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
     setRefSel(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
-    setErr(''); setZoom(false);
+    setErr(''); setZoom(false); setRegenOpen(false); setRegenFb('');
   }, [revId]);
   const total = posts.length;
   const decided = posts.filter((p) => p.status === 'approved' || p.status === 'rejected').length;
@@ -771,7 +773,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   const doSave = () => run('save', saveFields, false);
   const doApprove = () => run('ok', async () => { await saveFields(); await seoSocialApprove(site, post.id); }, true);
   const doReject = () => run('no', () => seoSocialReject(site, post.id, 'rejected in review'), true);
-  const doRegen = () => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id); }, false);
+  const doRegen = (fb) => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id, (fb || '').trim()); setRegenOpen(false); setRegenFb(''); }, false);
   // Already scheduled in GHL: local edits can't reach the scheduled copy, so
   // it must be pulled back (deleted from the GHL planner) before editing.
   const pushed = !!post.ghl_post_id;
@@ -836,11 +838,21 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
           </div>
         </div>
       </div>
+      ${regenOpen && html`<div class="px-4 py-3 border-t border-amber-200 bg-amber-50/70">
+        <div class="text-xs font-semibold text-slate-700 mb-1">↻ Regenerate with feedback</div>
+        <div class="text-xs text-slate-500 mb-2">Please provide feedback about this regeneration — tell the AI what to change about the image. It rewrites the ${post.format === 'video' ? 'video' : 'image'} prompt from your notes, then regenerates. Leave it blank to regenerate as-is.</div>
+        <${Textarea} value=${regenFb} onInput=${(v) => setRegenFb(v)} rows=${3} placeholder="e.g. Make the driveway look wetter and boost the contrast between the clean and dirty halves. Change the headline to focus on curb appeal." />
+        <div class="flex items-center justify-end gap-2 mt-2">
+          <${Btn} size="sm" variant="secondary" onClick=${() => { setRegenOpen(false); setRegenFb(''); }} disabled=${!!busy}>Cancel</${Btn}>
+          <${Btn} size="sm" variant="secondary" onClick=${() => doRegen('')} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : 'Regenerate as-is'}</${Btn}>
+          <${Btn} size="sm" onClick=${() => doRegen(regenFb)} disabled=${!!busy || regenFb.trim().length < 5}>${busy === 'regen' ? 'Starting…' : '↻ Regenerate with feedback'}</${Btn}>
+        </div>
+      </div>`}
       <div class="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           ${pushed && html`<${Btn} size="sm" variant="secondary" onClick=${doUnschedule} disabled=${!!busy}>${busy === 'unsch' ? 'Removing…' : '↩ Unschedule to edit'}</${Btn}>`}
           ${!pushed && post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${doReject} disabled=${!!busy}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
-          ${canRegen && html`<${Btn} size="sm" variant="secondary" onClick=${doRegen} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
+          ${canRegen && html`<${Btn} size="sm" variant="secondary" onClick=${() => (media ? setRegenOpen(true) : doRegen(''))} disabled=${!!busy || regenOpen}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
           ${pushed && !err && html`<span class="text-xs text-slate-400 truncate">Scheduled in GoHighLevel — unschedule it to edit or regenerate, then approve and push again.</span>`}
           ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
         </div>

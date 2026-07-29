@@ -618,7 +618,7 @@ export const seoSocialReviewsList = (siteId) => seoInvokeSocial('reviews_list', 
 export const seoSocialPlanMonth = (siteId, month, holidays) => seoInvokeSocial('plan_month', { siteId, month, holidays });
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });
-export const seoSocialRegenMedia = (siteId, postId) => seoInvokeSocial('regen_media', { siteId, postId });
+export const seoSocialRegenMedia = (siteId, postId, feedback) => seoInvokeSocial('regen_media', { siteId, postId, feedback });
 export const seoSocialRefresh = (siteId, calendarId) => seoInvokeSocial('refresh', { siteId, calendarId });
 export const seoSocialCalendar = (siteId, month) => seoInvokeSocial('calendar_get', { siteId, month });
 export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('update_post', { siteId, postId, ...fields });
