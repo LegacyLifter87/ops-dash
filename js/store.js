@@ -653,6 +653,7 @@ export const seoSocialDriveOauthStart = (siteId) => seoInvokeSocial('drive_oauth
 export const seoSocialDriveStatus = (siteId) => seoInvokeSocial('drive_status', { siteId });
 export const seoSocialDriveFolders = (siteId, q) => seoInvokeSocial('drive_folders', { siteId, q });
 export const seoSocialDriveBrowse = (siteId, parentId) => seoInvokeSocial('drive_browse', { siteId, parentId: parentId || undefined });
+export const seoSocialGhlUnschedule = (siteId, postId) => seoInvokeSocial('ghl_unschedule', { siteId, postId });
 export const seoSocialDrivePick = (siteId, folderId, folderName) => seoInvokeSocial('drive_pick', { siteId, folderId, folderName });
 export const seoSocialDriveDisconnect = (siteId) => seoInvokeSocial('drive_disconnect', { siteId });
 

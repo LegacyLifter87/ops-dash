@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -756,6 +756,15 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   const doApprove = () => run('ok', async () => { await saveFields(); await seoSocialApprove(site, post.id); }, true);
   const doReject = () => run('no', () => seoSocialReject(site, post.id, 'rejected in review'), true);
   const doRegen = () => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id); }, false);
+  // Already scheduled in GHL: local edits can't reach the scheduled copy, so
+  // it must be pulled back (deleted from the GHL planner) before editing.
+  const pushed = !!post.ghl_post_id;
+  const doUnschedule = () => run('unsch', async () => {
+    if (!confirm('Remove this post from the GoHighLevel schedule? You can edit/regenerate it here and push it again.')) throw new Error('');
+    const r = await seoSocialGhlUnschedule(site, post.id);
+    if (r.note) setErr(r.note);
+  }, false);
+  const canRegen = !pushed && (post.status === 'written' || post.status === 'ready' || post.status === 'rejected' || post.status === 'approved');
   const dateLabel = new Date(post.post_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   return html`<div class="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[94vh] flex flex-col overflow-hidden fade-in">
@@ -811,17 +820,21 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
         </div>
       </div>
       <div class="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-          ${post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${doReject} disabled=${!!busy}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
-          ${(post.status === 'written' || post.status === 'ready' || post.status === 'rejected') && html`<${Btn} size="sm" variant="secondary" onClick=${doRegen} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
+        <div class="flex items-center gap-2 min-w-0">
+          ${pushed && html`<${Btn} size="sm" variant="secondary" onClick=${doUnschedule} disabled=${!!busy}>${busy === 'unsch' ? 'Removing…' : '↩ Unschedule to edit'}</${Btn}>`}
+          ${!pushed && post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${doReject} disabled=${!!busy}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
+          ${canRegen && html`<${Btn} size="sm" variant="secondary" onClick=${doRegen} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
+          ${pushed && !err && html`<span class="text-xs text-slate-400 truncate">Scheduled in GoHighLevel — unschedule it to edit or regenerate, then approve and push again.</span>`}
           ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
         </div>
         <div class="flex items-center gap-2">
           <span class="text-[11px] text-slate-300 hidden md:block">← → to browse</span>
-          <${Btn} size="sm" onClick=${doSave} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : '💾 Save'}</${Btn}>
-          ${post.status === 'approved'
-            ? html`<${Btn} size="sm" variant="success" disabled=${true}>✓ Approved</${Btn}>`
-            : html`<${Btn} variant="success" onClick=${doApprove} disabled=${!!busy || !media}>${busy === 'ok' ? '…' : '✓ Approve & next'}</${Btn}>`}
+          ${!pushed && html`<${Btn} size="sm" onClick=${doSave} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : '💾 Save'}</${Btn}>`}
+          ${pushed
+            ? html`<${Btn} size="sm" variant="success" disabled=${true}>🚀 Scheduled</${Btn}>`
+            : post.status === 'approved'
+              ? html`<${Btn} size="sm" variant="success" disabled=${true}>✓ Approved</${Btn}>`
+              : html`<${Btn} variant="success" onClick=${doApprove} disabled=${!!busy || !media}>${busy === 'ok' ? '…' : '✓ Approve & next'}</${Btn}>`}
         </div>
       </div>
     </div>
