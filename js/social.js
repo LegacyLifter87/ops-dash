@@ -628,21 +628,31 @@ export function GhlCard({ site, onBanner }) {
       await load();
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
-  // OAuth sign-in: open GHL's consent in a new tab, then poll until the
-  // callback stores the connection (or ~3 minutes pass).
+  // OAuth sign-in: open GHL's consent in a small popup WINDOW (not a full tab),
+  // then poll until the callback stores the connection. The popup redirects to
+  // /ghl-connected.html which closes itself on success — this tab updates on its
+  // own, so there's nothing to close manually.
   const signIn = async () => {
     setBusy('oauth'); setErr('');
     try {
       const r = await seoSocialGhlOauthStart(site);
-      window.open(r.url, '_blank', 'noopener');
+      // Named window → re-clicking reuses the same popup instead of stacking tabs.
+      const w = window.open(r.url, 'ghl_oauth', 'width=640,height=780,menubar=no,toolbar=no');
+      if (!w) { setErr('Your browser blocked the sign-in window — allow pop-ups for this site, then click “Sign in with GoHighLevel” again.'); setBusy(''); return; }
+      try { w.focus(); } catch (_) { /* ignore */ }
       let ticks = 0;
       const iv = setInterval(async () => {
         ticks++;
-        if (ticks > 45) { clearInterval(iv); setBusy(''); return; }
+        if (ticks > 75) { // ~5 min
+          clearInterval(iv); setBusy('');
+          setErr('We didn’t detect a connection. If you finished on the GoHighLevel window, click “↻ Refresh accounts” or reopen ⚙ Manage — it may just need a moment.');
+          return;
+        }
         try {
           const s = await seoSocialGhlStatus(site);
           if (s.connected && s.ghl?.authMode === 'oauth') {
             clearInterval(iv); setBusy(''); setSt(s); setSel(new Set(s.ghl?.selected || []));
+            try { w.close(); } catch (_) { /* the page self-closes anyway */ }
             onBanner(`🔗 GoHighLevel connected via sign-in — ${(s.ghl?.accounts || []).length} social account(s)${s.ghl?.userName ? `, posting as ${s.ghl.userName}` : ''}.`);
           }
         } catch (_) { /* keep polling */ }
@@ -685,7 +695,7 @@ export function GhlCard({ site, onBanner }) {
           <${Btn} variant="cta" onClick=${signIn} disabled=${busy === 'oauth'}>${busy === 'oauth' ? 'Waiting for GoHighLevel… (finish sign-in in the other tab)' : st.connected ? '🔑 Sign in again' : '🔑 Sign in with GoHighLevel'}</${Btn}>
           ${st.connected && st.ghl?.authMode === 'oauth' && html`<${Btn} size="sm" variant="secondary" onClick=${async () => { setBusy('ref'); try { await seoSocialGhlRefreshAccounts(site); await load(); onBanner('↻ Social accounts refreshed from GoHighLevel.'); } catch (e) { setErr(e.message); } finally { setBusy(''); } }} disabled=${!!busy}>↻ Refresh accounts</${Btn}>`}
         </div>
-        <p class="text-xs text-slate-500">Pick the client's sub-account on the GoHighLevel screen — everything else connects automatically.</p>
+        <p class="text-xs text-slate-500">A GoHighLevel window opens — pick the client's sub-account there and this tab connects automatically (the window closes itself). <span class="text-slate-400">If GoHighLevel opens its dashboard instead of the account picker, you're already signed in — just close that window and click again, and it'll go straight to the picker.</span></p>
         <details>
           <summary class="text-xs text-slate-400 cursor-pointer">Advanced: connect with a Private Integration token instead</summary>
           <div class="mt-2 space-y-2">

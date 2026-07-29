@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GoHighLevel sign-in</title>
+  <style>
+    :root { color-scheme: light; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f8fafc; display: flex; align-items: center; justify-content: center;
+      padding: 24px; box-sizing: border-box;
+    }
+    .card {
+      max-width: 420px; width: 100%; background: #fff; border: 1px solid #e2e8f0;
+      border-radius: 16px; padding: 28px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .badge { width: 56px; height: 56px; border-radius: 50%; font-size: 30px; line-height: 56px; margin: 0 auto 14px; font-weight: 700; }
+    h1 { margin: 0 0 8px; font-size: 19px; color: #0f172a; }
+    p { margin: 0 0 18px; font-size: 14px; line-height: 1.6; color: #475569; }
+    button { border: 0; border-radius: 10px; padding: 11px 22px; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; }
+    .hint { margin: 14px 0 0; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge" id="badge">…</div>
+    <h1 id="title">Finishing up…</h1>
+    <p id="msg">One moment.</p>
+    <button id="close" onclick="window.close()">Close this window</button>
+    <p class="hint" id="hint"></p>
+  </div>
+  <script>
+    var M = {
+      connected: ['Connected to GoHighLevel', 'Your social accounts are linked. This window will close automatically — head back to the Ops Dash tab.', true],
+      connected_nouser: ['Connected to GoHighLevel', 'Connected, but we could not read a posting user for this location. Head back to Ops Dash — the marketplace app may need the “View Users” scope. This window will close automatically.', true],
+      error: ['Sign-in did not complete', 'Something went wrong before we received your authorization. Close this window and click “Sign in with GoHighLevel” again.', false],
+      error_state: ['This sign-in link expired', 'The connection link timed out or was already used. Close this window and click “Sign in with GoHighLevel” again.', false],
+      error_token: ['GoHighLevel rejected the sign-in', 'We could not exchange the authorization. Close this window and try again; if it keeps happening the marketplace app may need its redirect URI or scopes checked.', false],
+      nolocation: ['No sub-account was selected', 'GoHighLevel did not return a location. Close this window, click “Sign in with GoHighLevel” again, and be sure to pick the client’s sub-account on the chooser screen.', false],
+      error_save: ['Could not save the connection', 'We authorized with GoHighLevel but hit a snag saving it. Close this window and try again.', false]
+    };
+    var s = new URLSearchParams(location.search).get('s') || 'error';
+    var entry = M[s] || M.error;
+    var ok = entry[2];
+    document.getElementById('title').textContent = entry[0];
+    document.getElementById('msg').textContent = entry[1];
+    var badge = document.getElementById('badge');
+    badge.textContent = ok ? '✓' : '!';
+    badge.style.background = ok ? '#f0fdfa' : '#fffbeb';
+    badge.style.color = ok ? '#0f766e' : '#b45309';
+    document.getElementById('close').style.background = ok ? '#0f766e' : '#b45309';
+    document.title = entry[0];
+    if (ok) {
+      setTimeout(function () { try { window.close(); } catch (e) {} }, 1200);
+      setTimeout(function () {
+        document.getElementById('hint').textContent = 'You can close this window and return to Ops Dash — the connection is saved.';
+      }, 1500);
+    }
+  </script>
+</body>
+</html>
