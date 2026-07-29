@@ -625,6 +625,17 @@ export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('
 export const seoSocialApprove = (siteId, postId) => seoInvokeSocial('approve', { siteId, postId });
 export const seoSocialReject = (siteId, postId, reason) => seoInvokeSocial('reject', { siteId, postId, reason });
 export const seoSocialApproveAll = (siteId, calendarId) => seoInvokeSocial('approve_all', { siteId, calendarId });
+// Client approval email (seo-approval fn). status = is a client email configured
+// + the current approval row; send_now fires (or resends) the approval link on
+// demand instead of waiting for the cron tick.
+async function seoInvokeApproval(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-approval', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoApprovalStatus = (siteId, calendarId) => seoInvokeApproval('status', { siteId, calendarId });
+export const seoApprovalSendNow = (siteId, calendarId) => seoInvokeApproval('send_now', { siteId, calendarId });
 // Real-photo library (Drive folder + Job Tracker social-tagged photos).
 export const seoSocialPhotos = (siteId) => seoInvokeSocial('photos_list', { siteId });
 // AI photo understanding + post matching (seo-photo-ai fn).

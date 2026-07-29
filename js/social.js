@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -895,14 +895,20 @@ export function Social() {
   const [prog, setProg] = useState('');
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
+  const [appr, setAppr] = useState(null); // { emailConfigured, approval, ... } for the loaded calendar
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (s = site, m = month) => {
     if (!s) return;
-    try { const r = await seoSocialCalendar(s, m); setCal(r.calendar); setPosts(r.posts || []); }
+    try {
+      const r = await seoSocialCalendar(s, m); setCal(r.calendar); setPosts(r.posts || []);
+      // Whether a client approval email is configured drives the review CTA
+      // (send-to-client vs internal approve-all) and shows the sent state.
+      if (r.calendar?.id) { try { setAppr(await seoApprovalStatus(s, r.calendar.id)); } catch { setAppr(null); } } else setAppr(null);
+    }
     catch (e) { setErr(e.message); }
   };
-  useEffect(() => { setCal(null); setPosts([]); setErr(''); if (site) load(site, month); }, [site, month]);
+  useEffect(() => { setCal(null); setPosts([]); setAppr(null); setErr(''); if (site) load(site, month); }, [site, month]);
   // Photo library feeds the per-post picker (managed in the Business tab).
   // Catalog includes AI descriptions/tags so the picker can sort by relevance.
   useEffect(() => { setPhotos(null); if (site) seoPhotoCatalog(site).then((r) => setPhotos(r.photos || [])).catch(() => setPhotos([])); }, [site]);
@@ -970,6 +976,24 @@ export function Social() {
   const toPush = posts.filter((p) => p.status === 'approved' && !p.ghl_post_id).length;
   const pushedCount = posts.filter((p) => p.ghl_post_id).length;
 
+  // Email the client the approval link on demand (seo-approval send_now),
+  // instead of waiting for the cron tick. Reuses the pending token as a resend.
+  const sendToClient = async () => {
+    setBusy('send'); setErr('');
+    try {
+      const r = await seoApprovalSendNow(site, cal.id);
+      if (r.alreadyApproved) setBanner('This month has already been approved by the client.');
+      else if (r.emailed) setBanner(`📤 ${r.resent ? 'Resent' : 'Sent'} the approval link to ${r.to}${r.cc ? ` (cc ${r.cc})` : ''} — ${r.readyCount} post${r.readyCount === 1 ? '' : 's'} awaiting the client's approval.`);
+      else setBanner('The approval email could not be sent right now (it may have been sent very recently). The client can also be reached on the next automatic send.');
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const approveAllInternal = async () => {
+    setBusy('approveall'); setErr('');
+    try { await seoSocialApproveAll(site, cal.id); setBanner(`✓ ${readyCount} posts approved.`); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
   const pushGhl = async () => {
     setBusy('push'); setErr(''); setProg(`🚀 Pushing ${toPush} approved posts to GoHighLevel…`);
     try {
@@ -1008,7 +1032,14 @@ export function Social() {
         <div class="flex flex-wrap items-center gap-2">
           ${cal && posts.some((p) => p.status === 'written') && html`<${Btn} size="sm" variant="cta" onClick=${genMedia} disabled=${!!busy}>${busy === 'media' ? 'Generating…' : '🎨 Generate all media'}</${Btn}>`}
           ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="cta" onClick=${() => setRevId((posts.find((p) => p.status === 'ready') || posts[0]).id)} disabled=${!!busy}>👀 Review ${readyCount}</${Btn}>`}
-          ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="success" onClick=${async () => { await seoSocialApproveAll(site, cal.id); setBanner(`✓ ${readyCount} posts approved.`); await load(); }} disabled=${!!busy}>✓ Approve all</${Btn}>`}
+          ${cal && readyCount > 0 && (() => {
+            // No client approval email set → the agency approves internally.
+            if (!appr?.emailConfigured) return html`<${Btn} size="sm" variant="success" onClick=${approveAllInternal} disabled=${!!busy}>${busy === 'approveall' ? 'Approving…' : '✓ Approve all'}</${Btn}>`;
+            const st = appr.approval?.status;
+            if (st === 'pending') return html`<span class="inline-flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">📤 Sent to client — awaiting approval <button onClick=${sendToClient} disabled=${!!busy} class="underline decoration-dotted hover:text-emerald-900">${busy === 'send' ? 'Resending…' : 'Resend'}</button></span>`;
+            if (st === 'changes') return html`<span class="inline-flex items-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">↻ Revisions generating — the client gets a fresh link automatically</span>`;
+            return html`<${Btn} size="sm" variant="success" onClick=${sendToClient} disabled=${!!busy}>${busy === 'send' ? 'Sending…' : '📤 Send all to client for approval'}</${Btn}>`;
+          })()}
           ${cal && toPush > 0 && html`<${Btn} size="sm" variant="cta" onClick=${pushGhl} disabled=${!!busy}>${busy === 'push' ? 'Pushing…' : `🚀 Push ${toPush} to GHL`}</${Btn}>`}
           ${cal && pushedCount > 0 && toPush === 0 && html`<span class="text-xs text-emerald-600">🚀 ${pushedCount} scheduled in GHL</span>`}
           <${Btn} size="sm" onClick=${planMonth} disabled=${!!busy}>${busy === 'plan' ? 'Planning…' : cal ? '↻ Re-plan month' : '🧠 Plan this month'}</${Btn}>
