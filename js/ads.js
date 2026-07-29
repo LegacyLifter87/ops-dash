@@ -160,40 +160,46 @@ function DevTokenCard({ st, onChange }) {
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState('');
   const [label, setLabel] = useState('');
+  const [agencyWide, setAgencyWide] = useState(!!st.has_agency);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const own = st.dev_token_own;
+  const configured = st.dev_token_agency || st.dev_token_own; // token actively in play, if any
+  const useAgency = agencyWide && st.has_agency;
   const save = async () => {
     setBusy(true); setErr('');
-    try { await seoAdsSetDevToken(token.trim(), label.trim()); setToken(''); setLabel(''); setOpen(false); await onChange(); }
+    try { await seoAdsSetDevToken(token.trim(), label.trim(), useAgency ? 'agency' : 'account'); setToken(''); setLabel(''); setOpen(false); await onChange(); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   const clear = async () => {
-    if (!confirm('Remove this account\'s own developer token and fall back to the platform token?')) return;
+    const scope = st.dev_token_source === 'agency' ? 'agency' : 'account';
+    if (!confirm(scope === 'agency' ? 'Remove the agency-wide developer token for every client in this agency?' : 'Remove this client\'s own developer token?')) return;
     setBusy(true); setErr('');
-    try { await seoAdsClearDevToken(); await onChange(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    try { await seoAdsClearDevToken(scope); await onChange(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
-  const srcPill = st.dev_token_source === 'account'
-    ? html`<${Pill} cls="bg-brand-100 text-brand-700">own token</${Pill}>`
-    : st.dev_token_source === 'platform'
-      ? html`<${Pill} cls="bg-slate-100 text-slate-600">platform token</${Pill}>`
-      : html`<${Pill} cls="bg-amber-100 text-amber-700">none configured</${Pill}>`;
+  const srcPill = st.dev_token_source === 'agency'
+    ? html`<${Pill} cls="bg-brand-100 text-brand-700">agency token</${Pill}>`
+    : st.dev_token_source === 'account'
+      ? html`<${Pill} cls="bg-brand-100 text-brand-700">this client only</${Pill}>`
+      : st.dev_token_source === 'platform'
+        ? html`<${Pill} cls="bg-slate-100 text-slate-600">platform token</${Pill}>`
+        : html`<${Pill} cls="bg-amber-100 text-amber-700">none configured</${Pill}>`;
   return html`<${Card}><div class="p-4 space-y-2 text-sm">
     <div class="flex items-center justify-between gap-2 flex-wrap">
       <div class="flex items-center gap-2">
         <span class="font-medium text-slate-700">Developer token</span>${srcPill}
-        ${own && html`<code class="text-xs text-slate-400">${own.masked}${own.label ? ' · ' + own.label : ''}</code>`}
+        ${configured && html`<code class="text-xs text-slate-400">${configured.masked}${configured.label ? ' · ' + configured.label : ''}</code>`}
       </div>
       <div class="flex gap-2">
-        ${own && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Use platform token</${Btn}>`}
-        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : own ? 'Replace' : 'Use own token'}</${Btn}>
+        ${configured && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Remove</${Btn}>`}
+        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : configured ? 'Replace' : 'Add token'}</${Btn}>
       </div>
     </div>
-    <p class="text-xs text-slate-500">One shared platform token covers every client that connects — clients never need their own. Override it here only if this account should bill against its own Google Ads API quota.</p>
+    <p class="text-xs text-slate-500">Google Ads needs a developer token (Basic Access, from your Google Ads Manager account → API Center) before it can list accounts or pull data. One token covers every client in your agency — enter it once here.</p>
     ${open && html`<div class="space-y-2 pt-1">
       <${Input} value=${token} onInput=${setToken} placeholder="Developer token from Google Ads Manager → API Center" />
-      <${Input} value=${label} onInput=${setLabel} placeholder="Label (e.g. Acme Agency MCC) — optional" />
-      <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save token'}</${Btn}>
+      <${Input} value=${label} onInput=${setLabel} placeholder="Label (e.g. Legacy Agency MCC) — optional" />
+      ${st.has_agency && html`<label class="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked=${agencyWide} onChange=${(e) => setAgencyWide(e.target.checked)} /> Apply to all clients in this agency (recommended)</label>`}
+      <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : useAgency ? 'Save for all clients' : 'Save token'}</${Btn}>
     </div>`}
     ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
   </div></${Card}>`;
