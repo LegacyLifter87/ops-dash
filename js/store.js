@@ -559,7 +559,10 @@ export const seoMemberRevoke = (userId) => seoInvokeTeam('member_revoke', { user
 export const seoSuperListAdmins = () => seoInvokeTeam('super_list_admins', {});
 export const seoSuperAddAdmin = (email) => seoInvokeTeam('super_add_admin', { email });
 export const seoSuperRemoveAdmin = (userId) => seoInvokeTeam('super_remove_admin', { userId });
-export const seoAgencyInfo = (accountId) => seoInvokeTeam('agency_info', accountId ? { accountId } : {});
+// Pass accountId:null with NO account so the injected active-account id is
+// overridden and the request takes the OWNER path — which is the only path that
+// returns the internal socialDirectorEmail. Businesses still read via accountId.
+export const seoAgencyInfo = (accountId) => seoInvokeTeam('agency_info', accountId ? { accountId } : { accountId: null });
 export const seoAgencyUpdateInfo = (fields) => seoInvokeTeam('agency_update_info', fields);
 
 // ── Blog automation (seo-autoblog) ──────────────────────────────────────────

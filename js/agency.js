@@ -16,17 +16,16 @@ function ContactCard({ onBanner }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  useEffect(() => {
-    seoAgencyInfo().then((r) => setForm({
-      contactName: r.agency?.contactName || '', contactEmail: r.agency?.contactEmail || '',
-      contactPhone: r.agency?.contactPhone || '', contactWebsite: r.agency?.contactWebsite || '',
-      socialDirectorEmail: r.agency?.socialDirectorEmail || '',
-    })).catch((e) => { setErr(e.message); setForm({ contactName: '', contactEmail: '', contactPhone: '', contactWebsite: '', socialDirectorEmail: '' }); });
-  }, []);
+  const load = () => seoAgencyInfo().then((r) => setForm({
+    contactName: r.agency?.contactName || '', contactEmail: r.agency?.contactEmail || '',
+    contactPhone: r.agency?.contactPhone || '', contactWebsite: r.agency?.contactWebsite || '',
+    socialDirectorEmail: r.agency?.socialDirectorEmail || '',
+  })).catch((e) => { setErr(e.message); setForm({ contactName: '', contactEmail: '', contactPhone: '', contactWebsite: '', socialDirectorEmail: '' }); });
+  useEffect(() => { load(); }, []);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const save = async () => {
     setBusy(true); setErr('');
-    try { await seoAgencyUpdateInfo(form); onBanner('✅ Agency details saved.'); }
+    try { await seoAgencyUpdateInfo(form); await load(); onBanner('✅ Agency details saved.'); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   return html`<${Card}><div class="p-4">
