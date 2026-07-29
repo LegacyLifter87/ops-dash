@@ -488,6 +488,10 @@ export const seoAdsDisconnect = () => seoInvokeAds('ads_disconnect');
 // BYO developer token (agency only). Default is the shared platform token.
 export const seoAdsSetDevToken = (token, label, scope) => seoInvokeAds('ads_set_dev_token', { token, label, scope });
 export const seoAdsClearDevToken = (scope) => seoInvokeAds('ads_clear_dev_token', { scope });
+// ONE developer token for the whole platform (overall_admin only) — set once,
+// then every user just signs in with Google.
+export const seoAdsSetPlatformToken = (token) => seoInvokeAds('ads_set_platform_token', { token });
+export const seoAdsClearPlatformToken = () => seoInvokeAds('ads_clear_platform_token');
 // --- Google Analytics 4 reporting (account-scoped; per-client OAuth) ---
 async function seoInvokeGa(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-ga', { body: { action, accountId: getActiveAccountId(), ...extra } });

@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -49,52 +49,54 @@ function ContactCard({ onBanner }) {
   </div></${Card}>`;
 }
 
-// One-time Google Ads API setup for the whole agency. Google requires a
-// developer token before any app can read Ads data; entered once here it covers
-// every client, so businesses just sign in with Google and pick their account —
-// they never see this. Stored agency-scoped (seo_ads_dev_tokens scope 'agency').
+// ONE-TIME Google Ads setup for the WHOLE PLATFORM. Google requires a developer
+// token before any app can read Ads data (Gmail sign-in alone can't); there is
+// exactly one, the platform operator's. The super-admin enters it once here
+// (app_secrets.google_ads_developer_token) and from then on every user — this
+// agency, other agencies, and businesses with their own ad account — just signs
+// in with Google. Non-super owners only see the status, nothing to enter.
 function GoogleAdsTokenCard({ onBanner }) {
   const [st, setSt] = useState(null);
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState('');
-  const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const load = () => seoAdsStatus().then(setSt).catch((e) => { setErr(e.message); setSt({}); });
   useEffect(() => { load(); }, []);
-  const configured = st?.dev_token_agency || null;
+  const src = st?.dev_token_source;                 // 'platform' | 'agency' | 'account' | null
+  const configured = src === 'platform' || src === 'agency' || src === 'account';
+  const isSuper = !!st?.superadmin;
   const save = async () => {
     setBusy(true); setErr('');
-    try { await seoAdsSetDevToken(token.trim(), label.trim(), 'agency'); setToken(''); setLabel(''); setOpen(false); await load(); onBanner('✅ Google Ads is set up for every client in this agency.'); }
+    try { await seoAdsSetPlatformToken(token.trim()); setToken(''); setOpen(false); await load(); onBanner('✅ Google Ads is set up across the whole platform — everyone just signs in with Google now.'); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   const clear = async () => {
-    if (!confirm('Remove the Google Ads API token for every client in this agency? Reporting stops until a token is added again.')) return;
+    if (!confirm('Remove the platform Google Ads token? Reporting stops for every business until it is set again.')) return;
     setBusy(true); setErr('');
-    try { await seoAdsClearDevToken('agency'); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    try { await seoAdsClearPlatformToken(); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   return html`<${Card}><div class="p-4">
     <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
-      <div class="font-semibold text-slate-800">Google Ads <span class="text-xs font-normal text-slate-400">— one-time API setup for every client</span></div>
+      <div class="font-semibold text-slate-800">Google Ads <span class="text-xs font-normal text-slate-400">— one-time setup for the whole platform</span></div>
       ${st !== null && (configured
         ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ connected</span>`
-        : st.dev_token_source === 'platform'
-          ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">platform token</span>`
-          : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">not set</span>`)}
+        : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">not set</span>`)}
     </div>
-    <p class="text-xs text-slate-400 mb-3">Google requires a developer token (Basic Access — from your Google Ads Manager account → API Center) before any app can read Ads data. Enter it once here and every business just signs in with Google and picks its ad account; they never see this step.</p>
-    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
-      <div class="flex items-center gap-2 flex-wrap">
-        ${configured && html`<code class="text-xs text-slate-500">${configured.masked}${configured.label ? ' · ' + configured.label : ''}</code>`}
-        ${configured && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Remove</${Btn}>`}
-        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : configured ? 'Replace token' : 'Add token'}</${Btn}>
-      </div>
-      ${open && html`<div class="space-y-2 pt-3 max-w-md">
-        <${Field} label="Developer token"><${Input} value=${token} onInput=${setToken} placeholder="From Google Ads Manager → API Center" /></${Field}>
-        <${Field} label="Label (optional)"><${Input} value=${label} onInput=${setLabel} placeholder="Legacy Agency MCC" /></${Field}>
-        <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save for all clients'}</${Btn}>
-      </div>`}
-      ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}`}
+    <p class="text-xs text-slate-400 mb-3">Google requires one developer token (Basic Access — from your Google Ads Manager account → API Center) before any app can read Ads data. Enter it once here and it covers the entire platform: your agency, every business, and any customer with their own ad account all just sign in with Google and pick their account. Nobody else ever sees this.</p>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>`
+      : configured
+        ? html`<div class="text-sm text-emerald-700">✓ Connected for the whole platform. Everyone just signs in with Google and chooses their ad account.${src !== 'platform' ? ' (Currently using an agency-level token.)' : ''}
+            ${isSuper && html`<div class="mt-2 flex gap-2"><${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : 'Replace token'}</${Btn}>${src === 'platform' ? html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Remove</${Btn}>` : ''}</div>`}
+          </div>`
+        : isSuper
+          ? (open ? '' : html`<${Btn} size="sm" onClick=${() => setOpen(true)}>Add platform token</${Btn}>`)
+          : html`<div class="text-sm text-slate-500">Your platform administrator is finishing Google Ads setup — there's nothing you need to do here.</div>`}
+    ${isSuper && open && html`<div class="space-y-2 pt-3 max-w-md">
+      <${Field} label="Developer token"><${Input} value=${token} onInput=${setToken} placeholder="From Google Ads Manager → API Center" /></${Field}>
+      <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save for the whole platform'}</${Btn}>
+    </div>`}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
   </div></${Card}>`;
 }
 
