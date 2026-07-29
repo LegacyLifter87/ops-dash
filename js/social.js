@@ -89,7 +89,7 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
       // Re-read so persisted cert rows (and their badge slots) are current.
       const r2 = await seoSocialProfile(site);
       setP(r2.profile || {});
@@ -171,7 +171,7 @@ export function BrandKit({ site, onBanner }) {
         // first so the upload has a row to attach to.
         const saved = (p?.certifications || []).some((x) => x?.id === certId);
         if (!saved) {
-          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
         }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
@@ -309,7 +309,7 @@ export function PlanCard({ site, onBanner }) {
       const m = {};
       (Array.isArray(pr.plan?.serviceMix) ? pr.plan.serviceMix : []).forEach((x) => { if (x?.service) m[x.service] = Number(x.posts) || 0; });
       setMix(m);
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'] });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'] });
     }).catch((e) => { setErr(e.message); });
     // Service rows carry over automatically from the website map (Strategy tab).
     seoStrategyPages(site).then((r) => setMapSvcs([...new Set((r.pages || []).filter((p2) => p2.is_service).map((p2) => p2.service_name || p2.path).filter(Boolean))])).catch(() => setMapSvcs([]));
@@ -325,7 +325,7 @@ export function PlanCard({ site, onBanner }) {
     setBusy('save'); setErr('');
     try {
       const serviceMix = Object.entries(mix).map(([service, posts]) => ({ service, posts: Number(posts) || 0 })).filter((m) => m.posts > 0);
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources, serviceMix } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: f.promotion, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources, serviceMix } });
       onBanner('✅ Posting plan saved — it applies from the next month you plan.');
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -355,6 +355,12 @@ export function PlanCard({ site, onBanner }) {
         <${Btn} size="sm" variant="secondary" onClick=${syncReviews} disabled=${busy === 'reviews'}>${busy === 'reviews' ? 'Syncing…' : reviews.pending ? '⭐ Finish review sync' : '⭐ Sync Google reviews'}</${Btn}>
         ${reviews.count === 0 && !reviews.pending && html`<span class="text-slate-400">Sync pulls them from Google (takes a minute or two).</span>`}`}
     </div>`}
+    <div class="mt-4">
+      <${Field} label="🎁 Current promotion (this month's real offer — used word-for-word in promo posts; leave empty for none)">
+        <${Textarea} rows="2" value=${f.promotion} onInput=${(v) => setF({ ...f, promotion: v })} placeholder="$150 off any full exterior wash booked by August 31 — new customers only" />
+      </${Field}>
+      <p class="text-xs text-slate-400 mt-1">Promo posts feature exactly this offer (terms and deadline included). With nothing here, promo posts push free estimates instead — the AI never invents a discount. Clear it when the promotion ends.</p>
+    </div>
     <div class="mt-4">
       <div class="text-sm font-medium text-slate-700">⚖️ Post balance by service</div>
       <p class="text-xs text-slate-400 mb-2">Your services carry over from the website map (Strategy tab). Give each one a share of the month's posts — whatever you leave unallocated, the AI strategy balances for you.</p>
