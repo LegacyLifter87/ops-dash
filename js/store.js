@@ -615,7 +615,7 @@ export const seoSocialCertUpload = (siteId, certId, dataBase64, contentType) => 
 // the first call starts collection, a later call imports the results.
 export const seoSocialReviewsSync = (siteId) => seoInvokeSocial('reviews_sync', { siteId });
 export const seoSocialReviewsList = (siteId) => seoInvokeSocial('reviews_list', { siteId });
-export const seoSocialPlanMonth = (siteId, month) => seoInvokeSocial('plan_month', { siteId, month });
+export const seoSocialPlanMonth = (siteId, month, holidays) => seoInvokeSocial('plan_month', { siteId, month, holidays });
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });
 export const seoSocialRegenMedia = (siteId, postId) => seoInvokeSocial('regen_media', { siteId, postId });

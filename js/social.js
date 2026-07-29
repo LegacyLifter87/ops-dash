@@ -68,6 +68,40 @@ const BROKEN_IMG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http:
 const imgFallback = (e) => { if (e.target.src !== BROKEN_IMG) e.target.src = BROKEN_IMG; };
 const nextMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
+// --- US holiday catalog for the month planner ------------------------------
+// Federal holidays + widely celebrated national days + a few fun ones so every
+// month has something. Floating dates are computed (nth weekday, last weekday,
+// Easter via the anonymous Gregorian computus). solemn = honor-first, never
+// promotional (enforced by the planner/writer prompts).
+const nthDow = (y, mo, dow, n) => { const first = new Date(y, mo - 1, 1).getDay(); return 1 + ((dow - first + 7) % 7) + (n - 1) * 7; };
+const lastDow = (y, mo, dow) => { const days = new Date(y, mo, 0).getDate(); const last = new Date(y, mo - 1, days).getDay(); return days - ((last - dow + 7) % 7); };
+function easterDay(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return { mo: Math.floor((h + l - 7 * m + 114) / 31), day: ((h + l - 7 * m + 114) % 31) + 1 };
+}
+export function holidaysForMonth(ym) {
+  const [y, mo] = String(ym || '').split('-').map(Number);
+  if (!y || !mo) return [];
+  const H = [];
+  const add = (day, name, kind, solemn) => H.push({ date: `${ym}-${String(day).padStart(2, '0')}`, name, kind, ...(solemn ? { solemn: true } : {}) });
+  if (mo === 1) { add(1, "New Year's Day", 'federal'); add(nthDow(y, 1, 1, 3), 'Martin Luther King Jr. Day', 'federal'); }
+  if (mo === 2) { add(2, 'Groundhog Day', 'fun'); add(nthDow(y, 2, 0, 2), 'Super Bowl Sunday', 'fun'); add(14, "Valentine's Day", 'national'); add(nthDow(y, 2, 1, 3), "Presidents' Day", 'federal'); }
+  if (mo === 3) { add(14, 'Pi Day', 'fun'); add(17, "St. Patrick's Day", 'national'); }
+  if (mo === 4) { add(1, "April Fools' Day", 'fun'); add(22, 'Earth Day', 'national'); }
+  if (mo === 5) { add(5, 'Cinco de Mayo', 'fun'); add(nthDow(y, 5, 0, 2), "Mother's Day", 'national'); add(lastDow(y, 5, 1), 'Memorial Day', 'federal', true); }
+  if (mo === 6) { add(14, 'Flag Day', 'national'); add(19, 'Juneteenth', 'federal'); add(nthDow(y, 6, 0, 3), "Father's Day", 'national'); }
+  if (mo === 7) { add(4, 'Independence Day', 'federal'); add(nthDow(y, 7, 0, 3), 'National Ice Cream Day', 'fun'); }
+  if (mo === 8) { add(15, 'National Relaxation Day', 'fun'); add(26, 'National Dog Day', 'fun'); }
+  if (mo === 9) { add(nthDow(y, 9, 1, 1), 'Labor Day', 'federal'); add(11, 'Patriot Day (9/11 Remembrance)', 'national', true); add(29, 'National Coffee Day', 'fun'); }
+  if (mo === 10) { add(nthDow(y, 10, 1, 2), "Indigenous Peoples' Day", 'federal'); add(31, 'Halloween', 'national'); }
+  if (mo === 11) { const tg = nthDow(y, 11, 4, 4); add(11, 'Veterans Day', 'federal', true); add(tg, 'Thanksgiving', 'federal'); add(tg + 1, 'Black Friday', 'fun'); add(tg + 2, 'Small Business Saturday', 'fun'); }
+  if (mo === 12) { add(24, 'Christmas Eve', 'national'); add(25, 'Christmas Day', 'federal'); add(31, "New Year's Eve", 'national'); }
+  const e = easterDay(y);
+  if (e.mo === mo) add(e.day, 'Easter Sunday', 'national');
+  return H.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function BrandKit({ site, onBanner }) {
   const [p, setP] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
@@ -800,6 +834,10 @@ export function Social() {
   const [sites, setSites] = useState(null);
   const [site, setSite] = useState('');
   const [month, setMonth] = useState(nextMonth());
+  const [skipHols, setSkipHols] = useState(new Set()); // deselected holiday names (per month)
+  useEffect(() => { setSkipHols(new Set()); }, [month]);
+  const monthHols = holidaysForMonth(month);
+  const pickedHols = monthHols.filter((h) => !skipHols.has(h.name));
   const [cal, setCal] = useState(null);   // calendar row or null
   const [posts, setPosts] = useState([]);
   const [photos, setPhotos] = useState(null); // real-photo library (shared w/ ReviewModal)
@@ -835,7 +873,7 @@ export function Social() {
     if (cal && !confirm('Re-planning replaces the existing calendar for this month (all drafts). Continue?')) return;
     setBusy('plan'); setErr(''); setProg('🧠 Planning the month — pillars, topics, cities, times…');
     try {
-      const r = await seoSocialPlanMonth(site, month);
+      const r = await seoSocialPlanMonth(site, month, pickedHols);
       setProg(`✍️ Writing captions for ${r.posts} posts…`);
       let remaining = r.posts;
       while (remaining > 0) {
@@ -928,6 +966,20 @@ export function Social() {
           <${Btn} size="sm" onClick=${planMonth} disabled=${!!busy}>${busy === 'plan' ? 'Planning…' : cal ? '↻ Re-plan month' : '🧠 Plan this month'}</${Btn}>
         </div>
       </div>
+      ${monthHols.length > 0 && html`<div class="mb-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2">
+        <div class="text-xs font-medium text-slate-600">🎉 Holidays this month <span class="font-normal text-slate-400">— posts will celebrate the selected ones (tap to skip any)</span></div>
+        <div class="flex flex-wrap gap-1.5 mt-1.5">
+          ${monthHols.map((h) => {
+            const on = !skipHols.has(h.name);
+            return html`<button key=${h.name} onClick=${() => setSkipHols((s) => { const n = new Set(s); if (n.has(h.name)) n.delete(h.name); else n.add(h.name); return n; })}
+              title=${`${new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}${h.solemn ? ' · observed respectfully, never promotional' : ''}`}
+              class=${cx('text-xs px-2.5 py-1 rounded-full border transition-colors', on ? (h.solemn ? 'bg-slate-600 text-white border-slate-600' : h.kind === 'fun' ? 'bg-violet-500 text-white border-violet-500' : 'bg-brand-500 text-white border-brand-500') : 'bg-white text-slate-400 border-slate-200 line-through')}>
+              ${on ? '✓ ' : ''}${h.name} <span class=${on ? 'opacity-70' : ''}>${Number(h.date.slice(8, 10))}${h.solemn ? ' 🕊' : ''}</span>
+            </button>`;
+          })}
+        </div>
+        ${pickedHols.length === 0 && html`<div class="text-[11px] text-slate-400 mt-1">All skipped — this month will be planned with no holiday posts.</div>`}
+      </div>`}
       ${!cal ? html`<div class="text-sm text-slate-400 py-8 text-center">No calendar for this month yet — set up the brand kit above, then click <span class="font-medium">Plan this month</span>.</div>` : html`
         ${cal.strategy?.idealClient && html`<div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3"><span class="font-medium">Ideal client:</span> ${cal.strategy.idealClient}${cal.strategy.themes?.length ? html`<span class="font-medium"> · Themes:</span> ${cal.strategy.themes.join(' · ')}` : ''}</div>`}
         <div class="flex flex-wrap gap-1.5 mb-3">
