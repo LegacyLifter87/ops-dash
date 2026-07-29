@@ -690,21 +690,22 @@ export function GhlCard({ site, onBanner }) {
         </div>
         <div class="mt-2"><${Btn} size="sm" onClick=${saveSel} disabled=${busy === 'sel'}>${busy === 'sel' ? 'Saving…' : 'Save accounts'}</${Btn}></div>
       </div>`}
-      <div class="space-y-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <${Btn} variant="cta" onClick=${signIn} disabled=${busy === 'oauth'}>${busy === 'oauth' ? 'Waiting for GoHighLevel… (finish sign-in in the other tab)' : st.connected ? '🔑 Sign in again' : '🔑 Sign in with GoHighLevel'}</${Btn}>
-          ${st.connected && st.ghl?.authMode === 'oauth' && html`<${Btn} size="sm" variant="secondary" onClick=${async () => { setBusy('ref'); try { await seoSocialGhlRefreshAccounts(site); await load(); onBanner('↻ Social accounts refreshed from GoHighLevel.'); } catch (e) { setErr(e.message); } finally { setBusy(''); } }} disabled=${!!busy}>↻ Refresh accounts</${Btn}>`}
+      <div class="space-y-3">
+        <div>
+          <div class="text-xs font-medium text-slate-500 mb-1">${st.connected ? 'Reconnect with a Private Integration token' : 'Connect this client’s sub-account'}</div>
+          <p class="text-xs text-slate-500 mb-2">In the client's GHL <span class="font-medium">sub-account</span>: Settings → <span class="font-medium">Private Integrations</span> → New Integration with scopes <span class="font-medium">View Social Planner, Edit Social Planner, View Users, View Locations</span> → copy the token. The Location ID is in Settings → Business Profile. <span class="text-slate-400">This is the reliable path for agencies — it links the exact sub-account with no sign-in redirect.</span></p>
+          <div class="flex flex-wrap items-end gap-2">
+            <div class="min-w-[180px]"><label class="text-[11px] text-slate-400">Location ID</label><${Input} value=${locId} onInput=${setLocId} placeholder="ve9EPM428h8vShlRW1KT" /></div>
+            <div class="flex-1 min-w-[240px]"><label class="text-[11px] text-slate-400">Private Integration token</label><${Input} type="password" value=${token} onInput=${setToken} placeholder="pit-…" /></div>
+            <${Btn} variant="cta" onClick=${connect} disabled=${busy === 'conn' || !locId.trim() || !token.trim()}>${busy === 'conn' ? 'Connecting…' : st.connected ? 'Reconnect' : 'Connect'}</${Btn}>
+          </div>
         </div>
-        <p class="text-xs text-slate-500">A GoHighLevel window opens — pick the client's sub-account there and this tab connects automatically (the window closes itself). <span class="text-slate-400">If GoHighLevel opens its dashboard instead of the account picker, you're already signed in — just close that window and click again, and it'll go straight to the picker.</span></p>
+        ${st.connected && html`<${Btn} size="sm" variant="secondary" onClick=${async () => { setBusy('ref'); try { await seoSocialGhlRefreshAccounts(site); await load(); onBanner('↻ Social accounts refreshed from GoHighLevel.'); } catch (e) { setErr(e.message); } finally { setBusy(''); } }} disabled=${!!busy}>↻ Refresh accounts</${Btn}>`}
         <details>
-          <summary class="text-xs text-slate-400 cursor-pointer">Advanced: connect with a Private Integration token instead</summary>
-          <div class="mt-2 space-y-2">
-            <p class="text-xs text-slate-500">In the client's GHL <span class="font-medium">sub-account</span>: Settings → <span class="font-medium">Private Integrations</span> → New Integration with scopes <span class="font-medium">View Social Planner, Edit Social Planner, View Users, View Locations</span> → copy the token. The Location ID is in Settings → Business Profile.</p>
-            <div class="flex flex-wrap items-end gap-2">
-              <div class="min-w-[180px]"><label class="text-[11px] text-slate-400">Location ID</label><${Input} value=${locId} onInput=${setLocId} placeholder="ve9EPM428h8vShlRW1KT" /></div>
-              <div class="flex-1 min-w-[240px]"><label class="text-[11px] text-slate-400">Private Integration token</label><${Input} type="password" value=${token} onInput=${setToken} placeholder="pit-…" /></div>
-              <${Btn} size="sm" onClick=${connect} disabled=${busy === 'conn' || !locId.trim() || !token.trim()}>${busy === 'conn' ? 'Connecting…' : st.connected ? 'Reconnect' : 'Connect'}</${Btn}>
-            </div>
+          <summary class="text-xs text-slate-400 cursor-pointer">Or try one-click sign-in with GoHighLevel</summary>
+          <div class="mt-2 space-y-1">
+            <${Btn} size="sm" variant="secondary" onClick=${signIn} disabled=${busy === 'oauth'}>${busy === 'oauth' ? 'Waiting for GoHighLevel…' : '🔑 Sign in with GoHighLevel'}</${Btn}>
+            <p class="text-[11px] text-slate-400">Heads-up: if you're signed into GoHighLevel as an <span class="font-medium">agency</span>, this opens your agency dashboard instead of a sub-account picker — use the token method above for agency-managed clients.</p>
           </div>
         </details>
       </div>
