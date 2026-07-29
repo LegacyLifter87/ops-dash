@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -89,7 +89,7 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
       // Re-read so persisted cert rows (and their badge slots) are current.
       const r2 = await seoSocialProfile(site);
       setP(r2.profile || {});
@@ -171,7 +171,7 @@ export function BrandKit({ site, onBanner }) {
         // first so the upload has a row to attach to.
         const saved = (p?.certifications || []).some((x) => x?.id === certId);
         if (!saved) {
-          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])] } });
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
         }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
@@ -295,24 +295,37 @@ const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '�
 export function PlanCard({ site, onBanner }) {
   const [f, setF] = useState(null); // full profile form (subset edited here)
   const [reviews, setReviews] = useState(null); // { count, pending, syncedAt }
+  const [mix, setMix] = useState({}); // { serviceName: posts } — owner allocation
+  const [mapSvcs, setMapSvcs] = useState(null); // service names from the website map
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
 
   const loadReviews = () => seoSocialReviewsList(site).then((r) => setReviews({ count: (r.reviews || []).length, fresh: (r.reviews || []).filter((x) => !x.used_month).length, pending: r.pending, syncedAt: r.syncedAt })).catch(() => setReviews({ count: 0, fresh: 0, pending: false, syncedAt: null }));
   useEffect(() => {
-    setF(null); setReviews(null); setErr('');
+    setF(null); setReviews(null); setErr(''); setMix({}); setMapSvcs(null);
     if (!site) return;
     seoSocialProfile(site).then((r) => {
       const pr = r.profile || {};
+      const m = {};
+      (Array.isArray(pr.plan?.serviceMix) ? pr.plan.serviceMix : []).forEach((x) => { if (x?.service) m[x.service] = Number(x.posts) || 0; });
+      setMix(m);
       setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'] });
     }).catch((e) => { setErr(e.message); });
+    // Service rows carry over automatically from the website map (Strategy tab).
+    seoStrategyPages(site).then((r) => setMapSvcs([...new Set((r.pages || []).filter((p2) => p2.is_service).map((p2) => p2.service_name || p2.path).filter(Boolean))])).catch(() => setMapSvcs([]));
     loadReviews();
   }, [site]);
 
+  const allot = f ? Number(f.postsPerDay) * 30 : 0; // posts included in the plan (~30-day month)
+  const allocated = Object.values(mix).reduce((a, n) => a + (Number(n) || 0), 0);
+  const svcNames = [...new Set([...(mapSvcs || []), ...Object.keys(mix)])];
+
   const save = async () => {
+    if (allocated > allot) { setErr(`You've balanced ${allocated} posts but the plan only includes ${allot} per month (${f.postsPerDay}/day × 30). Lower some services.`); return; }
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources } });
+      const serviceMix = Object.entries(mix).map(([service, posts]) => ({ service, posts: Number(posts) || 0 })).filter((m) => m.posts > 0);
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources, serviceMix } });
       onBanner('✅ Posting plan saved — it applies from the next month you plan.');
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -342,6 +355,23 @@ export function PlanCard({ site, onBanner }) {
         <${Btn} size="sm" variant="secondary" onClick=${syncReviews} disabled=${busy === 'reviews'}>${busy === 'reviews' ? 'Syncing…' : reviews.pending ? '⭐ Finish review sync' : '⭐ Sync Google reviews'}</${Btn}>
         ${reviews.count === 0 && !reviews.pending && html`<span class="text-slate-400">Sync pulls them from Google (takes a minute or two).</span>`}`}
     </div>`}
+    <div class="mt-4">
+      <div class="text-sm font-medium text-slate-700">⚖️ Post balance by service</div>
+      <p class="text-xs text-slate-400 mb-2">Your services carry over from the website map (Strategy tab). Give each one a share of the month's posts — whatever you leave unallocated, the AI strategy balances for you.</p>
+      ${mapSvcs === null && html`<div class="text-xs text-slate-400">Loading services…</div>`}
+      ${mapSvcs !== null && svcNames.length === 0 && html`<div class="text-xs text-amber-700">No service pages designated yet — mark them on the Strategy tab and they'll appear here.</div>`}
+      ${svcNames.length > 0 && html`<div class="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+        ${svcNames.map((name) => html`<div class="flex items-center justify-between gap-2 text-sm" key=${name}>
+          <span class="text-slate-700 truncate" title=${name}>${name}</span>
+          <input type="number" min="0" max=${allot} value=${mix[name] ?? ''} placeholder="0"
+            onInput=${(e) => { const v = e.target.value; setMix((m) => ({ ...m, [name]: v === '' ? 0 : Math.max(0, Math.floor(Number(v) || 0)) })); }}
+            class="w-16 shrink-0 border border-slate-200 rounded-lg px-2 py-1 text-sm text-right" />
+        </div>`)}
+      </div>
+      <div class=${cx('text-xs mt-2', allocated > allot ? 'text-rose-600 font-medium' : 'text-slate-500')}>
+        ${allocated} of ${allot} monthly post${allot === 1 ? '' : 's'} balanced${allocated > allot ? ` — that's ${allocated - allot} over the plan; lower some counts.` : allocated < allot ? ` · ${allot - allocated} left for the AI strategy to balance.` : ' · fully allocated.'}
+      </div>`}
+    </div>
     <div class="grid sm:grid-cols-2 gap-3 mt-3">
       <${Field} label="Comment trigger word (optional — pairs with your comment automation)"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
       <${Field} label="What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
