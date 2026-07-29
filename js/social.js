@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -348,6 +348,7 @@ export function PlanCard({ site, onBanner }) {
   const [mapSvcs, setMapSvcs] = useState(null); // service names from the website map
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [apMsg, setApMsg] = useState(''); // autopilot run/status message
 
   const loadReviews = () => seoSocialReviewsList(site).then((r) => setReviews({ count: (r.reviews || []).length, fresh: (r.reviews || []).filter((x) => !x.used_month).length, pending: r.pending, syncedAt: r.syncedAt })).catch(() => setReviews({ count: 0, fresh: 0, pending: false, syncedAt: null }));
   useEffect(() => {
@@ -358,7 +359,7 @@ export function PlanCard({ site, onBanner }) {
       const m = {};
       (Array.isArray(pr.plan?.serviceMix) ? pr.plan.serviceMix : []).forEach((x) => { if (x?.service) m[x.service] = Number(x.posts) || 0; });
       setMix(m);
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'], manualServices: Array.isArray(pr.manual_services) ? pr.manual_services : [] });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'], manualServices: Array.isArray(pr.manual_services) ? pr.manual_services : [], autopilot: !!pr.autopilot });
     }).catch((e) => { setErr(e.message); });
     // Service rows carry over automatically from the website map (Strategy tab).
     seoStrategyPages(site).then((r) => setMapSvcs([...new Set((r.pages || []).filter((p2) => p2.is_service).map((p2) => p2.service_name || p2.path).filter(Boolean))])).catch(() => setMapSvcs([]));
@@ -380,6 +381,24 @@ export function PlanCard({ site, onBanner }) {
       onBanner('✅ Posting plan saved — it applies from the next month you plan.');
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
+  // Autopilot toggles save immediately (conditional write — never touches the
+  // rest of the profile). ON = on the 1st, next month is planned, written,
+  // imaged, then the agency manager is emailed that it's ready for review.
+  const toggleAutopilot = async (val) => {
+    setErr(''); setApMsg(''); setF((x) => ({ ...x, autopilot: val }));
+    try { await seoSocialProfileSave(site, { autopilot: val }); onBanner(val ? '🤖 Autopilot ON — next month generates automatically on the 1st.' : 'Autopilot turned off.'); }
+    catch (e) { setErr(e.message); setF((x) => ({ ...x, autopilot: !val })); }
+  };
+  const runAutopilotNow = async () => {
+    setBusy('autopilot'); setErr(''); setApMsg('');
+    try {
+      const r = await seoAutopilotRunNow(site);
+      setApMsg(r.alreadyPlanned
+        ? `${r.month} is already planned — autopilot will finish generating it and email the agency manager.`
+        : `Started ${r.month}: ${r.posts} posts planned. Captions and images generate automatically over the next little while, then the agency manager is emailed when it's ready for review.`);
+      onBanner(`🤖 Autopilot started for ${r.month || 'next month'}.`);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const syncReviews = async () => {
     setBusy('reviews'); setErr('');
     try {
@@ -395,6 +414,20 @@ export function PlanCard({ site, onBanner }) {
     <div class="font-semibold text-slate-800 mb-1">🗓 Posting plan</div>
     <p class="text-xs text-slate-400 mb-3">How much gets created each month. Review highlights quote your real 5-star Google reviews — sync them below.</p>
     ${err && html`<div class="text-xs text-rose-600 mb-2">${err}</div>`}
+    <div class=${cx('mb-4 rounded-xl border p-3', f.autopilot ? 'border-brand-300 bg-brand-50/70' : 'border-slate-200 bg-slate-50/60')}>
+      <label class="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" checked=${!!f.autopilot} onChange=${(e) => toggleAutopilot(e.target.checked)} class="mt-0.5 accent-brand-600 h-4 w-4" />
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-slate-800">🤖 Autopilot</div>
+          <p class="text-xs text-slate-500 mt-0.5">On the 1st of each month, automatically plan the <b>next</b> month's calendar for this business, write every caption, generate every image, and then email your agency social media manager (set in Agency settings) that the plan is ready for review. Nothing is scheduled until someone reviews it.</p>
+        </div>
+      </label>
+      <div class="mt-2.5 flex flex-wrap items-center gap-2 pl-6">
+        <${Btn} size="sm" variant="secondary" onClick=${runAutopilotNow} disabled=${busy === 'autopilot'}>${busy === 'autopilot' ? 'Starting…' : '⚡ Generate next month now'}</${Btn}>
+        <span class="text-xs text-slate-400">Runs the full autopilot for next month right away (handy for testing).</span>
+      </div>
+      ${apMsg && html`<div class="text-xs text-brand-700 mt-2 pl-6">${apMsg}</div>`}
+    </div>
     <div class="flex flex-wrap items-end gap-3">
       <${Select} value=${String(f.postsPerDay)} onChange=${(v) => setF({ ...f, postsPerDay: v })} options=${[{ value: '1', label: '1 post / day' }, { value: '2', label: '2 posts / day' }, { value: '3', label: '3 posts / day' }]} />
       <${Select} value=${String(f.reelsPerMonth)} onChange=${(v) => setF({ ...f, reelsPerMonth: v })} options=${[0, 2, 3, 4, 6, 8, 12].map((n) => ({ value: String(n), label: `${n} Reels / month` }))} />

@@ -643,6 +643,18 @@ async function seoInvokeApproval(action, extra = {}) {
 }
 export const seoApprovalStatus = (siteId, calendarId) => seoInvokeApproval('status', { siteId, calendarId });
 export const seoApprovalSendNow = (siteId, calendarId) => seoInvokeApproval('send_now', { siteId, calendarId });
+// Social autopilot (seo-autopilot fn): status reports the toggle + the current
+// autopilot calendar's progress; run_now plans a month immediately (defaults to
+// next month) and drives it through the pipeline. The monthly auto-trigger runs
+// server-side on the 1st for every business with autopilot on.
+async function seoInvokeAutopilot(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-autopilot', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoAutopilotStatus = (siteId) => seoInvokeAutopilot('status', { siteId });
+export const seoAutopilotRunNow = (siteId, month) => seoInvokeAutopilot('run_now', { siteId, month });
 // Real-photo library (Drive folder + Job Tracker social-tagged photos).
 export const seoSocialPhotos = (siteId) => seoInvokeSocial('photos_list', { siteId });
 // AI photo understanding + post matching (seo-photo-ai fn).
