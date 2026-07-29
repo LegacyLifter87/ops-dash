@@ -703,12 +703,19 @@ export function GhlCard({ site, onBanner }) {
 }
 
 // Relevance of a library photo to a post, from the AI description/tags —
-// used only to ORDER the picker (selection stays fully manual).
+// used only to ORDER the picker (selection stays fully manual). The client's
+// own Drive folder title is the strongest signal: a folder↔service word match
+// outweighs any single description keyword.
 function photoScore(p, post) {
-  const hay = `${(Array.isArray(p.tags) ? p.tags.join(' ') : '')} ${p.description || ''} ${p.name || ''}`.toLowerCase();
+  const hay = `${(Array.isArray(p.tags) ? p.tags.join(' ') : '')} ${p.description || ''} ${p.name || ''} ${p.folder_name || ''}`.toLowerCase();
   const needles = `${post.topic || ''} ${post.target_service || ''} ${post.target_city || ''}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
   let s = 0;
   for (const w of new Set(needles)) if (hay.includes(w)) s++;
+  if (p.folder_name && post.target_service) {
+    const folder = String(p.folder_name).toLowerCase();
+    const svcWords = String(post.target_service).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+    if (svcWords.some((w) => folder.includes(w))) s += 3;
+  }
   return s;
 }
 
