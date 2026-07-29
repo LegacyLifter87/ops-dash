@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveFolders, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -322,6 +322,8 @@ export function PlanCard({ site, onBanner }) {
 
   const save = async () => {
     if (allocated > allot) { setErr(`You've balanced ${allocated} posts but the plan only includes ${allot} per month (${f.postsPerDay}/day × 30). Lower some services.`); return; }
+    const trig = (f.commentTrigger || '').trim(), offer = (f.commentOffer || '').trim();
+    if ((trig && !offer) || (!trig && offer)) { setErr(trig ? 'Comment automation: you set a trigger word but not what commenting gets them — fill in the reward, or clear the word.' : 'Comment automation: you set what commenting gets them but no trigger word — add the word, or clear the reward.'); return; }
     setBusy('save'); setErr('');
     try {
       const serviceMix = Object.entries(mix).map(([service, posts]) => ({ service, posts: Number(posts) || 0 })).filter((m) => m.posts > 0);
@@ -378,9 +380,19 @@ export function PlanCard({ site, onBanner }) {
         ${allocated} of ${allot} monthly post${allot === 1 ? '' : 's'} balanced${allocated > allot ? ` — that's ${allocated - allot} over the plan; lower some counts.` : allocated < allot ? ` · ${allot - allocated} left for the AI strategy to balance.` : ' · fully allocated.'}
       </div>`}
     </div>
-    <div class="grid sm:grid-cols-2 gap-3 mt-3">
-      <${Field} label="Comment trigger word (optional — pairs with your comment automation)"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
-      <${Field} label="What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
+    <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <div class="text-sm font-medium text-slate-700">💬 Comment automation <span class="text-xs font-normal text-slate-400">— optional, but these two are a pair</span></div>
+      <p class="text-xs text-slate-400 mt-0.5 mb-2">The trigger word fires your DM automation; the reward is what commenting gets them. Roughly 1 in 3 posts will use it as the call to action.</p>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <${Field} label="1 · Trigger word they comment"><${Input} value=${f.commentTrigger} onInput=${(v) => setF({ ...f, commentTrigger: v })} placeholder="SHED" /></${Field}>
+        <${Field} label="2 · What commenting gets them"><${Input} value=${f.commentOffer} onInput=${(v) => setF({ ...f, commentOffer: v })} placeholder="a free estimate via DM" /></${Field}>
+      </div>
+      ${(() => {
+        const trig = (f.commentTrigger || '').trim(), offer = (f.commentOffer || '').trim();
+        if (trig && offer) return html`<div class="text-xs text-emerald-700 mt-2">Posts will say: “Comment <span class="font-semibold">${trig.toUpperCase()}</span> and we'll send you ${offer}.”</div>`;
+        if (trig || offer) return html`<div class="text-xs text-amber-700 mt-2">⚠ Both fields are needed together — ${trig ? 'add what commenting gets them' : 'add the trigger word'} (or clear the other one).</div>`;
+        return null;
+      })()}
     </div>
     <div class="mt-3"><${Btn} size="sm" onClick=${save} disabled=${busy === 'save'}>${busy === 'save' ? 'Saving…' : 'Save posting plan'}</${Btn}></div>
   </div></${Card}>`;
@@ -426,16 +438,23 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
       }, 4000);
     } catch (e) { setErr(e.message); setBusy(''); }
   };
-  const loadFolders = async () => {
-    setBusy('folders'); setErr('');
-    try { const r = await seoSocialDriveFolders(site, folderQ); setFolders(r.folders || []); }
-    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  // Click-through folder browser: path = breadcrumb trail, folders = the
+  // current level's subfolders. Top level mixes My Drive, shared-with-me
+  // (owner shown to tell same-named client folders apart) and shared drives.
+  const [path, setPath] = useState([]);
+  const browse = async (trail) => {
+    setBusy('folders'); setErr(''); setFolderQ('');
+    try {
+      const parent = trail.length ? trail[trail.length - 1] : null;
+      const r = await seoSocialDriveBrowse(site, parent?.id);
+      setPath(trail); setFolders(r.folders || []);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const pickFolder = async (f) => {
     setBusy('pick'); setErr('');
     try {
       await seoSocialDrivePick(site, f.id, f.name);
-      setDrive((d) => ({ ...d, folderId: f.id, folderName: f.name })); setFolders(null);
+      setDrive((d) => ({ ...d, folderId: f.id, folderName: f.name })); setFolders(null); setPath([]);
       onBanner(`📁 Photo folder set to “${f.name}” — click Sync to import.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
@@ -486,14 +505,40 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
           <div class="text-xs text-slate-500">Signed in ✓${drive.email ? ` as ${drive.email}` : ''}${drive.folderName ? html` · folder: <span class="font-medium text-slate-700">${drive.folderName}</span>` : ' · no folder picked yet'}
             <button onClick=${async () => { if (confirm('Disconnect Google Drive for this business?')) { await seoSocialDriveDisconnect(site); await load(); } }} class="ml-2 text-slate-400 hover:text-rose-600 underline">disconnect</button>
           </div>
-          <div class="flex flex-wrap items-end gap-2">
-            <div class="min-w-[200px]"><label class="text-[11px] text-slate-400">Find the photo folder</label><${Input} value=${folderQ} onInput=${setFolderQ} placeholder="folder name…" /></div>
-            <${Btn} size="sm" variant="secondary" onClick=${loadFolders} disabled=${busy === 'folders'}>${busy === 'folders' ? 'Loading…' : '🔍 Browse folders'}</${Btn}>
-          </div>
-          ${folders !== null && html`<div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-            ${folders.length === 0 ? html`<div class="text-xs text-slate-400">No folders found.</div>` : folders.map((f) => html`
-              <button onClick=${() => pickFolder(f)} disabled=${busy === 'pick'}
-                class=${cx('text-xs px-2.5 py-1 rounded-full border', drive.folderId === f.id ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-brand-300')}>📁 ${f.name}</button>`)}
+          ${folders === null ? html`
+            <${Btn} size="sm" variant="secondary" onClick=${() => browse([])} disabled=${busy === 'folders'}>${busy === 'folders' ? 'Loading…' : `📂 ${drive.folderId ? 'Change the photo folder' : 'Browse Drive for the photo folder'}`}</${Btn}>`
+          : html`<div class="rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-center flex-wrap gap-1 px-3 py-2 bg-slate-50 border-b border-slate-100 text-xs">
+              <button onClick=${() => browse([])} class=${cx('hover:text-brand-700', path.length ? 'text-brand-600 underline' : 'text-slate-700 font-medium')}>Drive</button>
+              ${path.map((seg, i) => html`<span class="text-slate-300">›</span>
+                <button onClick=${() => browse(path.slice(0, i + 1))} class=${cx('hover:text-brand-700 max-w-[160px] truncate', i === path.length - 1 ? 'text-slate-700 font-medium' : 'text-brand-600 underline')} title=${seg.name}>${seg.name}</button>`)}
+              <span class="flex-1"></span>
+              ${busy === 'folders' && html`<span class="text-slate-400">Loading…</span>`}
+              <button onClick=${() => { setFolders(null); setPath([]); }} class="text-slate-400 hover:text-slate-600">✕ Close</button>
+            </div>
+            ${path.length > 0 && html`<div class="flex items-center justify-between px-3 py-2 bg-brand-50/60 border-b border-slate-100">
+              <div class="text-xs text-slate-600 truncate">Current folder: <span class="font-medium text-slate-800">${path[path.length - 1].name}</span></div>
+              <${Btn} size="sm" onClick=${() => pickFolder(path[path.length - 1])} disabled=${busy === 'pick'}>${busy === 'pick' ? 'Saving…' : '✓ Use this folder'}</${Btn}>
+            </div>`}
+            <div class="max-h-64 overflow-y-auto divide-y divide-slate-50">
+              ${folders.length > 8 && html`<div class="px-3 py-1.5"><${Input} value=${folderQ} onInput=${setFolderQ} placeholder="Filter this list…" /></div>`}
+              ${(() => {
+                const q = folderQ.trim().toLowerCase();
+                const shown = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders;
+                if (!shown.length) return html`<div class="px-3 py-3 text-xs text-slate-400">${folders.length ? 'No folders match the filter.' : 'No subfolders in here — use “✓ Use this folder” above if this is the one.'}</div>`;
+                return shown.map((f) => html`<div class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 group" key=${f.id}>
+                  <button onClick=${() => browse([...path, f])} disabled=${busy === 'folders'} class="flex-1 min-w-0 text-left text-sm text-slate-700 flex items-center gap-2">
+                    <span>${f.kind === 'drive' ? '🗄' : '📁'}</span>
+                    <span class="truncate">${f.name}</span>
+                    ${f.kind === 'shared' && html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 shrink-0">shared${f.owner ? ` · ${f.owner}` : ''}</span>`}
+                    ${f.kind === 'drive' && html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 shrink-0">shared drive</span>`}
+                    ${drive.folderId === f.id && html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">current</span>`}
+                    <span class="text-slate-300 group-hover:text-slate-400 shrink-0">open ›</span>
+                  </button>
+                  <${Btn} size="sm" variant="secondary" onClick=${() => pickFolder(f)} disabled=${busy === 'pick'}>Select</${Btn}>
+                </div>`);
+              })()}
+            </div>
           </div>`}`
         : html`
           <${Btn} variant="cta" onClick=${signInGoogle} disabled=${busy === 'goauth'}>${busy === 'goauth' ? 'Waiting for Google… (finish sign-in in the other tab)' : '🔑 Sign in with Google'}</${Btn}>
