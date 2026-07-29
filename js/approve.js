@@ -86,7 +86,7 @@ function renderPending() {
     ? `<button data-approve class="w-full sm:w-auto text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color1 || '#0f766e')}">✓ Approve all ${posts.length} post${posts.length === 1 ? '' : 's'}</button>
        <div class="text-xs text-slate-400">Approving schedules everything automatically. Or tap any post above to request a replacement.</div>`
     : `<button data-submit ${missing ? 'disabled' : ''} class="w-full sm:w-auto font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg ${missing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-amber-500 text-white'}">📨 Send feedback & request ${n} replacement${n === 1 ? '' : 's'}</button>
-       <div class="text-xs ${missing ? 'text-amber-700 font-medium' : 'text-slate-400'}">${missing ? `Add feedback to ${missing} flagged post${missing === 1 ? '' : 's'} — it tells us what to change.` : `The other ${posts.length - n} post${posts.length - n === 1 ? '' : 's'} will wait for your final approval after the replacements are made.`}</div>
+       <div class="text-xs ${missing ? 'text-amber-700 font-medium' : 'text-slate-400'}">${missing ? `Add feedback to ${missing} flagged post${missing === 1 ? '' : 's'} — it tells us what to change.` : `The other ${posts.length - n} post${posts.length - n === 1 ? '' : 's'} will be approved and scheduled right away — your next email covers only the ${n} replacement${n === 1 ? '' : 's'}.`}</div>
        <button data-clear class="text-xs text-slate-400 underline">clear selections</button>`;
 
   app.innerHTML = `
@@ -135,7 +135,7 @@ app.addEventListener('click', async (e) => {
     busy = true; t.textContent = 'Sending…';
     try {
       const r = await call({ action: 'submit', decision: 'changes', requests });
-      centerCard(data.branding, '🎨', 'Feedback received!', `We're regenerating ${r.regenerating} post${r.regenerating === 1 ? '' : 's'} based on your notes. You'll get a fresh email when everything is ready for final approval — no need to keep this page open.`);
+      centerCard(data.branding, '🎨', 'Feedback received!', `${r.approvedNow ? `${r.approvedNow} post${r.approvedNow === 1 ? ' was' : 's were'} approved and scheduled. ` : ''}We're regenerating ${r.regenerating} post${r.regenerating === 1 ? '' : 's'} based on your notes — you'll get one more email to approve just those replacements. No need to keep this page open.`);
     } catch (err) { busy = false; alert(err.message); renderPending(); }
   }
 });

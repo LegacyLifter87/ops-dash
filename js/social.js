@@ -722,11 +722,12 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   const [refSel, setRefSel] = useState(new Set());
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [zoom, setZoom] = useState(false); // full-screen media lightbox
   useEffect(() => {
     if (!post) return;
     setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
     setRefSel(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
-    setErr('');
+    setErr(''); setZoom(false);
   }, [revId]);
   const total = posts.length;
   const decided = posts.filter((p) => p.status === 'approved' || p.status === 'rejected').length;
@@ -741,7 +742,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     const onKey = (e) => {
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { if (zoom) { setZoom(false); } else { onClose(); } return; }
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '')) return;
       if (e.key === 'ArrowRight') go(1);
       if (e.key === 'ArrowLeft') go(-1);
@@ -795,10 +796,11 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
       <div class="flex-1 overflow-y-auto p-4">
         ${readyLeft === 0 && html`<div class="mb-3 rounded-lg bg-emerald-50 text-emerald-800 text-sm px-3 py-2">🎉 Every post has a decision — close this and hit <span class="font-semibold">Push to GHL</span> to schedule the approved ones.</div>`}
         <div class="grid md:grid-cols-2 gap-4">
-          <div class="rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center min-h-[280px] overflow-hidden self-start">
+          <div class="relative rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center min-h-[280px] overflow-hidden self-start">
+            ${media && html`<button onClick=${() => setZoom(true)} title="View full size" class="absolute top-2 right-2 z-10 bg-slate-900/60 hover:bg-slate-900/80 text-white text-xs px-2.5 py-1.5 rounded-lg">⛶ Enlarge</button>`}
             ${media ? (post.format === 'video'
               ? html`<video src=${media} controls class="max-h-[62vh] w-full object-contain"></video>`
-              : html`<img src=${media} alt="post media" onError=${imgFallback} class="max-h-[62vh] w-full object-contain" />`)
+              : html`<img src=${media} alt="post media" onError=${imgFallback} onClick=${() => setZoom(true)} class="max-h-[62vh] w-full object-contain cursor-zoom-in" title="Click to enlarge" />`)
             : post.status === 'media_pending' ? html`<div class="text-center text-sm text-slate-400 animate-pulse py-16 px-6">🎨 Generating media…<div class="text-xs mt-1">this updates by itself when it finishes</div></div>`
             : html`<div class=${cx('text-center py-16 px-6 w-full h-full flex flex-col items-center justify-center', ptone)}><div class="text-4xl">${pic}</div><div class="text-xs mt-2 opacity-80">No media yet — write/generate first</div></div>`}
           </div>
@@ -846,6 +848,12 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
         </div>
       </div>
     </div>
+    ${zoom && media && html`<div class="fixed inset-0 z-[70] bg-slate-950/90 flex items-center justify-center p-4 cursor-zoom-out" onClick=${() => setZoom(false)}>
+      ${post.format === 'video'
+        ? html`<video src=${media} controls autoplay class="max-h-[94vh] max-w-[96vw] object-contain" onClick=${(e) => e.stopPropagation()}></video>`
+        : html`<img src=${media} alt="post media full size" class="max-h-[94vh] max-w-[96vw] object-contain" />`}
+      <button onClick=${() => setZoom(false)} title="Close (Esc)" class="absolute top-3 right-4 text-white/80 hover:text-white text-4xl leading-none">×</button>
+    </div>`}
   </div>`;
 }
 
