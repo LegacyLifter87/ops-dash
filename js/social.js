@@ -115,7 +115,7 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '' });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', services: (Array.isArray(pr.manual_services) ? pr.manual_services : []).map((s) => ({ name: s?.name || '', url: s?.url || '' })), insights: pr.insights || '' });
       if (!r.profile) setOpen(true);
     }).catch((e) => { setErr(e.message); setP({}); });
   }, [site]);
@@ -123,7 +123,7 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: (f.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
       // Re-read so persisted cert rows (and their badge slots) are current.
       const r2 = await seoSocialProfile(site);
       setP(r2.profile || {});
@@ -205,7 +205,7 @@ export function BrandKit({ site, onBanner }) {
         // first so the upload has a row to attach to.
         const saved = (p?.certifications || []).some((x) => x?.id === certId);
         if (!saved) {
-          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: (f.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
         }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
@@ -217,6 +217,9 @@ export function BrandKit({ site, onBanner }) {
   const setCert = (i, k, v) => setF((x) => { const certs = (x.certs || []).slice(); certs[i] = { ...certs[i], [k]: v }; return { ...x, certs }; });
   const addCert = () => setF((x) => ({ ...x, certs: [...(x.certs || []), { id: crypto.randomUUID(), name: '', number: '', required: false }] }));
   const rmCert = (i) => setF((x) => ({ ...x, certs: (x.certs || []).filter((_, j) => j !== i) }));
+  const setSvc = (i, k, v) => setF((x) => { const services = (x.services || []).slice(); services[i] = { ...services[i], [k]: v }; return { ...x, services }; });
+  const addSvc = () => setF((x) => ({ ...x, services: [...(x.services || []), { name: '', url: '' }] }));
+  const rmSvc = (i) => setF((x) => ({ ...x, services: (x.services || []).filter((_, j) => j !== i) }));
   const togglePlat = (id) => setF((x) => { const n = new Set(x.platforms); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, platforms: n }; });
 
   if (p === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading brand kit…</div></${Card}>`;
@@ -245,6 +248,18 @@ export function BrandKit({ site, onBanner }) {
       <${Field} label="Voice notes (optional — tone, do/don't say)"><${Textarea} value=${f.voiceNotes} onInput=${(v) => setF({ ...f, voiceNotes: v })} rows=${2} placeholder="Family-owned since 2004; never mention competitor names; friendly but no slang…" /></${Field}>
       <${Field} label="Ideal client profile (optional — who every post and blog should speak to)"><${Textarea} value=${f.icp} onInput=${(v) => setF({ ...f, icp: v })} rows=${2} placeholder="Homeowners 35-65 in Marion County with 1+ acre properties; value reliability over lowest price; worried about curb appeal and protecting their biggest investment…" /></${Field}>
       <${Field} label="Warranty / guarantee (optional — used as real proof in posts and blogs, never embellished)"><${Textarea} value=${f.warranty} onInput=${(v) => setF({ ...f, warranty: v })} rows=${2} placeholder="5-year workmanship warranty on all installs; 30-day satisfaction guarantee on cleanings…" /></${Field}>
+      <div>
+        <label class="text-[11px] text-slate-400 block mb-1">🧰 Services you offer <span class="text-slate-300">— add any service the AI should write posts and blogs about; these join the ones found on your website. A page link is optional</span></label>
+        <div class="space-y-1.5">
+          ${(f.services || []).map((s, i) => html`<div class="flex items-center gap-2 flex-wrap rounded-lg border border-slate-100 px-2.5 py-2">
+            <${Input} value=${s.name || ''} onInput=${(v) => setSvc(i, 'name', v)} placeholder="Service name (e.g. Metal Roof Installation)" class="flex-1 min-w-[180px]" />
+            <${Input} value=${s.url || ''} onInput=${(v) => setSvc(i, 'url', v)} placeholder="Page link (optional)" class="w-52" />
+            <button onClick=${() => rmSvc(i)} class="text-slate-300 hover:text-rose-600" title="Remove this service">✕</button>
+          </div>`)}
+          ${(f.services || []).length < 40 && html`<button onClick=${addSvc} class="text-xs text-slate-400 hover:text-brand-700 underline">+ Add service</button>`}
+        </div>
+      </div>
+      <${Field} label="💡 Insights for the AI (optional — first-party knowledge woven into posts and blogs: what makes you different, seasonal tips, questions customers always ask, myths to bust)"><${Textarea} value=${f.insights} onInput=${(v) => setF({ ...f, insights: v })} rows=${4} placeholder="We only use synthetic underlayment, never felt. Spring is the best time to reseal a driveway in Florida. Customers always ask if pressure washing damages siding — it doesn't when done right. Every crew is in-house; we never subcontract…" /></${Field}>
       <div>
         <label class="text-[11px] text-slate-400 block mb-1">Brand voices you approve for the writing <span class="text-slate-300">— pick any; the AI writes each month in ONE of them. Leave all off to let AI choose</span></label>
         <div class="flex flex-wrap gap-1.5">
@@ -343,7 +358,7 @@ export function PlanCard({ site, onBanner }) {
       const m = {};
       (Array.isArray(pr.plan?.serviceMix) ? pr.plan.serviceMix : []).forEach((x) => { if (x?.service) m[x.service] = Number(x.posts) || 0; });
       setMix(m);
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'] });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'], manualServices: Array.isArray(pr.manual_services) ? pr.manual_services : [] });
     }).catch((e) => { setErr(e.message); });
     // Service rows carry over automatically from the website map (Strategy tab).
     seoStrategyPages(site).then((r) => setMapSvcs([...new Set((r.pages || []).filter((p2) => p2.is_service).map((p2) => p2.service_name || p2.path).filter(Boolean))])).catch(() => setMapSvcs([]));
@@ -352,7 +367,7 @@ export function PlanCard({ site, onBanner }) {
 
   const allot = f ? Number(f.postsPerDay) * 30 : 0; // posts included in the plan (~30-day month)
   const allocated = Object.values(mix).reduce((a, n) => a + (Number(n) || 0), 0);
-  const svcNames = [...new Set([...(mapSvcs || []), ...Object.keys(mix)])];
+  const svcNames = [...new Set([...(mapSvcs || []), ...((f?.manualServices || []).map((s) => s.name).filter(Boolean)), ...Object.keys(mix)])];
 
   const save = async () => {
     if (allocated > allot) { setErr(`You've balanced ${allocated} posts but the plan only includes ${allot} per month (${f.postsPerDay}/day × 30). Lower some services.`); return; }
