@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -46,6 +46,55 @@ function ContactCard({ onBanner }) {
       </div>
       ${err && html`<div class="text-sm text-rose-600 mt-2">${err}</div>`}
       <div class="mt-3"><${Btn} size="sm" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save agency details'}</${Btn}></div>`}
+  </div></${Card}>`;
+}
+
+// One-time Google Ads API setup for the whole agency. Google requires a
+// developer token before any app can read Ads data; entered once here it covers
+// every client, so businesses just sign in with Google and pick their account —
+// they never see this. Stored agency-scoped (seo_ads_dev_tokens scope 'agency').
+function GoogleAdsTokenCard({ onBanner }) {
+  const [st, setSt] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState('');
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const load = () => seoAdsStatus().then(setSt).catch((e) => { setErr(e.message); setSt({}); });
+  useEffect(() => { load(); }, []);
+  const configured = st?.dev_token_agency || null;
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await seoAdsSetDevToken(token.trim(), label.trim(), 'agency'); setToken(''); setLabel(''); setOpen(false); await load(); onBanner('✅ Google Ads is set up for every client in this agency.'); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const clear = async () => {
+    if (!confirm('Remove the Google Ads API token for every client in this agency? Reporting stops until a token is added again.')) return;
+    setBusy(true); setErr('');
+    try { await seoAdsClearDevToken('agency'); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">Google Ads <span class="text-xs font-normal text-slate-400">— one-time API setup for every client</span></div>
+      ${st !== null && (configured
+        ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ connected</span>`
+        : st.dev_token_source === 'platform'
+          ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">platform token</span>`
+          : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">not set</span>`)}
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Google requires a developer token (Basic Access — from your Google Ads Manager account → API Center) before any app can read Ads data. Enter it once here and every business just signs in with Google and picks its ad account; they never see this step.</p>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
+      <div class="flex items-center gap-2 flex-wrap">
+        ${configured && html`<code class="text-xs text-slate-500">${configured.masked}${configured.label ? ' · ' + configured.label : ''}</code>`}
+        ${configured && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Remove</${Btn}>`}
+        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : configured ? 'Replace token' : 'Add token'}</${Btn}>
+      </div>
+      ${open && html`<div class="space-y-2 pt-3 max-w-md">
+        <${Field} label="Developer token"><${Input} value=${token} onInput=${setToken} placeholder="From Google Ads Manager → API Center" /></${Field}>
+        <${Field} label="Label (optional)"><${Input} value=${label} onInput=${setLabel} placeholder="Legacy Agency MCC" /></${Field}>
+        <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : 'Save for all clients'}</${Btn}>
+      </div>`}
+      ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}`}
   </div></${Card}>`;
 }
 
@@ -114,6 +163,8 @@ export function AgencySettings() {
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}
 
     <${ContactCard} onBanner=${setBanner} />
+
+    <${GoogleAdsTokenCard} onBanner=${setBanner} />
 
     <${Card}><div class="p-4 border-l-4 border-amber-300">
       <div class="font-semibold text-slate-800 mb-1">Agency owners <span class="text-xs font-normal text-slate-400">— full access to every business + staff management</span></div>

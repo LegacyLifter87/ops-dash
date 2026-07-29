@@ -5,7 +5,7 @@
 // Live data needs app_secrets.google_ads_developer_token (Google-approved).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsSyncNegatives, seoAdsDisconnect, seoAdsSetDevToken, seoAdsClearDevToken } from './store.js';
+import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsSyncNegatives, seoAdsDisconnect } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -96,7 +96,6 @@ export function Ads() {
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${inner}
-    ${st?.agency && html`<${DevTokenCard} st=${st} onChange=${load} />`}
     ${picker && html`<${CustomerPicker} customers=${picker} busy=${busy === 'pick'} onPick=${pick} onClose=${() => setPicker(null)} />`}
   </div>`;
 
@@ -105,9 +104,9 @@ export function Ads() {
     return wrap(html`<${Card}><div class="p-6 space-y-3 text-sm">
       <div class="font-semibold text-slate-800">Connect Google Ads</div>
       <p class="text-slate-600">Sign in with the Google account that has access to this client's Google Ads, then pick the ad account. Ops Dash pulls spend, conversions, campaigns, keywords, search terms, and Google's optimization recommendations into one dashboard.</p>
-      ${!st?.dev_token_configured && html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800">
-        <span class="font-medium">Developer token not set.</span> The Google Ads API needs a developer token (Basic Access) from your Google Ads Manager account → API Center. You can connect now, but syncing stays disabled until the token is approved and saved. Approval usually takes 1–3 business days.
-      </div>`}
+      ${!st?.dev_token_configured && (st?.agency
+        ? html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800">Your agency's Google Ads connection needs a one-time setup before it can pull data. <button onClick=${() => { location.hash = '/agency'; }} class="font-medium underline hover:text-amber-900">Finish setup in ⚙ Agency settings</button> — you only do this once, then every business just signs in and picks its account.</div>`
+        : html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800">Your agency is still finishing Google Ads setup. You can connect your account now; reporting turns on once setup is complete.</div>`)}
       <div><${Btn} onClick=${connect} disabled=${!!busy}>${busy === 'connect' ? 'Redirecting…' : 'Connect Google Ads'}</${Btn}></div>
     </div></${Card}>`);
   }
@@ -117,7 +116,9 @@ export function Ads() {
     return wrap(html`<${Card}><div class="p-6 space-y-3 text-sm">
       <div class="font-semibold text-slate-800">Choose the ad account</div>
       <p class="text-slate-600">Connected as <span class="font-medium">${st.email || 'Google'}</span>. Pick which Google Ads account to report on.</p>
-      ${!st?.dev_token_configured && html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800"><span class="font-medium">Developer token not set yet</span> — listing accounts needs it. Add it, then choose the account.</div>`}
+      ${!st?.dev_token_configured && (st?.agency
+        ? html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800">Before the account list can load, finish the one-time Google Ads setup in <button onClick=${() => { location.hash = '/agency'; }} class="font-medium underline hover:text-amber-900">⚙ Agency settings</button>. Then come back and choose the account.</div>`
+        : html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-800">Your agency is still finishing Google Ads setup — the account list will load once that's done.</div>`)}
       <div><${Btn} onClick=${openPicker} disabled=${!!busy || !st.dev_token_configured}>${busy === 'customers' ? 'Loading…' : 'Choose account'}</${Btn}></div>
     </div></${Card}>`);
   }
@@ -151,58 +152,6 @@ export function Ads() {
         ${view === 'recommendations' && html`<${RecsTable} rows=${snaps.recommendations || []} />`}
       </div></${Card}>`}
   `);
-}
-
-// Agency-only. The default is ONE shared platform developer token covering every
-// connected client (Google's documented multi-user workflow) — this is the opt-in
-// override for a reseller who wants their own quota and API-terms accountability.
-function DevTokenCard({ st, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [token, setToken] = useState('');
-  const [label, setLabel] = useState('');
-  const [agencyWide, setAgencyWide] = useState(!!st.has_agency);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const configured = st.dev_token_agency || st.dev_token_own; // token actively in play, if any
-  const useAgency = agencyWide && st.has_agency;
-  const save = async () => {
-    setBusy(true); setErr('');
-    try { await seoAdsSetDevToken(token.trim(), label.trim(), useAgency ? 'agency' : 'account'); setToken(''); setLabel(''); setOpen(false); await onChange(); }
-    catch (e) { setErr(e.message); } finally { setBusy(false); }
-  };
-  const clear = async () => {
-    const scope = st.dev_token_source === 'agency' ? 'agency' : 'account';
-    if (!confirm(scope === 'agency' ? 'Remove the agency-wide developer token for every client in this agency?' : 'Remove this client\'s own developer token?')) return;
-    setBusy(true); setErr('');
-    try { await seoAdsClearDevToken(scope); await onChange(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  };
-  const srcPill = st.dev_token_source === 'agency'
-    ? html`<${Pill} cls="bg-brand-100 text-brand-700">agency token</${Pill}>`
-    : st.dev_token_source === 'account'
-      ? html`<${Pill} cls="bg-brand-100 text-brand-700">this client only</${Pill}>`
-      : st.dev_token_source === 'platform'
-        ? html`<${Pill} cls="bg-slate-100 text-slate-600">platform token</${Pill}>`
-        : html`<${Pill} cls="bg-amber-100 text-amber-700">none configured</${Pill}>`;
-  return html`<${Card}><div class="p-4 space-y-2 text-sm">
-    <div class="flex items-center justify-between gap-2 flex-wrap">
-      <div class="flex items-center gap-2">
-        <span class="font-medium text-slate-700">Developer token</span>${srcPill}
-        ${configured && html`<code class="text-xs text-slate-400">${configured.masked}${configured.label ? ' · ' + configured.label : ''}</code>`}
-      </div>
-      <div class="flex gap-2">
-        ${configured && html`<${Btn} size="sm" onClick=${clear} disabled=${busy}>Remove</${Btn}>`}
-        <${Btn} size="sm" onClick=${() => setOpen(!open)}>${open ? 'Cancel' : configured ? 'Replace' : 'Add token'}</${Btn}>
-      </div>
-    </div>
-    <p class="text-xs text-slate-500">Google Ads needs a developer token (Basic Access, from your Google Ads Manager account → API Center) before it can list accounts or pull data. One token covers every client in your agency — enter it once here.</p>
-    ${open && html`<div class="space-y-2 pt-1">
-      <${Input} value=${token} onInput=${setToken} placeholder="Developer token from Google Ads Manager → API Center" />
-      <${Input} value=${label} onInput=${setLabel} placeholder="Label (e.g. Legacy Agency MCC) — optional" />
-      ${st.has_agency && html`<label class="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked=${agencyWide} onChange=${(e) => setAgencyWide(e.target.checked)} /> Apply to all clients in this agency (recommended)</label>`}
-      <${Btn} size="sm" onClick=${save} disabled=${busy || token.trim().length < 10}>${busy ? 'Saving…' : useAgency ? 'Save for all clients' : 'Save token'}</${Btn}>
-    </div>`}
-    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
-  </div></${Card}>`;
 }
 
 function CustomerPicker({ customers, busy, onPick, onClose }) {
