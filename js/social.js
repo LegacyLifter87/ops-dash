@@ -336,6 +336,10 @@ export function BrandKit({ site, onBanner }) {
 }
 
 const PLAT_ICON = { facebook: '📘', instagram: '📸', google: '🅶', gmb: '🅶', tiktok: '🎵', 'tiktok-business': '🎵', linkedin: '💼', twitter: '🐦' };
+// Which GHL account platforms a post-plan platform maps to (mirrors seo-social
+// PLAT_MAP) — used to default the per-post "Post to" picker to the accounts a
+// post would auto-publish to.
+const PLAT_GROUP = { facebook: ['facebook'], instagram: ['instagram'], gbp: ['google', 'gmb', 'google_my_business', 'googlemybusiness'], tiktok: ['tiktok', 'tiktok-business'] };
 
 // Posting plan — lives on the Social tab (moved out of the brand kit): how
 // much to post, how many Reels, how many review highlights, and the comment
@@ -739,9 +743,16 @@ export function GhlCard({ site, onBanner }) {
       </div>
     </div>
     ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+    ${st.connected && (g.accounts || []).length > 0 && !open && html`<div class="mt-2 flex flex-wrap items-center gap-1.5">
+      <span class="text-[11px] text-slate-400">Connected pages:</span>
+      ${(g.accounts || []).map((a) => html`<span title=${(g.selected || []).includes(a.id) ? 'active — posts publish here' : 'off — enable under Manage'}
+        class=${cx('text-[11px] px-2 py-0.5 rounded-full border flex items-center gap-1', (g.selected || []).includes(a.id) ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-300')}>
+        <span>${PLAT_ICON[a.platform] || '🌐'}</span>${a.name}${(g.selected || []).includes(a.id) ? '' : ' (off)'}</span>`)}
+      <button onClick=${() => setOpen(true)} class="text-[11px] text-brand-600 underline">change</button>
+    </div>`}
     ${open && html`<div class="mt-3 pt-3 border-t border-slate-100 space-y-3">
       ${st.connected && (g.accounts || []).length > 0 && html`<div>
-        <div class="text-xs font-medium text-slate-500 mb-1.5">Post to these accounts</div>
+        <div class="text-xs font-medium text-slate-500 mb-1.5">Post to these accounts <span class="font-normal text-slate-400">— the default for every post; override per post in the review screen</span></div>
         <div class="flex flex-wrap gap-1.5">
           ${(g.accounts || []).map((a) => html`<button onClick=${() => toggleAcc(a.id)}
             class=${cx('text-xs px-2.5 py-1 rounded-full border flex items-center gap-1', sel.has(a.id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-400')}>
@@ -800,11 +811,12 @@ function photoScore(p, post) {
 // Full-screen review mode: one post at a time, big media preview, one-tap
 // decisions with auto-advance and a progress bar — built so a month of
 // content can be reviewed in one fast pass instead of 30 modal round-trips.
-function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged }) {
+function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onChanged }) {
   const idx = posts.findIndex((p) => p.id === revId);
   const post = idx >= 0 ? posts[idx] : null;
   const [f, setF] = useState(null);
   const [refSel, setRefSel] = useState(new Set());
+  const [targetSel, setTargetSel] = useState(new Set()); // per-post GHL destination accounts
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [zoom, setZoom] = useState(false); // full-screen media lightbox
@@ -814,6 +826,13 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
     if (!post) return;
     setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
     setRefSel(new Set(Array.isArray(post.ref_photos) ? post.ref_photos : []));
+    // Destinations: the post's saved override, else the connected pages whose
+    // platform matches this post (the auto behavior), so the picker shows where
+    // it would go by default.
+    const accs = ghl?.accounts || [];
+    const selectedSet = new Set(ghl?.selected || []);
+    const auto = accs.filter((a) => selectedSet.has(a.id) && (post.platforms || []).some((pl) => (PLAT_GROUP[pl] || [pl]).includes(a.platform))).map((a) => a.id);
+    setTargetSel(new Set(Array.isArray(post.target_accounts) && post.target_accounts.length ? post.target_accounts : auto));
     setErr(''); setZoom(false); setRegenOpen(false); setRegenFb('');
   }, [revId]);
   const total = posts.length;
@@ -841,10 +860,12 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
   const media = (post.media_urls || [])[0];
   const [pic, ptone] = PILLAR[post.pillar] || ['📄', 'bg-slate-100 text-slate-600'];
   const toggleRef = (url) => setRefSel((p) => { const n = new Set(p); if (n.has(url)) n.delete(url); else if (n.size < 3) n.add(url); return n; });
+  const toggleTarget = (id) => setTargetSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const saveFields = () => seoSocialUpdatePost(site, post.id, {
     caption: f.caption, overlayText: f.overlay, cta: f.cta,
     hashtags: f.tags.split(/[\s,]+/).filter(Boolean),
     refPhotos: [...refSel],
+    ...((ghl?.accounts || []).length ? { targetAccounts: [...targetSel] } : {}),
     ...(post.format === 'video' ? { videoPrompt: f.prompt } : { imagePrompt: f.prompt }),
   });
   const run = async (name, fn, next) => { setBusy(name); setErr(''); try { await fn(); await onChanged(); if (next) advance(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
@@ -900,6 +921,15 @@ function ReviewModal({ site, posts, revId, setRevId, library, onClose, onChanged
               ${post.format === 'image' && html`<${Field} label="CTA button text (2-5 words)"><${Input} value=${f.cta} onInput=${(v) => setF({ ...f, cta: v })} placeholder="Get Your Free Estimate" /></${Field}>`}
             </div>
             <${Field} label="Hashtags"><${Input} value=${f.tags} onInput=${(v) => setF({ ...f, tags: v })} placeholder="#roofrepairocala #ocalaroofer" /></${Field}>
+            ${(ghl?.accounts || []).length > 0 && html`<div>
+              <div class="text-xs font-medium text-slate-500 mb-1">Post to <span class="font-normal text-slate-400">— which connected pages this post publishes to (saved when you Save/Approve)</span></div>
+              <div class="flex flex-wrap gap-1.5">
+                ${(ghl.accounts || []).map((a) => html`<button onClick=${() => toggleTarget(a.id)} title=${a.platform}
+                  class=${cx('text-xs px-2.5 py-1 rounded-full border flex items-center gap-1', targetSel.has(a.id) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-400 hover:border-brand-300')}>
+                  <span>${PLAT_ICON[a.platform] || '🌐'}</span>${a.name}</button>`)}
+              </div>
+              ${targetSel.size === 0 && html`<div class="text-[11px] text-amber-700 mt-1">⚠ No pages selected — this post won't be pushed anywhere. Pick at least one.</div>`}
+            </div>`}
             <details><summary class="text-xs text-slate-400 cursor-pointer">${post.format === 'video' ? 'Video' : 'Image'} generation prompt</summary>
               <div class="mt-2"><${Textarea} value=${f.prompt} onInput=${(v) => setF({ ...f, prompt: v })} rows=${4} /></div>
             </details>
@@ -974,6 +1004,7 @@ export function Social() {
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
   const [appr, setAppr] = useState(null); // { emailConfigured, approval, ... } for the loaded calendar
+  const [ghl, setGhl] = useState(null); // GHL connection { accounts, selected } for the per-post destination picker
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (s = site, m = month) => {
@@ -990,6 +1021,8 @@ export function Social() {
   // Photo library feeds the per-post picker (managed in the Business tab).
   // Catalog includes AI descriptions/tags so the picker can sort by relevance.
   useEffect(() => { setPhotos(null); if (site) seoPhotoCatalog(site).then((r) => setPhotos(r.photos || [])).catch(() => setPhotos([])); }, [site]);
+  // GHL connection feeds the review modal's per-post "Post to" destination picker.
+  useEffect(() => { setGhl(null); if (site) seoSocialGhlStatus(site).then((r) => setGhl(r.connected ? r.ghl : null)).catch(() => setGhl(null)); }, [site]);
 
   // Poll while media is generating.
   useEffect(() => {
@@ -1171,6 +1204,6 @@ export function Social() {
         </div>`}
     </div></${Card}>
 
-    ${revId && html`<${ReviewModal} site=${site} posts=${posts} revId=${revId} setRevId=${setRevId} library=${photos || []} onClose=${() => setRevId(null)} onChanged=${load} />`}
+    ${revId && html`<${ReviewModal} site=${site} posts=${posts} revId=${revId} setRevId=${setRevId} library=${photos || []} ghl=${ghl} onClose=${() => setRevId(null)} onChanged=${load} />`}
   </div>`;
 }
