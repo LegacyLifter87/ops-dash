@@ -114,15 +114,17 @@ export function SiteBuilder() {
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <${Stat} label="Total pages" value=${stats?.total ?? 0} />
           <${Stat} label="To build" value=${stats?.new ?? 0} tone="text-amber-600" />
-          <${Stat} label=${plan.wp?.checked ? 'Already live' : 'Live site not checked'} value=${plan.wp?.checked ? (stats?.exists ?? 0) : '—'} tone="text-emerald-600" />
+          <${Stat} label=${plan.wp?.checked ? 'Already live' : 'Live pages'} value=${plan.wp?.checked ? (stats?.exists ?? 0) : '—'} tone="text-emerald-600" />
           <${Stat} label="Priority geo cities" value=${(plan.geo?.topCities || []).length} tone="text-violet-600" />
         </div>
 
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
           <span>${plan.pillarsUsed || 0} categories · ${plan.servicesUsed || 0} services · ${plan.counties || 0} counties · ${plan.cities || 0} cities</span>
           ${plan.wp?.checked
-            ? html`<span class="text-emerald-600">✓ Cross-checked against ${plan.wp.url} (${plan.wp.existingPages} live pages)</span>`
-            : html`<span class="text-amber-600">⚠ No connected WordPress site — every page is shown as “to build”. Connect the site to see what already exists.</span>`}
+            ? html`<span class="text-emerald-600">✓ Cross-checked against ${plan.wp.url} (${plan.wp.existingPages} live pages${plan.wp.source === 'sitemap' ? ', via sitemap' : ''}) — pages already on the site are marked “live”.</span>`
+            : plan.wp?.connected
+              ? html`<span class="text-amber-600">⚠ Connected to ${plan.wp.url}, but its live pages couldn’t be read just now (the site or the Ops Dash Connector plugin didn’t respond, or a firewall blocked it). Every page is shown as “to build” — try Regenerate.</span>`
+              : html`<span class="text-amber-600">⚠ No connected WordPress site — every page is shown as “to build”. Connect the site (Business tab) to see what already exists.</span>`}
         </div>
         ${(plan.geo?.topCities || []).length > 0 && html`<div class="text-[11px] text-slate-400">Geo priority cities: ${(plan.geo.topCities).join(', ')}</div>`}
       </div></${Card}>
