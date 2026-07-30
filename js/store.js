@@ -644,6 +644,18 @@ async function seoInvokePillars(action, extra = {}) {
 }
 export const seoSocialPillarsGet = (siteId) => seoInvokePillars('get', { siteId });
 export const seoSocialPillarsSave = (siteId, pillars) => seoInvokePillars('save', { siteId, pillars });
+// Site Builder (seo-sitebuilder fn) — the website strategy document. generate
+// enumerates every page (core, conversion, compliance, pillar+spoke services,
+// county + city, prioritized geo) and cross-checks the connected WP site; get
+// returns the last-generated plan.
+async function seoInvokeSiteBuilder(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-sitebuilder', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoSiteBuilderGet = (siteId) => seoInvokeSiteBuilder('get', { siteId });
+export const seoSiteBuilderGenerate = (siteId) => seoInvokeSiteBuilder('generate', { siteId });
 // Client approval email (seo-approval fn). status = is a client email configured
 // + the current approval row; send_now fires (or resends) the approval link on
 // demand instead of waiting for the cron tick.

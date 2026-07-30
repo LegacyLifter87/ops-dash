@@ -21,6 +21,7 @@ import { Team } from './team.js';
 import { AgencySettings } from './agency.js';
 import { Strategy } from './strategy.js';
 import { Social } from './social.js';
+import { SiteBuilder } from './sitebuilder.js';
 import { Profile } from './profile.js';
 import { Select, Btn, Modal, Field, Input } from './ui.js';
 
@@ -30,6 +31,7 @@ const NAV = [
   { id: 'profile', label: 'Business', icon: '🏢' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
   { id: 'social', label: 'Social', icon: '📣' },
+  { id: 'sitebuilder', label: 'Site Builder', icon: '🧱' },
   { id: 'autoblog', label: 'Autoblogger', icon: '🤖' },
   { id: 'competitors', label: 'Competitors', icon: '⚔️' },
   { id: 'ranks', label: 'Ranks', icon: '📈' },
@@ -221,6 +223,7 @@ function App() {
             ${view === 'profile' && html`<${Profile} />`}
             ${view === 'strategy' && html`<${Strategy} />`}
             ${view === 'social' && html`<${Social} />`}
+            ${view === 'sitebuilder' && html`<${SiteBuilder} />`}
             ${view === 'autoblog' && html`<${Autoblog} />`}
             ${view === 'competitors' && html`<${Competitors} />`}
             ${view === 'ranks' && html`<${Ranks} />`}
