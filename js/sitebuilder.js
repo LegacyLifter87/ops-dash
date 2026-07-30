@@ -8,7 +8,7 @@
 // build pages yet (that's a later increment).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSiteBuilderGet, seoSiteBuilderGenerate } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSiteBuilderGet, seoSiteBuilderGenerate, seoSiteBuilderLink } from './store.js';
 import { Card, Btn, Select } from './ui.js';
 
 const TYPE_BADGE = {
@@ -38,6 +38,7 @@ export function SiteBuilder() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState('');
+  const [links, setLinks] = useState({}); // suggested page url → live page url (owner-set)
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }).catch(() => setSites([])); }, [accountId]);
   useEffect(() => {
@@ -45,6 +46,8 @@ export function SiteBuilder() {
     setData(undefined);
     seoSiteBuilderGet(site).then((r) => setData(r?.plan ? r : null)).catch((e) => { setErr(e.message); setData(null); });
   }, [site]);
+  // Keep the local link map in sync with whatever the backend returned.
+  useEffect(() => { setLinks(data && data.links && typeof data.links === 'object' ? { ...data.links } : {}); }, [data]);
 
   const generate = async () => {
     setBusy(true); setErr('');
@@ -56,6 +59,24 @@ export function SiteBuilder() {
   const plan = data && data.plan ? data.plan : null;
   const stats = data && data.stats ? data.stats : null;
 
+  // Live pages from the connected site, for the per-suggestion "link to a live
+  // page" picker. A page counts as live if it auto-matched OR the owner linked it.
+  const livePages = (plan && plan.wp && Array.isArray(plan.wp.livePages)) ? plan.wp.livePages : [];
+  const liveMap = {}; for (const lp of livePages) liveMap[lp.url] = lp.title;
+  const canLink = !!(plan && plan.wp && plan.wp.connected && livePages.length);
+  const isLive = (p) => !!links[p.url] || p.autoMatch;
+  const allPages = plan ? plan.sections.flatMap((s) => s.pages) : [];
+  const liveCount = allPages.filter(isLive).length;
+  const buildCount = allPages.length - liveCount;
+  const showLive = !!(plan && plan.wp && (plan.wp.checked || Object.keys(links).length));
+
+  const linkPage = (pageUrl, val) => {
+    const v = String(val || '').trim();
+    if (v && liveMap[v] === undefined) return; // only accept a real live page (or clear)
+    setLinks((prev) => { const n = { ...prev }; if (v) n[pageUrl] = v; else delete n[pageUrl]; return n; });
+    seoSiteBuilderLink(site, pageUrl, v).catch((e) => setErr(e.message));
+  };
+
   const urlList = () => plan ? plan.sections.flatMap((s) => s.pages.map((p) => p.url)).join('\n') : '';
   const markdown = () => {
     if (!plan) return '';
@@ -63,13 +84,13 @@ export function SiteBuilder() {
     const out = [`# Website strategy — ${b.name || ''}`, ''];
     if (b.industry) out.push(`Industry: ${b.industry}`);
     if (b.homeCity || b.state) out.push(`Based in: ${[b.homeCity, b.state].filter(Boolean).join(', ')}`);
-    out.push(`Total pages planned: ${stats?.total ?? ''}` + (plan.wp?.checked ? ` (${stats?.exists ?? 0} already live, ${stats?.new ?? 0} to build)` : ''));
+    out.push(`Total pages planned: ${allPages.length}` + (showLive ? ` (${liveCount} already live, ${buildCount} to build)` : ''));
     out.push('');
     for (const sec of plan.sections) {
       if (!sec.pages.length) continue;
       out.push(`## ${sec.label} (${sec.pages.length})`);
       if (sec.desc) out.push(`_${sec.desc}_`);
-      for (const p of sec.pages) out.push(`- ${p.url} — ${p.title}${plan.wp?.checked ? ` [${p.status === 'exists' ? 'live' : 'build'}]` : ''}${p.purpose ? `  \n  ${p.purpose}` : ''}`);
+      for (const p of sec.pages) out.push(`- ${p.url} — ${p.title}${showLive ? ` [${isLive(p) ? 'live' : 'build'}]` : ''}${links[p.url] ? ` (→ ${links[p.url]})` : ''}${p.purpose ? `  \n  ${p.purpose}` : ''}`);
       out.push('');
     }
     return out.join('\n');
@@ -112,9 +133,9 @@ export function SiteBuilder() {
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <${Stat} label="Total pages" value=${stats?.total ?? 0} />
-          <${Stat} label="To build" value=${stats?.new ?? 0} tone="text-amber-600" />
-          <${Stat} label=${plan.wp?.checked ? 'Already live' : 'Live pages'} value=${plan.wp?.checked ? (stats?.exists ?? 0) : '—'} tone="text-emerald-600" />
+          <${Stat} label="Total pages" value=${allPages.length || (stats?.total ?? 0)} />
+          <${Stat} label="To build" value=${showLive ? buildCount : (allPages.length || (stats?.total ?? 0))} tone="text-amber-600" />
+          <${Stat} label=${showLive ? 'Already live' : 'Live pages'} value=${showLive ? liveCount : '—'} tone="text-emerald-600" />
           <${Stat} label="Priority geo cities" value=${(plan.geo?.topCities || []).length} tone="text-violet-600" />
         </div>
 
@@ -127,7 +148,10 @@ export function SiteBuilder() {
               : html`<span class="text-amber-600">⚠ No connected WordPress site — every page is shown as “to build”. Connect the site (Business tab) to see what already exists.</span>`}
         </div>
         ${(plan.geo?.topCities || []).length > 0 && html`<div class="text-[11px] text-slate-400">Geo priority cities: ${(plan.geo.topCities).join(', ')}</div>`}
+        ${canLink && html`<div class="text-[11px] text-slate-400">Tip: for any page a match was missed on, use the “Live page” picker beside it to connect the suggestion to the page that already exists on your site.</div>`}
       </div></${Card}>
+
+      ${canLink && html`<datalist id="ob-live-pages">${livePages.map((lp) => html`<option value=${lp.url}>${lp.title}</option>`)}</datalist>`}
 
       ${plan.sections.filter((s) => s.pages.length).map((sec) => html`<${Card} key=${sec.key}><div class="p-4">
         <div class="flex items-baseline justify-between gap-2 mb-1">
@@ -141,9 +165,16 @@ export function SiteBuilder() {
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm text-slate-700 font-medium">${p.title}</span>
                 <code class="text-[11px] text-slate-400 break-all">${p.url}</code>
-                ${plan.wp?.checked && html`<span class=${cx('text-[10px] px-1.5 py-0.5 rounded-full', p.status === 'exists' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600')}>${p.status === 'exists' ? 'live' : 'build'}</span>`}
+                ${showLive && html`<span class=${cx('text-[10px] px-1.5 py-0.5 rounded-full', isLive(p) ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600')}>${isLive(p) ? (links[p.url] ? 'linked' : 'live') : 'build'}</span>`}
               </div>
               ${p.purpose && html`<div class="text-[11px] text-slate-400">${p.purpose}</div>`}
+              ${canLink && !p.autoMatch && html`<div class="flex items-center gap-1.5 mt-1">
+                <span class="text-[10px] text-slate-400 shrink-0">Live page:</span>
+                <input list="ob-live-pages" value=${links[p.url] || ''} onChange=${(e) => linkPage(p.url, e.target.value)}
+                  placeholder="link a page that already exists…" class="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 w-64 max-w-full focus:border-brand-400 outline-none" />
+                ${links[p.url] && html`<span class="text-[10px] text-emerald-600 truncate max-w-[160px]" title=${links[p.url]}>→ ${liveMap[links[p.url]] || links[p.url]}</span>`}
+                ${links[p.url] && html`<button onClick=${() => linkPage(p.url, '')} class="text-slate-300 hover:text-rose-600 text-[11px] shrink-0" title="Unlink">✕</button>`}
+              </div>`}
             </div>
           </div>`)}
         </div>

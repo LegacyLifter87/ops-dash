@@ -656,6 +656,8 @@ async function seoInvokeSiteBuilder(action, extra = {}) {
 }
 export const seoSiteBuilderGet = (siteId) => seoInvokeSiteBuilder('get', { siteId });
 export const seoSiteBuilderGenerate = (siteId) => seoInvokeSiteBuilder('generate', { siteId });
+// Map a suggested page to the live page that actually exists (liveUrl '' clears it).
+export const seoSiteBuilderLink = (siteId, pageUrl, liveUrl) => seoInvokeSiteBuilder('link', { siteId, pageUrl, liveUrl });
 // Client approval email (seo-approval fn). status = is a client email configured
 // + the current approval row; send_now fires (or resends) the approval link on
 // demand instead of waiting for the cron tick.
