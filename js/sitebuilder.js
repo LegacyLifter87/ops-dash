@@ -8,7 +8,7 @@
 // build pages yet (that's a later increment).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSiteBuilderGet, seoSiteBuilderGenerate, seoSiteBuilderLink } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSiteBuilderGet, seoSiteBuilderGenerate, seoSiteBuilderLink, seoSiteBuilderPageCopy, seoSiteBuilderPageGet } from './store.js';
 import { Card, Btn, Select } from './ui.js';
 
 const TYPE_BADGE = {
@@ -29,6 +29,29 @@ function Stat({ label, value, tone }) {
   </div>`;
 }
 
+// Renders a generated page copy deck (SEO meta, H1, sections, FAQ, CTA, links,
+// image specs, client flags).
+function CopyDeck({ copy, page }) {
+  const meta = [['Focus keyword', copy.focus_keyword], ['SEO title', copy.meta_title], ['Meta description', copy.meta_description], ['URL', copy.url_slug || page.url], ['Schema', copy.schema]].filter(([, v]) => v);
+  return html`<div class="space-y-3">
+    <div class="rounded-lg bg-slate-50 border border-slate-100 p-2.5 space-y-1">
+      ${meta.map(([k, v]) => html`<div class="text-[12px]"><span class="text-slate-400">${k}:</span> <span class="text-slate-700">${v}</span></div>`)}
+    </div>
+    ${copy.h1 && html`<h3 class="text-base font-bold text-slate-800">${copy.h1}</h3>`}
+    ${(copy.sections || []).map((s) => html`<div>
+      <div class="font-semibold text-slate-700">${s.h2}</div>
+      ${String(s.body || '').split(/\n\n+/).filter(Boolean).map((para) => html`<p class="text-slate-600 mt-1 whitespace-pre-line">${para}</p>`)}
+    </div>`)}
+    ${(copy.faqs || []).length ? html`<div><div class="font-semibold text-slate-700 mb-1">FAQ</div>
+      ${copy.faqs.map((f) => html`<div class="mb-2"><div class="text-slate-700 font-medium">${f.q}</div><div class="text-slate-600">${f.a}</div></div>`)}
+    </div>` : ''}
+    ${copy.primary_cta && html`<div class="text-[12px]"><span class="text-slate-400">Primary CTA:</span> <span class="text-brand-700 font-medium">${copy.primary_cta}</span></div>`}
+    ${(copy.internal_links || []).length ? html`<div class="text-[12px]"><div class="text-slate-400 mb-0.5">Internal links</div>${copy.internal_links.map((l) => html`<div class="text-slate-600">${l.anchor} → <code class="text-slate-400 break-all">${l.target}</code></div>`)}</div>` : ''}
+    ${(copy.image_specs || []).length ? html`<div class="text-[12px]"><div class="text-slate-400 mb-0.5">Images</div>${copy.image_specs.map((im) => html`<div class="text-slate-600">${im.placement}: ${im.description} <span class="text-slate-400">(alt: ${im.alt})</span></div>`)}</div>` : ''}
+    ${(copy.flags || []).length ? html`<div class="rounded-lg bg-amber-50 border border-amber-100 p-2.5 text-[12px]"><div class="font-medium text-amber-700 mb-0.5">⚠ Confirm with client before publishing</div>${copy.flags.map((fl) => html`<div class="text-amber-700">• ${fl}</div>`)}</div>` : ''}
+  </div>`;
+}
+
 export function SiteBuilder() {
   useStore();
   const accountId = getActiveAccountId();
@@ -39,6 +62,10 @@ export function SiteBuilder() {
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState('');
   const [links, setLinks] = useState({}); // suggested page url → live page url (owner-set)
+  const [haveCopy, setHaveCopy] = useState(new Set()); // page urls that already have a copy deck
+  const [copyBusy, setCopyBusy] = useState(''); // page url currently generating
+  const [copyModal, setCopyModal] = useState(null); // { page, copy, generatedAt }
+  const [bulk, setBulk] = useState(null); // { done, total } while generating all
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }).catch(() => setSites([])); }, [accountId]);
   useEffect(() => {
@@ -46,8 +73,9 @@ export function SiteBuilder() {
     setData(undefined);
     seoSiteBuilderGet(site).then((r) => setData(r?.plan ? r : null)).catch((e) => { setErr(e.message); setData(null); });
   }, [site]);
-  // Keep the local link map in sync with whatever the backend returned.
+  // Keep the local link map + copy-status set in sync with the backend.
   useEffect(() => { setLinks(data && data.links && typeof data.links === 'object' ? { ...data.links } : {}); }, [data]);
+  useEffect(() => { setHaveCopy(new Set(data && Array.isArray(data.copied) ? data.copied : [])); }, [data]);
 
   const generate = async () => {
     setBusy(true); setErr('');
@@ -75,6 +103,51 @@ export function SiteBuilder() {
     if (v && liveMap[v] === undefined) return; // only accept a real live page (or clear)
     setLinks((prev) => { const n = { ...prev }; if (v) n[pageUrl] = v; else delete n[pageUrl]; return n; });
     seoSiteBuilderLink(site, pageUrl, v).catch((e) => setErr(e.message));
+  };
+
+  // --- Page copy generation ---
+  const genCopy = async (page) => {
+    setCopyBusy(page.url); setErr('');
+    try {
+      const r = await seoSiteBuilderPageCopy(site, page.url);
+      setHaveCopy((prev) => new Set(prev).add(page.url));
+      setCopyModal({ page, copy: r.copy, generatedAt: r.generatedAt });
+    } catch (e) { setErr(`Copy for ${page.title}: ${e.message}`); }
+    finally { setCopyBusy(''); }
+  };
+  const viewCopy = async (page) => {
+    setCopyBusy(page.url); setErr('');
+    try { const r = await seoSiteBuilderPageGet(site, page.url); setCopyModal({ page, copy: r.copy, generatedAt: r.generatedAt }); }
+    catch (e) { setErr(e.message); }
+    finally { setCopyBusy(''); }
+  };
+  const genAllCopy = async () => {
+    const targets = allPages.filter((p) => !haveCopy.has(p.url));
+    if (!targets.length) return;
+    setErr(''); setBulk({ done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      try { await seoSiteBuilderPageCopy(site, targets[i].url); setHaveCopy((prev) => new Set(prev).add(targets[i].url)); }
+      catch (e) { setErr(`Stopped on ${targets[i].title}: ${e.message}`); setBulk(null); return; }
+      setBulk({ done: i + 1, total: targets.length });
+    }
+    setBulk(null);
+  };
+  const copyDeckMd = (page, copy) => {
+    if (!copy) return '';
+    const L = [`# ${copy.h1 || page.title}`, ''];
+    if (copy.focus_keyword) L.push(`**Focus keyword:** ${copy.focus_keyword}`);
+    if (copy.meta_title) L.push(`**SEO title:** ${copy.meta_title}`);
+    if (copy.meta_description) L.push(`**Meta description:** ${copy.meta_description}`);
+    L.push(`**URL:** ${copy.url_slug || page.url}`);
+    if (copy.schema) L.push(`**Schema:** ${copy.schema}`);
+    L.push('');
+    for (const s of (copy.sections || [])) { L.push(`## ${s.h2}`); L.push(''); L.push(s.body); L.push(''); }
+    if ((copy.faqs || []).length) { L.push('## FAQ'); L.push(''); for (const f of copy.faqs) { L.push(`**${f.q}**`); L.push(''); L.push(f.a); L.push(''); } }
+    if (copy.primary_cta) { L.push(`**Primary CTA:** ${copy.primary_cta}`); L.push(''); }
+    if ((copy.internal_links || []).length) { L.push('**Internal links:**'); for (const l of copy.internal_links) L.push(`- ${l.anchor} → ${l.target}`); L.push(''); }
+    if ((copy.image_specs || []).length) { L.push('**Images:**'); for (const im of copy.image_specs) L.push(`- ${im.placement}: ${im.description} (alt: "${im.alt}")`); L.push(''); }
+    if ((copy.flags || []).length) { L.push('**⚠ Confirm with client:**'); for (const fl of copy.flags) L.push(`- ${fl}`); }
+    return L.join('\n');
   };
 
   const urlList = () => plan ? plan.sections.flatMap((s) => s.pages.map((p) => p.url)).join('\n') : '';
@@ -126,11 +199,15 @@ export function SiteBuilder() {
             <div class="font-semibold text-slate-800">${plan.business?.name || 'Business'} ${plan.business?.industry ? html`<span class="text-slate-400 font-normal">· ${plan.business.industry}</span>` : ''}</div>
             <div class="text-[11px] text-slate-400">${data.generatedAt ? `Generated ${new Date(data.generatedAt).toLocaleString()}` : ''}${plan.business?.domain ? ` · ${plan.business.domain}` : ''}</div>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            ${bulk
+              ? html`<span class="text-xs text-slate-500">Writing copy… ${bulk.done}/${bulk.total}</span>`
+              : html`<${Btn} size="sm" variant="secondary" onClick=${genAllCopy} disabled=${haveCopy.size >= allPages.length}>✍️ ${haveCopy.size >= allPages.length ? 'All copy written' : `Write copy for all (${allPages.length - haveCopy.size})`}</${Btn}>`}
             <${Btn} size="sm" variant="secondary" onClick=${() => copy(urlList(), 'urls')}>${copied === 'urls' ? '✓ Copied' : 'Copy URLs'}</${Btn}>
             <${Btn} size="sm" variant="secondary" onClick=${() => copy(markdown(), 'md')}>${copied === 'md' ? '✓ Copied' : 'Copy as document'}</${Btn}>
           </div>
         </div>
+        ${haveCopy.size > 0 && html`<div class="text-[11px] text-slate-400">✍️ Copy written for ${haveCopy.size} of ${allPages.length} pages. Copy is saved and survives regeneration.</div>`}
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <${Stat} label="Total pages" value=${allPages.length || (stats?.total ?? 0)} />
@@ -166,6 +243,9 @@ export function SiteBuilder() {
                 <span class="text-sm text-slate-700 font-medium">${p.title}</span>
                 <code class="text-[11px] text-slate-400 break-all">${p.url}</code>
                 ${showLive && html`<span class=${cx('text-[10px] px-1.5 py-0.5 rounded-full', isLive(p) ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600')}>${isLive(p) ? (links[p.url] ? 'linked' : 'live') : 'build'}</span>`}
+                ${haveCopy.has(p.url)
+                  ? html`<button onClick=${() => viewCopy(p)} disabled=${copyBusy === p.url || !!bulk} class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100">${copyBusy === p.url ? '…' : '✍️ view copy'}</button>`
+                  : html`<button onClick=${() => genCopy(p)} disabled=${copyBusy === p.url || !!bulk} class="text-[10px] px-1.5 py-0.5 rounded-full border border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-700">${copyBusy === p.url ? 'writing…' : '✍️ write copy'}</button>`}
               </div>
               ${p.purpose && html`<div class="text-[11px] text-slate-400">${p.purpose}</div>`}
               ${canLink && !p.autoMatch && html`<div class="flex items-center gap-1.5 mt-1">
@@ -180,5 +260,24 @@ export function SiteBuilder() {
         </div>
       </div></${Card}>`)}
     `}
+
+    ${copyModal && html`<div class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4" onClick=${() => setCopyModal(null)}>
+      <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full my-8" onClick=${(e) => e.stopPropagation()}>
+        <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-xl">
+          <div class="min-w-0">
+            <div class="font-semibold text-slate-800 truncate">${copyModal.page.title} <span class="text-slate-400 font-normal">copy</span></div>
+            <code class="text-[11px] text-slate-400 break-all">${copyModal.page.url}</code>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <${Btn} size="sm" variant="secondary" onClick=${() => copy(copyDeckMd(copyModal.page, copyModal.copy), 'deck')}>${copied === 'deck' ? '✓ Copied' : 'Copy'}</${Btn}>
+            <${Btn} size="sm" variant="ghost" onClick=${() => genCopy(copyModal.page)} disabled=${copyBusy === copyModal.page.url}>${copyBusy === copyModal.page.url ? '…' : '↻ Regenerate'}</${Btn}>
+            <button onClick=${() => setCopyModal(null)} class="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+          </div>
+        </div>
+        <div class="p-4">
+          ${copyModal.copy ? html`<${CopyDeck} copy=${copyModal.copy} page=${copyModal.page} />` : html`<div class="text-sm text-slate-400">No copy stored for this page yet.</div>`}
+        </div>
+      </div>
+    </div>`}
   </div>`;
 }

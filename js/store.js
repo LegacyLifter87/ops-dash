@@ -658,6 +658,10 @@ export const seoSiteBuilderGet = (siteId) => seoInvokeSiteBuilder('get', { siteI
 export const seoSiteBuilderGenerate = (siteId) => seoInvokeSiteBuilder('generate', { siteId });
 // Map a suggested page to the live page that actually exists (liveUrl '' clears it).
 export const seoSiteBuilderLink = (siteId, pageUrl, liveUrl) => seoInvokeSiteBuilder('link', { siteId, pageUrl, liveUrl });
+// Auto-write / fetch the full copy deck for one suggested page (grounded in the
+// brand kit + the copywriting/SEO playbooks).
+export const seoSiteBuilderPageCopy = (siteId, pageUrl) => seoInvokeSiteBuilder('page_copy', { siteId, pageUrl });
+export const seoSiteBuilderPageGet = (siteId, pageUrl) => seoInvokeSiteBuilder('page_get', { siteId, pageUrl });
 // Client approval email (seo-approval fn). status = is a client email configured
 // + the current approval row; send_now fires (or resends) the approval link on
 // demand instead of waiting for the cron tick.
