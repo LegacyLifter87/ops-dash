@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -115,15 +115,31 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', services: (Array.isArray(pr.manual_services) ? pr.manual_services : []).map((s) => ({ name: s?.name || '', url: s?.url || '' })), insights: pr.insights || '' });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', pillars: [], insights: pr.insights || '' });
       if (!r.profile) setOpen(true);
+      // Service categories (pillars) come from the dedicated seo-pillars fn,
+      // which seeds one uncategorized group from any existing manual_services.
+      seoSocialPillarsGet(site).then((pr2) => setF((x) => ({ ...x, pillars: (Array.isArray(pr2.pillars) ? pr2.pillars : []).map((pl) => ({ name: pl?.name || '', services: (Array.isArray(pl?.services) ? pl.services : []).map((s) => ({ name: s?.name || '', url: s?.url || '' })) })) }))).catch(() => {});
     }).catch((e) => { setErr(e.message); setP({}); });
   }, [site]);
+  // Flatten the pillar tree into the flat {name,url} list seo-social stores as
+  // manual_services (the AI/blog service source), deduped by name.
+  const flatSvcs = (pillars) => {
+    const seen = new Set(); const out = [];
+    for (const pl of (pillars || [])) for (const s of (pl.services || [])) {
+      const nm = String(s.name || '').trim(); if (!nm) continue;
+      const k = nm.toLowerCase(); if (seen.has(k)) continue; seen.add(k);
+      out.push({ name: nm, url: String(s.url || '').trim() });
+    }
+    return out;
+  };
 
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: (f.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+      // The grouped category → service structure is stored separately (seo-pillars).
+      await seoSocialPillarsSave(site, (f.pillars || []).filter((pl) => String(pl.name || '').trim() || (pl.services || []).some((s) => String(s.name || '').trim())).map((pl) => ({ name: pl.name, services: (pl.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })) })));
       // Re-read so persisted cert rows (and their badge slots) are current.
       const r2 = await seoSocialProfile(site);
       setP(r2.profile || {});
@@ -205,7 +221,7 @@ export function BrandKit({ site, onBanner }) {
         // first so the upload has a row to attach to.
         const saved = (p?.certifications || []).some((x) => x?.id === certId);
         if (!saved) {
-          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: (f.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
         }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
@@ -217,9 +233,13 @@ export function BrandKit({ site, onBanner }) {
   const setCert = (i, k, v) => setF((x) => { const certs = (x.certs || []).slice(); certs[i] = { ...certs[i], [k]: v }; return { ...x, certs }; });
   const addCert = () => setF((x) => ({ ...x, certs: [...(x.certs || []), { id: crypto.randomUUID(), name: '', number: '', required: false }] }));
   const rmCert = (i) => setF((x) => ({ ...x, certs: (x.certs || []).filter((_, j) => j !== i) }));
-  const setSvc = (i, k, v) => setF((x) => { const services = (x.services || []).slice(); services[i] = { ...services[i], [k]: v }; return { ...x, services }; });
-  const addSvc = () => setF((x) => ({ ...x, services: [...(x.services || []), { name: '', url: '' }] }));
-  const rmSvc = (i) => setF((x) => ({ ...x, services: (x.services || []).filter((_, j) => j !== i) }));
+  // Service categories (pillars), each with services (spokes) underneath.
+  const addPillar = () => setF((x) => ({ ...x, pillars: [...(x.pillars || []), { name: '', services: [{ name: '', url: '' }] }] }));
+  const rmPillar = (pi) => setF((x) => ({ ...x, pillars: (x.pillars || []).filter((_, j) => j !== pi) }));
+  const setPillarName = (pi, v) => setF((x) => { const pillars = (x.pillars || []).slice(); pillars[pi] = { ...pillars[pi], name: v }; return { ...x, pillars }; });
+  const addSvc = (pi) => setF((x) => { const pillars = (x.pillars || []).slice(); pillars[pi] = { ...pillars[pi], services: [...(pillars[pi].services || []), { name: '', url: '' }] }; return { ...x, pillars }; });
+  const rmSvc = (pi, si) => setF((x) => { const pillars = (x.pillars || []).slice(); pillars[pi] = { ...pillars[pi], services: (pillars[pi].services || []).filter((_, j) => j !== si) }; return { ...x, pillars }; });
+  const setSvc = (pi, si, k, v) => setF((x) => { const pillars = (x.pillars || []).slice(); const services = (pillars[pi].services || []).slice(); services[si] = { ...services[si], [k]: v }; pillars[pi] = { ...pillars[pi], services }; return { ...x, pillars }; });
   const togglePlat = (id) => setF((x) => { const n = new Set(x.platforms); if (n.has(id)) n.delete(id); else n.add(id); return { ...x, platforms: n }; });
 
   if (p === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading brand kit…</div></${Card}>`;
@@ -249,14 +269,24 @@ export function BrandKit({ site, onBanner }) {
       <${Field} label="Ideal client profile (optional — who every post and blog should speak to)"><${Textarea} value=${f.icp} onInput=${(v) => setF({ ...f, icp: v })} rows=${2} placeholder="Homeowners 35-65 in Marion County with 1+ acre properties; value reliability over lowest price; worried about curb appeal and protecting their biggest investment…" /></${Field}>
       <${Field} label="Warranty / guarantee (optional — used as real proof in posts and blogs, never embellished)"><${Textarea} value=${f.warranty} onInput=${(v) => setF({ ...f, warranty: v })} rows=${2} placeholder="5-year workmanship warranty on all installs; 30-day satisfaction guarantee on cleanings…" /></${Field}>
       <div>
-        <label class="text-[11px] text-slate-400 block mb-1">🧰 Services you offer <span class="text-slate-300">— add any service the AI should write posts and blogs about; these join the ones found on your website. A page link is optional</span></label>
-        <div class="space-y-1.5">
-          ${(f.services || []).map((s, i) => html`<div class="flex items-center gap-2 flex-wrap rounded-lg border border-slate-100 px-2.5 py-2">
-            <${Input} value=${s.name || ''} onInput=${(v) => setSvc(i, 'name', v)} placeholder="Service name (e.g. Metal Roof Installation)" class="flex-1 min-w-[180px]" />
-            <${Input} value=${s.url || ''} onInput=${(v) => setSvc(i, 'url', v)} placeholder="Page link (optional)" class="w-52" />
-            <button onClick=${() => rmSvc(i)} class="text-slate-300 hover:text-rose-600" title="Remove this service">✕</button>
+        <label class="text-[11px] text-slate-400 block mb-1">🧰 Service categories & services <span class="text-slate-300">— group the services you offer under a category (e.g. "Roofing" → "Metal Roof Installation", "Roof Repair"). The AI writes posts and blogs about these, and the Site Builder plans a pillar page per category with a page for each service under it. A page link is optional.</span></label>
+        <div class="space-y-2.5">
+          ${(f.pillars || []).map((pl, pi) => html`<div class="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5" key=${pi}>
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="text-slate-400 text-sm shrink-0" title="Service category (pillar)">📂</span>
+              <${Input} value=${pl.name || ''} onInput=${(v) => setPillarName(pi, v)} placeholder="Category name (e.g. Roofing)" class="flex-1 min-w-[160px] font-medium" />
+              <button onClick=${() => rmPillar(pi)} class="text-slate-300 hover:text-rose-600 shrink-0" title="Remove this category and its services">✕</button>
+            </div>
+            <div class="space-y-1.5 pl-6">
+              ${(pl.services || []).map((s, si) => html`<div class="flex items-center gap-2 flex-wrap rounded-md border border-slate-100 bg-white px-2.5 py-1.5" key=${si}>
+                <${Input} value=${s.name || ''} onInput=${(v) => setSvc(pi, si, 'name', v)} placeholder="Service name (e.g. Metal Roof Installation)" class="flex-1 min-w-[170px]" />
+                <${Input} value=${s.url || ''} onInput=${(v) => setSvc(pi, si, 'url', v)} placeholder="Page link (optional)" class="w-48" />
+                <button onClick=${() => rmSvc(pi, si)} class="text-slate-300 hover:text-rose-600" title="Remove this service">✕</button>
+              </div>`)}
+              ${(pl.services || []).length < 60 && html`<button onClick=${() => addSvc(pi)} class="text-xs text-slate-400 hover:text-brand-700 underline">+ Add service</button>`}
+            </div>
           </div>`)}
-          ${(f.services || []).length < 40 && html`<button onClick=${addSvc} class="text-xs text-slate-400 hover:text-brand-700 underline">+ Add service</button>`}
+          ${(f.pillars || []).length < 30 && html`<button onClick=${addPillar} class="text-xs text-brand-600 hover:text-brand-700 font-medium">+ Add category</button>`}
         </div>
       </div>
       <${Field} label="💡 Insights for the AI (optional — first-party knowledge woven into posts and blogs: what makes you different, seasonal tips, questions customers always ask, myths to bust)"><${Textarea} value=${f.insights} onInput=${(v) => setF({ ...f, insights: v })} rows=${4} placeholder="We only use synthetic underlayment, never felt. Spring is the best time to reseal a driveway in Florida. Customers always ask if pressure washing damages siding — it doesn't when done right. Every crew is in-house; we never subcontract…" /></${Field}>
