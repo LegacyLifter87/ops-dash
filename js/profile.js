@@ -5,8 +5,8 @@
 // plus links to the Google connections managed in their tabs).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, jtStatus, jtListCompanies, jtLink, jtUnlink } from './store.js';
-import { Card, Btn, Select } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, jtStatus, jtListCompanies, jtLink, jtUnlink } from './store.js';
+import { Card, Btn, Select, Input } from './ui.js';
 import { BrandKit, GhlCard, PhotoLibrary } from './social.js';
 import { Strategy } from './strategy.js';
 import { WordPressConnect } from './wp-connect.js';
@@ -52,12 +52,40 @@ export function Profile() {
   const [site, setSite] = useState('');
   const [photos, setPhotos] = useState(null);
   const [banner, setBanner] = useState('');
+  const [nbName, setNbName] = useState(''); // add-business (no Search Console needed)
+  const [nbDomain, setNbDomain] = useState('');
+  const [nbBusy, setNbBusy] = useState(false);
+  const [nbErr, setNbErr] = useState('');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
+  const addBusiness = async () => {
+    setNbBusy(true); setNbErr('');
+    try {
+      const s = await seoAddManualSite(nbDomain, nbName);
+      setNbName(''); setNbDomain('');
+      const list = await seoLoadSites(); setSites(list);
+      if (s?.id) setSite(s.id);
+      setBanner('Business added. Fill in the Brand kit (services) and Marketing strategy (service area) below — Search Console is optional and connects in the SEO tab.');
+    } catch (e) { setNbErr(e.message); } finally { setNbBusy(false); }
+  };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading business profile…</div>`;
-  if (sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
+  if (sites.length === 0) return html`<div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
+    <div>
+      <h1 class="text-xl font-bold text-slate-800">Business Profile</h1>
+      <p class="text-sm text-slate-500">Add this account's business to get started. Search Console is optional — connect it later in the <a href="#/seo" class="text-brand-700 underline">SEO tab</a> for ranking data.</p>
+    </div>
+    ${nbErr && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${nbErr}</div>`}
+    <${Card}><div class="p-5 space-y-2">
+      <div class="font-semibold text-slate-800">Add a business</div>
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Business name</label><${Input} value=${nbName} onInput=${setNbName} placeholder="Acme Roofing" /></div>
+        <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Website</label><${Input} value=${nbDomain} onInput=${setNbDomain} placeholder="acmeroofing.com" /></div>
+        <${Btn} variant="cta" onClick=${addBusiness} disabled=${nbBusy || !nbDomain.trim()}>${nbBusy ? 'Adding…' : '+ Add business'}</${Btn}>
+      </div>
+    </div></${Card}>
+  </div>`;
 
   return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
     <div class="flex flex-wrap items-start justify-between gap-3">

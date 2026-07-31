@@ -145,12 +145,14 @@ export function SEO() {
     ${banner && html`<${Note} onClose=${() => setBanner('')}>${banner}</${Note}>`}
     ${err && html`<${Note} err>${err}</${Note}>`}
     <${Card}><div class="p-4 flex flex-wrap items-center gap-3 justify-between">
-      <div class="text-sm text-slate-600">Connected as <span class="font-medium text-slate-800">${status.email || 'Google account'}</span></div>
-      ${isAdmin && html`<div class="flex items-center gap-2">
+      <div class="text-sm text-slate-600">Search Console connected as <span class="font-medium text-slate-800">${status.email || 'Google account'}</span></div>
+      ${isAdmin && html`<div class="flex items-center gap-2 flex-wrap">
         ${props.length > 0 && html`<${Select} value="" onChange=${(v) => addSite(v)} options=${[{ value: '', label: busy === 'add' ? 'Adding…' : '+ Add a property…' }, ...props.map((p) => ({ value: p, label: p }))]} />`}
+        <${Btn} size="sm" variant="secondary" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : '🔑 Sign in again'}</${Btn}>
         <button onClick=${disconnect} class="text-sm text-slate-400 hover:text-rose-600 underline">${busy === 'disc' ? 'Disconnecting…' : 'Disconnect'}</button>
       </div>`}
     </div></${Card}>
+    ${isAdmin && (status.properties || []).length === 0 && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-amber-50 text-amber-700">No Search Console properties came back from Google — the connection may have expired (Google drops it after ~7 days on this project) or the Google account has no verified properties. Click <span class="font-medium">🔑 Sign in again</span> above to refresh the connection.</div>`}
     ${manualAddCard}
 
     ${(status.sites || []).length === 0
