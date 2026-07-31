@@ -120,7 +120,7 @@ export function Strategy({ site: siteProp, embedded } = {}) {
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (!embedded && sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading strategy…</div>`;
-  if (!embedded && sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
+  if (!embedded && sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Add a business first — from the <span class="font-medium">Social</span> tab or the <span class="font-medium">SEO</span> tab. Search Console is optional.</div></${Card}></div>`;
 
   const shownPages = (pages || []).filter((p) => !filter || (p.path || p.url).toLowerCase().includes(filter.toLowerCase()));
   const svcCount = (pages || []).filter((p) => p.is_service).length;

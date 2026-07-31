@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -1035,8 +1035,20 @@ export function Social() {
   const [banner, setBanner] = useState('');
   const [appr, setAppr] = useState(null); // { emailConfigured, approval, ... } for the loaded calendar
   const [ghl, setGhl] = useState(null); // GHL connection { accounts, selected } for the per-post destination picker
+  const [nbName, setNbName] = useState(''); // new-business name (no-GSC quick add)
+  const [nbDomain, setNbDomain] = useState('');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
+  const addBusiness = async () => {
+    setBusy('addbiz'); setErr('');
+    try {
+      const s = await seoAddManualSite(nbDomain, nbName);
+      setNbName(''); setNbDomain('');
+      const list = await seoLoadSites(); setSites(list);
+      if (s?.id) setSite(s.id);
+      setBanner('Business added. Set its services in the Brand kit below and its service area in the Strategy tab, then generate the month.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const load = async (s = site, m = month) => {
     if (!s) return;
     try {
@@ -1108,7 +1120,23 @@ export function Social() {
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading social manager…</div>`;
-  if (sites.length === 0) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}></div>`;
+  if (sites.length === 0) return html`<div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
+    <div>
+      <h1 class="text-xl font-bold text-slate-800">Social Media</h1>
+      <p class="text-sm text-slate-500">Add a business to get started. Search Console is optional — social posts are built from the business's services and service area.</p>
+    </div>
+    ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
+    ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-800">${banner}</div>`}
+    <${Card}><div class="p-5 space-y-2">
+      <div class="font-semibold text-slate-800">Add a business</div>
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Business name</label><${Input} value=${nbName} onInput=${setNbName} placeholder="Acme Roofing" /></div>
+        <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Website</label><${Input} value=${nbDomain} onInput=${setNbDomain} placeholder="acmeroofing.com" /></div>
+        <${Btn} variant="cta" onClick=${addBusiness} disabled=${busy === 'addbiz' || !nbDomain.trim()}>${busy === 'addbiz' ? 'Adding…' : '+ Add business'}</${Btn}>
+      </div>
+      <p class="text-[11px] text-slate-400">After adding, set services in the Brand kit and the service area in the Strategy tab. Connect Search Console later (SEO tab) for ranking data.</p>
+    </div></${Card}>
+  </div>`;
 
   const counts = posts.reduce((m, p) => { m[p.status] = (m[p.status] || 0) + 1; return m; }, {});
   const activeFilter = POST_FILTERS.find(([k]) => k === filter) || POST_FILTERS[0];

@@ -4,8 +4,8 @@
 // active account changes. Admins connect/sync; members read.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoRemoveSite, seoSync, seoLoadData, seoLoadPageHistory, seoPageQueries, getActiveAccountId } from './store.js';
-import { Card, Btn, Select, Modal } from './ui.js';
+import { useStore, seoStatus, seoConnect, seoDisconnect, seoAddSite, seoAddManualSite, seoRemoveSite, seoSync, seoLoadData, seoLoadPageHistory, seoPageQueries, getActiveAccountId } from './store.js';
+import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 import { SiteHealth } from './lighthouse.js';
 import { Trends, Chart } from './trends.js';
@@ -39,6 +39,8 @@ export function SEO() {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
+  const [mName, setMName] = useState(''); // manual (no-GSC) business name
+  const [mDomain, setMDomain] = useState(''); // manual business website
 
   useEffect(() => {
     const q = new URLSearchParams(location.search);
@@ -61,6 +63,16 @@ export function SEO() {
   const connect = async () => { setBusy('connect'); setErr(''); try { const r = await seoConnect(); location.href = r.url; } catch (e) { setErr(e.message); setBusy(''); } };
   const disconnect = async () => { if (!confirm('Disconnect Google Search Console?')) return; setBusy('disc'); setErr(''); try { await seoDisconnect(); await loadStatus(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const addSite = async (property) => { if (!property) return; setBusy('add'); setErr(''); try { const r = await seoAddSite(property); await loadStatus(); if (r.site) setActiveSite(r.site.id); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  const addManual = async () => {
+    setBusy('addm'); setErr('');
+    try {
+      const s = await seoAddManualSite(mDomain, mName);
+      setMName(''); setMDomain('');
+      await loadStatus();
+      if (s?.id) setActiveSite(s.id);
+      setBanner('Business added. Set its services in the Brand kit (Social tab) and its service area (Strategy tab), then generate socials — Search Console is optional and can be connected later.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const removeSite = async (id) => { if (!confirm('Remove this site and its synced data?')) return; setBusy('rm'); try { await seoRemoveSite(id); if (activeSite === id) setActiveSite(''); await loadStatus(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const sync = async () => { if (!activeSite) return; setBusy('sync'); setErr(''); try { const r = await seoSync(activeSite); setBanner(`Synced ${num(r.queries)} query rows and ${num(r.pages)} page rows.`); setData(await seoLoadData(activeSite)); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
 
@@ -85,6 +97,16 @@ export function SEO() {
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (!status) return html`<div class="p-8 text-sm text-slate-400">Loading SEO…</div>`;
 
+  const manualAddCard = !isAdmin ? '' : html`<${Card}><div class="p-5 space-y-2">
+    <div class="font-semibold text-slate-800">Add a business without Search Console</div>
+    <p class="text-sm text-slate-500 max-w-2xl">No ranking data yet, or a client without Search Console? Add the business here and run Social, the Site Builder, and service-area strategy from its services and service area alone. You can connect Search Console later to layer on keyword and ranking data.</p>
+    <div class="flex flex-wrap items-end gap-2">
+      <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Business name</label><${Input} value=${mName} onInput=${setMName} placeholder="Acme Roofing" /></div>
+      <div class="flex-1 min-w-[160px]"><label class="text-[11px] text-slate-400 block mb-1">Website</label><${Input} value=${mDomain} onInput=${setMDomain} placeholder="acmeroofing.com" /></div>
+      <${Btn} onClick=${addManual} disabled=${busy === 'addm' || !mDomain.trim()}>${busy === 'addm' ? 'Adding…' : '+ Add business'}</${Btn}>
+    </div>
+  </div></${Card}>`;
+
   if (!status.connected) {
     return html`<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
       <${Header} />
@@ -106,6 +128,11 @@ export function SEO() {
             ${isAdmin ? html`<${Btn} onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Connect Google Search Console'}</${Btn}>`
               : html`<p class="text-sm text-slate-400">Ask an account admin to connect Search Console.</p>`}`}
       </div></${Card}>
+      ${manualAddCard}
+      ${(status.sites || []).length > 0 && html`<${Card}><div class="p-4">
+        <div class="text-sm font-medium text-slate-700 mb-1">Businesses in this account (no Search Console needed for Social / Site Builder)</div>
+        <div class="flex flex-wrap gap-1.5">${(status.sites || []).map((s) => html`<span class="px-2.5 py-1 rounded-lg text-sm bg-slate-100 text-slate-600">${s.display_name || s.domain}</span>`)}</div>
+      </div></${Card}>`}
     </div>`;
   }
 
@@ -124,6 +151,7 @@ export function SEO() {
         <button onClick=${disconnect} class="text-sm text-slate-400 hover:text-rose-600 underline">${busy === 'disc' ? 'Disconnecting…' : 'Disconnect'}</button>
       </div>`}
     </div></${Card}>
+    ${manualAddCard}
 
     ${(status.sites || []).length === 0
       ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">No sites yet.${isAdmin ? ' Add a Search Console property above to begin.' : ''}${props.length === 0 && isAdmin ? ' (No properties found on this Google account — make sure it has verified Search Console access.)' : ''}</div></${Card}>`

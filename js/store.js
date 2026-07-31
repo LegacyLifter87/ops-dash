@@ -230,6 +230,21 @@ export async function seoLoadSites() {
   const { data } = await supabase.from('seo_sites').select('*').eq('account_id', aid).order('created_at');
   return data || [];
 }
+// Create a business/site WITHOUT Google Search Console (gsc_property null), so
+// Social, Strategy (service areas) and the Site Builder can run on services +
+// service-area data alone. Admin-gated by RLS (seo_sites_write). Connect GSC
+// later to layer on ranking/keyword data.
+export async function seoAddManualSite(domain, displayName) {
+  const aid = getActiveAccountId();
+  if (!aid) throw new Error('Pick a business first.');
+  const dom = String(domain || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!dom) throw new Error('Enter the business website (e.g. example.com).');
+  const { data, error } = await supabase.from('seo_sites')
+    .insert({ account_id: aid, domain: dom, gsc_property: null, display_name: String(displayName || '').trim() || dom })
+    .select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
 export async function seoLoadKeywords(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_keywords').select('*').eq('site_id', siteId).order('opportunity', { ascending: false });
