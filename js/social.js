@@ -1014,6 +1014,112 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   </div>`;
 }
 
+// ---- Approved-post downloads (media + caption as deliverable files) ----
+const postSlug = (p) => String(p.hook || p.topic || 'post').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'post';
+const mediaExt = (u) => { const m = String(u).split('?')[0].match(/\.(\w{2,4})$/); return m ? m[1].toLowerCase() : 'jpg'; };
+const postCaptionText = (p) => [`${p.post_date} ${p.post_time || ''} · ${p.pillar || ''}${p.target_city ? ` · ${p.target_city}` : ''}`.trim(), '', p.caption || '', '', (p.hashtags || []).join(' ')].join('\n').trim();
+const saveBlob = (blob, filename) => { const o = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = o; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(o), 10000); };
+async function downloadPost(p) {
+  const urls = p.media_urls || [];
+  for (let i = 0; i < urls.length; i++) {
+    try { const r = await fetch(urls[i]); saveBlob(await r.blob(), `${p.post_date}-${postSlug(p)}${urls.length > 1 ? `-${i + 1}` : ''}.${mediaExt(urls[i])}`); }
+    catch (_) { window.open(urls[i], '_blank'); }
+  }
+  saveBlob(new Blob([postCaptionText(p)], { type: 'text/plain' }), `${p.post_date}-${postSlug(p)}.txt`);
+}
+
+// Client approval tracker — where the month stands with the client: what was
+// sent and when, how many posts they approved, which posts they asked to
+// change (with their feedback verbatim and each revision's current state),
+// and whether every approved post has been dispatched to GHL for scheduling.
+// Data is all client-side already (posts + the seo-approval status row).
+function ApprovalTracker({ posts, appr, month, siteName }) {
+  const [showFb, setShowFb] = useState(true);
+  const [zip, setZip] = useState('');
+  const approved = posts.filter((p) => p.status === 'approved');
+  const pushed = approved.filter((p) => p.ghl_post_id);
+  const ready = posts.filter((p) => p.status === 'ready');
+  const generating = posts.filter((p) => ['planned', 'written', 'media_pending'].includes(p.status));
+  const rejected = posts.filter((p) => p.status === 'rejected');
+  const fb = posts.filter((p) => (p.client_feedback || '').trim());
+  const revising = fb.filter((p) => p.status === 'media_pending');
+  const reReady = fb.filter((p) => p.status === 'ready');
+  if (!posts.length) return '';
+  const a = appr?.approval;
+  const fmtD = (d) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+  const fbState = (p) => (p.ghl_post_id ? ['🚀 scheduled', 'bg-emerald-600 text-white'] : p.status === 'approved' ? ['re-approved', 'bg-emerald-100 text-emerald-700'] : p.status === 'ready' ? ['revised — awaiting approval', 'bg-sky-100 text-sky-700'] : p.status === 'media_pending' ? ['being revised', 'bg-amber-100 text-amber-700'] : [p.status.replace('_', ' '), 'bg-slate-100 text-slate-600']);
+
+  const [tone, headline] = (() => {
+    if (!appr) return ['bg-slate-50 text-slate-500', '⏳ Checking approval status…'];
+    if (!appr.emailConfigured) return ['bg-slate-50 text-slate-600', '✋ Internal approval only — no client approval email is set. Add one on the Posting plan card (📧 Client approval) to route this month through the client.'];
+    if (a?.status === 'approved') return ['bg-emerald-50 text-emerald-800', `✅ Client approved this month on ${fmtD(a.approvedAt)}${a.round > 1 ? ` after ${a.round} rounds` : ''}.`];
+    if (a?.status === 'changes') return ['bg-amber-50 text-amber-800', `✏️ Round ${a.round || 1}: the client requested changes on ${fb.length} post${fb.length === 1 ? '' : 's'}${revising.length ? ` — ${revising.length} regenerating now` : ''}${reReady.length ? ` — ${reReady.length} revised and awaiting their re-approval` : ''}. They get a fresh approval link automatically once every revision is finished.`];
+    if (a?.status === 'pending') return ['bg-sky-50 text-sky-800', `📤 Round ${a.round || 1} sent to ${appr.email} on ${fmtD(a.emailSentAt)} — awaiting the client's review.`];
+    return ['bg-slate-50 text-slate-600', `✉️ Not sent to the client yet${appr.email ? ` (will go to ${appr.email})` : ''} — the approval email goes out once every post has finished generating.`];
+  })();
+
+  const dispatchLine = approved.length === 0
+    ? null
+    : pushed.length === approved.length
+      ? `🚀 All ${approved.length} approved post${approved.length === 1 ? ' is' : 's are'} scheduled in GoHighLevel ✓`
+      : `🚀 ${pushed.length} of ${approved.length} approved posts scheduled in GoHighLevel — ${approved.length - pushed.length} still to push.`;
+
+  const downloadAll = async () => {
+    if (!approved.length || zip) return;
+    setZip('Preparing…');
+    try {
+      const { zipSync, strToU8 } = await import('https://esm.sh/fflate@0.8.2');
+      const files = {};
+      const captions = [];
+      let done = 0;
+      for (const p of approved) {
+        const slug = `${p.post_date}-${postSlug(p)}`;
+        const urls = p.media_urls || [];
+        for (let i = 0; i < urls.length; i++) {
+          try { const r = await fetch(urls[i]); files[`${slug}${i ? `-${i + 1}` : ''}.${mediaExt(urls[i])}`] = new Uint8Array(await r.arrayBuffer()); } catch (_) { /* unreachable media — still export its caption */ }
+        }
+        captions.push(`=== ${slug}${p.ghl_post_id ? ' (scheduled in GHL)' : ''}\n${postCaptionText(p)}\n`);
+        done++; setZip(`Packing ${done}/${approved.length}…`);
+      }
+      files['captions.txt'] = strToU8(captions.join('\n'));
+      // Media files are already compressed formats — store, don't recompress.
+      const zipped = zipSync(files, { level: 0 });
+      saveBlob(new Blob([zipped], { type: 'application/zip' }), `${String(siteName || 'social').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${month}-approved-posts.zip`);
+    } catch (e) { alert(`Download failed: ${e.message}`); }
+    finally { setZip(''); }
+  };
+
+  return html`<${Card}><div class="p-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <div class="font-semibold text-slate-800">📋 Client approval & dispatch</div>
+      ${approved.length > 0 && html`<${Btn} size="sm" variant="secondary" onClick=${downloadAll} disabled=${!!zip}>${zip || `⬇ Download approved (${approved.length})`}</${Btn}>`}
+    </div>
+    <div class=${cx('rounded-lg px-3 py-2 text-sm', tone)}>${headline}</div>
+    <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
+      <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">${approved.length}/${posts.length} approved</span>
+      ${ready.length > 0 && html`<span class="px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">${ready.length} awaiting review</span>`}
+      ${revising.length > 0 && html`<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">${revising.length} in revision</span>`}
+      ${generating.length - revising.length > 0 && html`<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${generating.length - revising.length} generating</span>`}
+      ${rejected.length > 0 && html`<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600">${rejected.length} rejected</span>`}
+      ${pushed.length > 0 && html`<span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white">🚀 ${pushed.length} scheduled</span>`}
+    </div>
+    ${dispatchLine && html`<div class=${cx('text-xs mt-2', pushed.length === approved.length ? 'text-emerald-600' : 'text-slate-500')}>${dispatchLine}</div>`}
+    ${fb.length > 0 && html`<div class="mt-3 pt-3 border-t border-slate-100">
+      <button onClick=${() => setShowFb(!showFb)} class="text-xs font-medium text-slate-600 hover:text-brand-700">💬 Client feedback (${fb.length}) ${showFb ? '▾' : '▸'}</button>
+      ${showFb && html`<div class="mt-2 space-y-2">
+        ${fb.map((p) => { const [lbl, cls] = fbState(p); return html`<div class="rounded-lg border border-slate-100 px-3 py-2" key=${p.id}>
+          <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <span>${new Date(p.post_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+            <span class="text-slate-600 truncate max-w-[45%]">${p.hook || p.topic || p.pillar}</span>
+            <span class=${cx('px-1.5 py-0.5 rounded-full font-medium', cls)}>${lbl}</span>
+          </div>
+          <div class="text-xs text-slate-600 italic mt-1">“${p.client_feedback}”</div>
+        </div>`; })}
+      </div>`}
+    </div>`}
+  </div></${Card}>`;
+}
+
 export function Social() {
   useStore();
   const accountId = getActiveAccountId();
@@ -1193,6 +1299,8 @@ export function Social() {
 
     <${PlanCard} site=${site} onBanner=${setBanner} key=${site} />
 
+    ${cal && html`<${ApprovalTracker} posts=${posts} appr=${appr} month=${month} siteName=${sites.find((x) => x.id === site)?.display_name || sites.find((x) => x.id === site)?.domain || ''} />`}
+
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div class="font-semibold text-slate-800">📅 ${new Date(month + '-15T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' })}
@@ -1241,8 +1349,9 @@ export function Social() {
           ${shown.map((p) => {
             const [ic, tone] = PILLAR[p.pillar] || ['📄', 'bg-slate-100 text-slate-600'];
             const m = (p.media_urls || [])[0];
-            return html`<button onClick=${() => setRevId(p.id)} title=${p.topic || ''}
-              class=${cx('group text-left rounded-xl overflow-hidden border bg-white hover:shadow-md transition-shadow', p.status === 'rejected' ? 'opacity-50 border-slate-100' : 'border-slate-200 hover:border-brand-400')}>
+            return html`<div class="relative" key=${p.id}>
+              <button onClick=${() => setRevId(p.id)} title=${p.topic || ''}
+              class=${cx('group w-full text-left rounded-xl overflow-hidden border bg-white hover:shadow-md transition-shadow', p.status === 'rejected' ? 'opacity-50 border-slate-100' : 'border-slate-200 hover:border-brand-400')}>
               <div class=${cx('relative h-40 flex items-center justify-center overflow-hidden', !m && tone)}>
                 ${m ? (p.format === 'video'
                   ? html`<video src=${m} muted playsinline preload="metadata" class="h-full w-full object-cover"></video>`
@@ -1256,7 +1365,10 @@ export function Social() {
                 <div class="text-[11px] text-slate-400">${new Date(p.post_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${p.post_time} ${ic}</div>
                 <div class="text-xs text-slate-700 truncate">${p.hook || p.overlay_text || p.topic || p.pillar}</div>
               </div>
-            </button>`;
+              </button>
+              ${p.status === 'approved' && (p.media_urls || []).length > 0 && html`<button onClick=${() => downloadPost(p)} title="Download this post (media + caption)"
+                class="absolute right-1.5 bottom-11 h-7 w-7 rounded-full bg-white/95 border border-slate-200 text-slate-600 hover:text-brand-700 hover:border-brand-300 text-sm shadow-sm flex items-center justify-center">⬇</button>`}
+            </div>`;
           })}
           ${shown.length === 0 && html`<div class="col-span-full text-sm text-slate-400 py-8 text-center">Nothing in this filter.</div>`}
         </div>`}
