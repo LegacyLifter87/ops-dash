@@ -852,6 +852,8 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const [zoom, setZoom] = useState(false); // full-screen media lightbox
   const [regenOpen, setRegenOpen] = useState(false); // in-dashboard regenerate-with-feedback composer
   const [regenFb, setRegenFb] = useState('');
+  const [rejOpen, setRejOpen] = useState(false); // reject composer — rejecting auto-regenerates, steered by the reason
+  const [rejFb, setRejFb] = useState('');
   useEffect(() => {
     if (!post) return;
     setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
@@ -863,7 +865,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
     const selectedSet = new Set(ghl?.selected || []);
     const auto = accs.filter((a) => selectedSet.has(a.id) && (post.platforms || []).some((pl) => (PLAT_GROUP[pl] || [pl]).includes(a.platform))).map((a) => a.id);
     setTargetSel(new Set(Array.isArray(post.target_accounts) && post.target_accounts.length ? post.target_accounts : auto));
-    setErr(''); setZoom(false); setRegenOpen(false); setRegenFb('');
+    setErr(''); setZoom(false); setRegenOpen(false); setRegenFb(''); setRejOpen(false); setRejFb('');
   }, [revId]);
   const total = posts.length;
   const decided = posts.filter((p) => p.status === 'approved' || p.status === 'rejected').length;
@@ -901,7 +903,15 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const run = async (name, fn, next) => { setBusy(name); setErr(''); try { await fn(); await onChanged(); if (next) advance(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const doSave = () => run('save', saveFields, false);
   const doApprove = () => run('ok', async () => { await saveFields(); await seoSocialApprove(site, post.id); }, true);
-  const doReject = () => run('no', () => seoSocialReject(site, post.id, 'rejected in review'), true);
+  // Rejecting a post doesn't kill it — it goes straight back into generation,
+  // steered by the rejection reason (same prompt-revision path as client
+  // feedback). The reason is recorded as reject_reason for the audit trail.
+  const doReject = (fb) => run('no', async () => {
+    const reason = String(fb || '').trim();
+    await seoSocialReject(site, post.id, reason || 'rejected in review');
+    await seoSocialRegenMedia(site, post.id, reason);
+    setRejOpen(false); setRejFb('');
+  }, true);
   const doRegen = (fb) => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id, (fb || '').trim()); setRegenOpen(false); setRegenFb(''); }, false);
   // Already scheduled in GHL: local edits can't reach the scheduled copy, so
   // it must be pulled back (deleted from the GHL planner) before editing.
@@ -976,6 +986,15 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
           </div>
         </div>
       </div>
+      ${rejOpen && html`<div class="px-4 py-3 border-t border-rose-200 bg-rose-50/70">
+        <div class="text-xs font-semibold text-slate-700 mb-1">✕ Reject & regenerate</div>
+        <div class="text-xs text-slate-500 mb-2">Rejected posts aren't discarded — a replacement is generated automatically. Tell the AI what was wrong so the new ${post.format === 'video' ? 'video' : 'image'} fixes it, or leave it blank to redo the same design.</div>
+        <${Textarea} value=${rejFb} onInput=${(v) => setRejFb(v)} rows=${3} placeholder="e.g. The house style doesn't match our area, and the headline is too salesy for this topic." />
+        <div class="flex items-center justify-end gap-2 mt-2">
+          <${Btn} size="sm" variant="secondary" onClick=${() => { setRejOpen(false); setRejFb(''); }} disabled=${!!busy}>Cancel</${Btn}>
+          <${Btn} size="sm" variant="danger" onClick=${() => doReject(rejFb)} disabled=${!!busy}>${busy === 'no' ? 'Starting…' : rejFb.trim().length >= 5 ? '✕ Reject & regenerate with feedback' : '✕ Reject & regenerate'}</${Btn}>
+        </div>
+      </div>`}
       ${regenOpen && html`<div class="px-4 py-3 border-t border-amber-200 bg-amber-50/70">
         <div class="text-xs font-semibold text-slate-700 mb-1">↻ Regenerate with feedback</div>
         <div class="text-xs text-slate-500 mb-2">Please provide feedback about this regeneration — tell the AI what to change about the image. It rewrites the ${post.format === 'video' ? 'video' : 'image'} prompt from your notes, then regenerates. Leave it blank to regenerate as-is.</div>
@@ -989,7 +1008,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
       <div class="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           ${pushed && html`<${Btn} size="sm" variant="secondary" onClick=${doUnschedule} disabled=${!!busy}>${busy === 'unsch' ? 'Removing…' : '↩ Unschedule to edit'}</${Btn}>`}
-          ${!pushed && post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${doReject} disabled=${!!busy}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
+          ${!pushed && post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${() => setRejOpen(true)} disabled=${!!busy || rejOpen}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
           ${canRegen && html`<${Btn} size="sm" variant="secondary" onClick=${() => (media ? setRegenOpen(true) : doRegen(''))} disabled=${!!busy || regenOpen}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
           ${pushed && !err && html`<span class="text-xs text-slate-400 truncate">Scheduled in GoHighLevel — unschedule it to edit or regenerate, then approve and push again.</span>`}
           ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
