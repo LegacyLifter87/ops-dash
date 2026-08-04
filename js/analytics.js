@@ -83,6 +83,7 @@ export function Analytics() {
             class=${cx('px-2.5 py-1.5', rangeDaysOf(st) === d ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>${label}</button>`)}
         </div>
         <${Btn} onClick=${() => sync()} disabled=${!!busy}>${busy === 'sync' ? 'Syncing…' : '↻ Sync'}</${Btn}>
+        <${Btn} size="sm" onClick=${connect} disabled=${!!busy} title="Re-run the Google sign-in for this account without removing any stored data — use when Google rejects the stored token.">${busy === 'connect' ? 'Redirecting…' : '🔑 Sign in again'}</${Btn}>
         <${Btn} size="sm" onClick=${disconnect} disabled=${!!busy}>Disconnect</${Btn}>
       </div>`}
     </div>
@@ -93,10 +94,15 @@ export function Analytics() {
   </div>`;
 
   if (!st?.connected) {
+    // st.email present = there WAS a connection whose token Google now rejects
+    // — frame it as a reconnect (signing in again keeps all stored data).
+    const re = !!st?.email;
     return wrap(html`<${Card}><div class="p-6 space-y-3 text-sm">
-      <div class="font-semibold text-slate-800">Connect Google Analytics</div>
-      <p class="text-slate-600">Sign in with the Google account that has access to this client's GA4 property, then pick it. Ops Dash pulls sessions, traffic sources, top pages, conversions, and engagement into one dashboard — the on-site half of the picture that pairs with Search Console and Ads.</p>
-      <div><${Btn} onClick=${connect} disabled=${!!busy}>${busy === 'connect' ? 'Redirecting…' : 'Connect Google Analytics'}</${Btn}></div>
+      <div class="font-semibold text-slate-800">${re ? 'Reconnect Google Analytics' : 'Connect Google Analytics'}</div>
+      ${re
+        ? html`<p class="text-slate-600">Google is no longer accepting the stored sign-in for <span class="font-medium">${st.email}</span>. Sign in again with the same account and everything — property choice, synced reports, insights — picks up right where it left off.</p>`
+        : html`<p class="text-slate-600">Sign in with the Google account that has access to this client's GA4 property, then pick it. Ops Dash pulls sessions, traffic sources, top pages, conversions, and engagement into one dashboard — the on-site half of the picture that pairs with Search Console and Ads.</p>`}
+      <div><${Btn} onClick=${connect} disabled=${!!busy}>${busy === 'connect' ? 'Redirecting…' : re ? '🔑 Sign in again' : 'Connect Google Analytics'}</${Btn}></div>
     </div></${Card}>`);
   }
   if (!st?.property) {
