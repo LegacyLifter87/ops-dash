@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
 
 const PILLAR = {
@@ -854,6 +854,8 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const [regenFb, setRegenFb] = useState('');
   const [rejOpen, setRejOpen] = useState(false); // reject composer — rejecting auto-regenerates, steered by the reason
   const [rejFb, setRejFb] = useState('');
+  const [rwOpen, setRwOpen] = useState(false); // rewrite-text composer — AI rewrites this one post's caption
+  const [rwFb, setRwFb] = useState('');
   useEffect(() => {
     if (!post) return;
     setF({ caption: post.caption || '', overlay: post.overlay_text || '', tags: (post.hashtags || []).join(' '), cta: post.cta || '', prompt: post.format === 'video' ? (post.video_prompt || '') : (post.image_prompt || '') });
@@ -865,7 +867,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
     const selectedSet = new Set(ghl?.selected || []);
     const auto = accs.filter((a) => selectedSet.has(a.id) && (post.platforms || []).some((pl) => (PLAT_GROUP[pl] || [pl]).includes(a.platform))).map((a) => a.id);
     setTargetSel(new Set(Array.isArray(post.target_accounts) && post.target_accounts.length ? post.target_accounts : auto));
-    setErr(''); setZoom(false); setRegenOpen(false); setRegenFb(''); setRejOpen(false); setRejFb('');
+    setErr(''); setZoom(false); setRegenOpen(false); setRegenFb(''); setRejOpen(false); setRejFb(''); setRwOpen(false); setRwFb('');
   }, [revId]);
   const total = posts.length;
   const decided = posts.filter((p) => p.status === 'approved' || p.status === 'rejected').length;
@@ -913,6 +915,14 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
     setRejOpen(false); setRejFb('');
   }, true);
   const doRegen = (fb) => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id, (fb || '').trim()); setRegenOpen(false); setRegenFb(''); }, false);
+  // AI-rewrite this one post's text; re-seed the editable fields from the
+  // fresh copy so the new caption shows immediately.
+  const doRewrite = (fb) => run('rw', async () => {
+    const r = await seoSocialRewritePost(site, post.id, (fb || '').trim());
+    const np = r.post;
+    if (np) setF({ caption: np.caption || '', overlay: np.overlay_text || '', tags: (np.hashtags || []).join(' '), cta: np.cta || '', prompt: np.format === 'video' ? (np.video_prompt || '') : (np.image_prompt || '') });
+    setRwOpen(false); setRwFb('');
+  }, false);
   // Already scheduled in GHL: local edits can't reach the scheduled copy, so
   // it must be pulled back (deleted from the GHL planner) before editing.
   const pushed = !!post.ghl_post_id;
@@ -986,6 +996,15 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
           </div>
         </div>
       </div>
+      ${rwOpen && html`<div class="px-4 py-3 border-t border-sky-200 bg-sky-50/70">
+        <div class="text-xs font-semibold text-slate-700 mb-1">✍️ Rewrite this post's text</div>
+        <div class="text-xs text-slate-500 mb-2">The AI writes a fresh caption for the same topic in the month's brand voice (the image is untouched — a post that hasn't generated its image yet will use the updated design prompt). Tell it what to change, or leave blank for a fresh take.</div>
+        <${Textarea} value=${rwFb} onInput=${(v) => setRwFb(v)} rows=${3} placeholder="e.g. Less salesy, lead with the safety angle, and mention that we're family-owned." />
+        <div class="flex items-center justify-end gap-2 mt-2">
+          <${Btn} size="sm" variant="secondary" onClick=${() => { setRwOpen(false); setRwFb(''); }} disabled=${!!busy}>Cancel</${Btn}>
+          <${Btn} size="sm" onClick=${() => doRewrite(rwFb)} disabled=${!!busy}>${busy === 'rw' ? 'Rewriting…' : rwFb.trim().length >= 5 ? '✍️ Rewrite with feedback' : '✍️ Rewrite'}</${Btn}>
+        </div>
+      </div>`}
       ${rejOpen && html`<div class="px-4 py-3 border-t border-rose-200 bg-rose-50/70">
         <div class="text-xs font-semibold text-slate-700 mb-1">✕ Reject & regenerate</div>
         <div class="text-xs text-slate-500 mb-2">Rejected posts aren't discarded — a replacement is generated automatically. Tell the AI what was wrong so the new ${post.format === 'video' ? 'video' : 'image'} fixes it, or leave it blank to redo the same design.</div>
@@ -1010,6 +1029,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
           ${pushed && html`<${Btn} size="sm" variant="secondary" onClick=${doUnschedule} disabled=${!!busy}>${busy === 'unsch' ? 'Removing…' : '↩ Unschedule to edit'}</${Btn}>`}
           ${!pushed && post.status !== 'rejected' && html`<${Btn} size="sm" variant="danger" onClick=${() => setRejOpen(true)} disabled=${!!busy || rejOpen}>${busy === 'no' ? '…' : '✕ Reject'}</${Btn}>`}
           ${canRegen && html`<${Btn} size="sm" variant="secondary" onClick=${() => (media ? setRegenOpen(true) : doRegen(''))} disabled=${!!busy || regenOpen}>${busy === 'regen' ? 'Starting…' : media ? '↻ Regenerate' : '🎨 Generate media'}</${Btn}>`}
+          ${!pushed && post.status !== 'planned' && html`<${Btn} size="sm" variant="secondary" onClick=${() => setRwOpen(true)} disabled=${!!busy || rwOpen}>${busy === 'rw' ? 'Rewriting…' : '✍️ Rewrite text'}</${Btn}>`}
           ${pushed && !err && html`<span class="text-xs text-slate-400 truncate">Scheduled in GoHighLevel — unschedule it to edit or regenerate, then approve and push again.</span>`}
           ${err && html`<span class="text-xs text-rose-600">${err}</span>`}
         </div>

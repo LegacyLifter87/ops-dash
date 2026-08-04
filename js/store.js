@@ -641,6 +641,9 @@ export const seoSocialPlanMonth = (siteId, month, holidays) => seoInvokeSocial('
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit) => seoInvokeSocial('media_batch', { siteId, calendarId, limit });
 export const seoSocialRegenMedia = (siteId, postId, feedback) => seoInvokeSocial('regen_media', { siteId, postId, feedback });
+// AI-rewrite ONE post's text (fresh hook/caption/hashtags/cta + matching
+// generation prompt), optionally steered by feedback. Status is preserved.
+export const seoSocialRewritePost = (siteId, postId, feedback) => seoInvokeSocial('rewrite_post', { siteId, postId, feedback });
 export const seoSocialRefresh = (siteId, calendarId) => seoInvokeSocial('refresh', { siteId, calendarId });
 export const seoSocialCalendar = (siteId, month) => seoInvokeSocial('calendar_get', { siteId, month });
 export const seoSocialUpdatePost = (siteId, postId, fields) => seoInvokeSocial('update_post', { siteId, postId, ...fields });
