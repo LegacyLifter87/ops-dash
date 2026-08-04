@@ -8,7 +8,10 @@
   <link rel="stylesheet" href="/tailwind.css" />
 </head>
 <body class="bg-slate-100 min-h-screen">
-  <div id="app" class="max-w-5xl mx-auto p-4 sm:p-6 pb-40">
+  <!-- Bottom clearance for the fixed action bar is inline (and re-measured in
+       js/approve.js) because the sm:p-6 utility outranks pb-* classes in the
+       built stylesheet's order and was collapsing it to 24px on desktop. -->
+  <div id="app" class="max-w-5xl mx-auto p-4 sm:p-6" style="padding-bottom:10rem">
     <div class="text-center text-slate-400 text-sm py-24">Loading your posts…</div>
   </div>
   <script type="module" src="/js/approve.js"></script>

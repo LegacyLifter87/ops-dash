@@ -92,9 +92,15 @@ function renderPending() {
   app.innerHTML = `
     ${header(b, `${posts.length} post${posts.length === 1 ? '' : 's'} ready for your review${data.round > 1 ? ` · updated round ${data.round}` : ''}`)}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
-    <div class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3">
+    <div data-bar class="fixed bottom-0 inset-x-0 z-20 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3">
       <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-center">${footer}</div>
     </div>`;
+  // Keep the page's bottom clearance in sync with the bar's real height — it
+  // grows when replacements are selected (extra hint text, stacked on mobile),
+  // and a fixed padding class was being overridden by sm:p-6 on desktop,
+  // leaving the last row of cards buried under the bar and unclickable.
+  const bar = app.querySelector('[data-bar]');
+  if (bar) app.style.paddingBottom = `${bar.offsetHeight + 24}px`;
 }
 
 async function load() {
