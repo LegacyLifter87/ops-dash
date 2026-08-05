@@ -615,7 +615,7 @@ export const seoStrategySitemap = (siteId) => seoInvokeStrategy('sitemap_fetch',
 export const seoStrategyPages = (siteId) => seoInvokeStrategy('pages_list', { siteId });
 export const seoStrategyPagesSave = (siteId, pages) => seoInvokeStrategy('pages_save', { siteId, pages });
 export const seoStrategyAreaGet = (siteId) => seoInvokeStrategy('area_get', { siteId });
-export const seoStrategyAreaSave = (siteId, state, counties, cities) => seoInvokeStrategy('area_save', { siteId, state, counties, cities });
+export const seoStrategyAreaSave = (siteId, state, counties, cities, priorityCounties) => seoInvokeStrategy('area_save', { siteId, state, counties, cities, priorityCounties: priorityCounties || [] });
 export const seoStrategyCounties = (state) => seoInvokeStrategy('geo_counties', { state });
 export const seoStrategyCities = (state, counties) => seoInvokeStrategy('geo_cities', { state, counties });
 export const seoStrategyContext = (siteId) => seoInvokeStrategy('context', { siteId });

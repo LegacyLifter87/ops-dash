@@ -33,7 +33,8 @@ export function Strategy({ site: siteProp, embedded } = {}) {
   const [stateCode, setStateCode] = useState('');
   const [counties, setCounties] = useState(null);   // [{county, cities}] for the state
   const [selCounties, setSelCounties] = useState(new Set());
-  const [cities, setCities] = useState([]);         // [{city, county, excluded}]
+  const [prioCounties, setPrioCounties] = useState(new Set()); // ⭐ growth-priority counties
+  const [cities, setCities] = useState([]);         // [{city, county, excluded, priority}]
   const [areaDirty, setAreaDirty] = useState(false);
 
   const [busy, setBusy] = useState('');
@@ -46,7 +47,7 @@ export function Strategy({ site: siteProp, embedded } = {}) {
   }, [accountId, siteProp]);
 
   const loadAll = async (sid) => {
-    setPages(null); setStateCode(''); setCounties(null); setSelCounties(new Set()); setCities([]); setPagesDirty(false); setAreaDirty(false); setErr('');
+    setPages(null); setStateCode(''); setCounties(null); setSelCounties(new Set()); setPrioCounties(new Set()); setCities([]); setPagesDirty(false); setAreaDirty(false); setErr('');
     try {
       const [p, a] = await Promise.all([seoStrategyPages(sid), seoStrategyAreaGet(sid)]);
       setPages(p.pages || []);
@@ -54,6 +55,7 @@ export function Strategy({ site: siteProp, embedded } = {}) {
       if (area?.state_code) {
         setStateCode(area.state_code);
         setSelCounties(new Set(area.counties || []));
+        setPrioCounties(new Set(area.priority_counties || []));
         setCities(area.cities || []);
         try { const c = await seoStrategyCounties(area.state_code); setCounties(c.counties || []); } catch { setCounties([]); }
       }
@@ -89,32 +91,42 @@ export function Strategy({ site: siteProp, embedded } = {}) {
 
   // ── service area ──────────────────────────────────────────────
   const pickState = async (st) => {
-    setStateCode(st); setCounties(null); setSelCounties(new Set()); setCities([]); setAreaDirty(true);
+    setStateCode(st); setCounties(null); setSelCounties(new Set()); setPrioCounties(new Set()); setCities([]); setAreaDirty(true);
     if (!st) return;
     try { const c = await seoStrategyCounties(st); setCounties(c.counties || []); } catch (e) { setErr(e.message); setCounties([]); }
   };
   const refreshCities = async (st, sel, prev) => {
     if (!sel.size) { setCities([]); return; }
     const r = await seoStrategyCities(st, [...sel]);
-    const oldFlag = new Map(prev.map((c) => [`${c.county}|${c.city}`, c.excluded]));
-    setCities((r.cities || []).map((c) => ({ city: c.city, county: c.county, excluded: oldFlag.get(`${c.county}|${c.city}`) || false })));
+    const oldFlag = new Map(prev.map((c) => [`${c.county}|${c.city}`, { excluded: c.excluded, priority: c.priority }]));
+    setCities((r.cities || []).map((c) => { const o = oldFlag.get(`${c.county}|${c.city}`) || {}; return { city: c.city, county: c.county, excluded: o.excluded || false, priority: o.priority || false }; }));
   };
+  // County chips cycle: not served → served → ⭐ priority → not served.
   const toggleCounty = async (county) => {
     const next = new Set(selCounties);
-    if (next.has(county)) next.delete(county); else next.add(county);
-    setSelCounties(next); setAreaDirty(true);
+    const prio = new Set(prioCounties);
+    if (!next.has(county)) { next.add(county); }
+    else if (!prio.has(county)) { prio.add(county); setPrioCounties(prio); setAreaDirty(true); return; }
+    else { next.delete(county); prio.delete(county); }
+    setSelCounties(next); setPrioCounties(prio); setAreaDirty(true);
     try { await refreshCities(stateCode, next, cities); } catch (e) { setErr(e.message); }
   };
+  // City chips cycle: targeted → ⭐ priority → excluded → targeted.
   const toggleCity = (c) => {
-    setCities((p) => p.map((x) => (x.city === c.city && x.county === c.county) ? { ...x, excluded: !x.excluded } : x));
+    setCities((p) => p.map((x) => {
+      if (!(x.city === c.city && x.county === c.county)) return x;
+      if (!x.excluded && !x.priority) return { ...x, priority: true };
+      if (x.priority) return { ...x, priority: false, excluded: true };
+      return { ...x, excluded: false };
+    }));
     setAreaDirty(true);
   };
   const saveArea = async () => {
     setBusy('area'); setErr('');
     try {
-      const r = await seoStrategyAreaSave(site, stateCode, [...selCounties], cities);
+      const r = await seoStrategyAreaSave(site, stateCode, [...selCounties], cities, [...prioCounties]);
       setAreaDirty(false);
-      setBanner(`📍 Service area saved — ${r.included} of ${r.cities} cities targeted across ${r.counties} count${r.counties === 1 ? 'y' : 'ies'}.`);
+      setBanner(`📍 Service area saved — ${r.included} of ${r.cities} cities targeted across ${r.counties} count${r.counties === 1 ? 'y' : 'ies'}${r.priority ? `, ${r.priority} growth-priority area${r.priority === 1 ? '' : 's'} ⭐` : ''}.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
 
@@ -167,7 +179,7 @@ export function Strategy({ site: siteProp, embedded } = {}) {
         <div class="font-semibold text-slate-800">📍 Service area <span class="text-xs font-normal text-slate-400">— ${included.length ? `${included.length} cities targeted` : 'not set yet'}</span></div>
         ${areaDirty && html`<${Btn} size="sm" variant="cta" onClick=${saveArea} disabled=${busy === 'area' || !stateCode}>${busy === 'area' ? 'Saving…' : 'Save service area'}</${Btn}>`}
       </div>
-      <p class="text-xs text-slate-400 mb-3">Pick the counties you serve — every city in them is added automatically. Click a city to exclude it from marketing content (excluded cities show struck through).</p>
+      <p class="text-xs text-slate-400 mb-3">Pick the counties you serve — every city in them is added automatically. Clicks cycle each chip: <span class="text-emerald-700 font-medium">targeted</span> → <span class="text-amber-700 font-medium">⭐ growth priority</span> (where the customer wants marketing to focus hardest) → <span class="line-through">excluded</span>. Counties cycle the same way: served → ⭐ priority → off.</p>
       <div class="flex flex-wrap items-end gap-2 mb-3">
         <div class="min-w-[220px]">
           <label class="text-[11px] text-slate-400">State</label>
@@ -178,24 +190,25 @@ export function Strategy({ site: siteProp, embedded } = {}) {
         <div class="mb-3">
           <div class="text-xs font-medium text-slate-500 mb-1.5">Counties served</div>
           <div class="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
-            ${counties.map((c) => html`<button onClick=${() => toggleCounty(c.county)}
-              class=${cx('text-xs px-2.5 py-1 rounded-full border transition', selCounties.has(c.county) ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
-              ${c.county} <span class="opacity-60">(${c.cities})</span></button>`)}
+            ${counties.map((c) => { const on = selCounties.has(c.county); const pr = on && prioCounties.has(c.county); return html`<button onClick=${() => toggleCounty(c.county)}
+              title=${pr ? 'Growth priority — click to unselect' : on ? 'Served — click to mark growth priority' : 'Click to serve this county'}
+              class=${cx('text-xs px-2.5 py-1 rounded-full border transition', pr ? 'border-amber-400 bg-amber-50 text-amber-800 font-medium' : on ? 'border-brand-400 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
+              ${pr ? '⭐ ' : ''}${c.county} <span class="opacity-60">(${c.cities})</span></button>`; })}
           </div>
         </div>`)}
       ${Object.keys(byCounty).sort().map((county) => html`<div class="mb-2">
-        <div class="text-xs font-medium text-slate-500 mb-1">${county} County <span class="font-normal text-slate-400">— ${byCounty[county].filter((c) => !c.excluded).length} of ${byCounty[county].length} targeted</span></div>
+        <div class="text-xs font-medium text-slate-500 mb-1">${county} County${prioCounties.has(county) ? html` <span class="text-amber-700">⭐ growth priority</span>` : ''} <span class="font-normal text-slate-400">— ${byCounty[county].filter((c) => !c.excluded).length} of ${byCounty[county].length} targeted${byCounty[county].some((c) => c.priority) ? `, ${byCounty[county].filter((c) => c.priority).length} priority ⭐` : ''}</span></div>
         <div class="flex flex-wrap gap-1.5">
-          ${byCounty[county].map((c) => html`<button onClick=${() => toggleCity(c)} title=${c.excluded ? 'Excluded — click to include' : 'Targeted — click to exclude'}
-            class=${cx('text-xs px-2.5 py-1 rounded-full border transition', c.excluded ? 'border-slate-200 text-slate-300 line-through' : 'border-emerald-300 bg-emerald-50 text-emerald-800')}>
-            ${c.city}</button>`)}
+          ${byCounty[county].map((c) => html`<button onClick=${() => toggleCity(c)} title=${c.excluded ? 'Excluded — click to include' : c.priority ? 'Growth priority — click to exclude' : 'Targeted — click to mark growth priority'}
+            class=${cx('text-xs px-2.5 py-1 rounded-full border transition', c.excluded ? 'border-slate-200 text-slate-300 line-through' : c.priority ? 'border-amber-400 bg-amber-50 text-amber-800 font-medium' : 'border-emerald-300 bg-emerald-50 text-emerald-800')}>
+            ${c.priority && !c.excluded ? '⭐ ' : ''}${c.city}</button>`)}
         </div>
       </div>`)}
     </div></${Card}>
 
     <${Card}><div class="p-4 border-l-4 border-brand-300">
       <div class="font-semibold text-slate-800 mb-1">How this steers your content</div>
-      <p class="text-sm text-slate-500">Blog briefs and auto-blogging use your <span class="font-medium">service pages</span> as the topics that matter and write for the <span class="font-medium">targeted cities</span> (local intent, "near me", city + service pages). The Social Media planner will build monthly calendars from the same services and cities. Update this page any time — new content picks it up immediately.</p>
+      <p class="text-sm text-slate-500">Blog briefs and auto-blogging use your <span class="font-medium">service pages</span> as the topics that matter and write for the <span class="font-medium">targeted cities</span> (local intent, "near me", city + service pages). The Social Media planner builds monthly calendars from the same services and cities, and the Site Builder plans geo pages from them. <span class="font-medium text-amber-700">⭐ Growth-priority areas</span> tell all three where the customer wants to grow — blogs and social posts lean their city mentions and local angles toward those places, and the Site Builder builds their pages first. Update this page any time — new content picks it up immediately.</p>
     </div></${Card}>
   </div>`;
 }
