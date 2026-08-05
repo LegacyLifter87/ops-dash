@@ -593,19 +593,35 @@ export function PhotoLibrary({ site, onBanner, photos, setPhotos }) {
   const sync = async () => {
     setBusy('sync'); setErr('');
     try {
-      const r = await seoSocialPhotosSync(site);
-      onBanner(`📷 Imported ${r.imported} new photo(s) — ${r.driveSeen} image(s) across ${r.foldersScanned || 1} Drive folder(s), ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
-      if (r.errors?.length) setErr(r.errors.join(' · '));
-      await load();
-      // AI-label anything not yet analyzed so the post matcher can use it.
+      // PHASE 1 — pull EVERY photo in first. The backend imports in capped
+      // chunks and returns more:true while work remains; keep calling until
+      // the whole Drive tree + Job Tracker set is imported.
+      let imported = 0, rounds = 0, r = null;
+      const seenErrors = new Set();
+      do {
+        r = await seoSocialPhotosSync(site);
+        imported += r.imported || 0;
+        rounds++;
+        for (const e of (r.errors || [])) seenErrors.add(e);
+        onBanner(`📷 Importing photos… ${imported} in so far${r.more ? ' — still pulling, hang tight.' : '.'}`);
+        await load();
+        // A round that imported nothing and still says more would loop forever
+        // (e.g. every remaining file errors) — surface and stop instead.
+        if (r.more && !r.imported && rounds > 1) { seenErrors.add('Import stopped early — some files could not be imported. Check the source folder and Sync again.'); break; }
+      } while (r.more && rounds < 40);
+      if (seenErrors.size) setErr([...seenErrors].slice(0, 10).join(' · '));
+      onBanner(`📷 Import complete — ${imported} new photo(s); ${r.driveSeen} Drive image(s) across ${r.foldersScanned || 1} folder(s), ${r.jtSeen} social-tagged in Job Tracker${r.jtLinked ? '' : ' (no Job Tracker company linked)'}.`);
+      // PHASE 2 — with the full library in, AI-label everything not yet
+      // analyzed so the post matcher can use it.
       let labeled = 0;
-      for (let i = 0; i < 12; i++) {
-        const a = await seoPhotoAnalyze(site);
+      for (let i = 0; i < 40; i++) {
+        const a = await seoPhotoAnalyze(site, 48);
         labeled += a.analyzed || 0;
         if (!a.remaining) break;
-        onBanner(`🧠 Reading photos so AI can match them to posts… ${a.remaining} left`);
+        onBanner(`🧠 Photos are in — AI is reading them now… ${a.remaining} left`);
       }
-      if (labeled > 0) onBanner(`🧠 ${labeled} photo(s) analyzed — AI can now match them to posts automatically.`);
+      await load();
+      if (labeled > 0) onBanner(`✅ Done — ${imported} photo(s) imported and ${labeled} analyzed. AI can now match them to posts automatically.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const del = async (p) => { try { await seoSocialPhotoDelete(site, p.id); await load(); } catch (e) { setErr(e.message); } };

@@ -715,7 +715,7 @@ async function seoInvokePhotoAi(action, extra = {}) {
   return data;
 }
 export const seoPhotoCatalog = (siteId) => seoInvokePhotoAi('catalog', { siteId });
-export const seoPhotoAnalyze = (siteId) => seoInvokePhotoAi('analyze', { siteId });
+export const seoPhotoAnalyze = (siteId, cap) => seoInvokePhotoAi('analyze', { siteId, ...(cap ? { cap } : {}) });
 export const seoPhotoMatch = (siteId, month) => seoInvokePhotoAi('match', { siteId, month });
 export const seoSocialDriveLink = (siteId, folderUrl) => seoInvokeSocial('drive_link', { siteId, folderUrl });
 export const seoSocialPhotosSync = (siteId) => seoInvokeSocial('photos_sync', { siteId });
