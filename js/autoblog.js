@@ -5,7 +5,7 @@
 // Approval ON: "Generate batch" → review → approve → auto-scheduled publishing.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost } from './store.js';
 import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
 import { mdRender } from './keywords.js';
 import { BriefsLibrary } from './briefs.js';
@@ -88,6 +88,20 @@ export function Autoblog() {
     setPvBusy(id); setErr('');
     try { const r = await fn(site, id); if (label) setBanner(label(r)); setPreview(null); await load(site); }
     catch (e) { setErr(e.message); } finally { setPvBusy(0); }
+  };
+  // Save edited title/H1/meta/content back to the brief (blocked once live).
+  const pvSave = async (patch) => {
+    if (!preview) return false;
+    const id = preview.row.id;
+    setPvBusy(id); setErr('');
+    try {
+      const r = await seoAutoblogEditPost(site, id, patch);
+      setBanner('Post updated — the edited version is what will publish.');
+      setBriefs(null);
+      setPreview((p) => (p ? { row: { ...p.row, title: patch.title || p.row.title }, brief: r.brief || { ...p.brief, ...patch } } : p));
+      await load(site);
+      return true;
+    } catch (e) { setErr(e.message); return false; } finally { setPvBusy(0); }
   };
 
   const save = async () => {
@@ -274,7 +288,8 @@ export function Autoblog() {
       onClose=${() => setPreview(null)}
       onApprove=${() => pvAct(seoAutoblogApprove, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)}
       onReject=${() => setReject({ id: preview.row.id, keyword: preview.row.keyword })}
-      onPublish=${() => pvAct(seoAutoblogPublishOne, () => 'Published.')} />`}
+      onPublish=${() => pvAct(seoAutoblogPublishOne, () => 'Published.')}
+      onSave=${pvSave} />`}
 
     ${reject && html`<${RejectModal} keyword=${reject.keyword} onClose=${() => setReject(null)} onConfirm=${doReject} />`}
   </div>`;
@@ -305,17 +320,34 @@ function RejectModal({ keyword, onClose, onConfirm }) {
   </${Modal}>`;
 }
 
-// Read-only preview of a generated draft, with approve/reject/publish inline.
-function PreviewModal({ row, brief, busy, onClose, onApprove, onReject, onPublish }) {
+// Preview of a generated draft, with approve/reject/publish inline — plus an
+// edit mode (title/H1/meta/markdown content) for anything not yet live.
+function PreviewModal({ row, brief, busy, onClose, onApprove, onReject, onPublish, onSave }) {
   const st = row.status;
-  const footer = html`<div class="flex items-center justify-end gap-2 flex-wrap">
-    ${st === 'published' && brief.wp_link && html`<a href=${brief.wp_link} target="_blank" rel="noopener" class="text-sm text-brand-700 underline self-center mr-auto">view live ↗</a>`}
-    ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" onClick=${onReject} disabled=${busy}>Reject</${Btn}>`}
-    ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" variant="cta" onClick=${onApprove} disabled=${busy}>${busy ? 'Scheduling…' : '✓ Approve & schedule'}</${Btn}>`}
-    ${st === 'approved' && html`<${Btn} size="sm" variant="cta" onClick=${onPublish} disabled=${busy}>${busy ? 'Publishing…' : 'Publish now'}</${Btn}>`}
-    <${Btn} size="sm" onClick=${onClose}>Close</${Btn}>
-  </div>`;
-  return html`<${Modal} title=${brief.title || row.keyword} wide onClose=${onClose} footer=${footer}>
+  const editable = st !== 'published';
+  const [edit, setEdit] = useState(false);
+  const [d, setD] = useState({ title: brief.title || '', h1: brief.h1 || '', meta: brief.meta || '', content: brief.content || '' });
+  const setF = (k, v) => setD((p) => ({ ...p, [k]: v }));
+  const dirty = d.title !== (brief.title || '') || d.h1 !== (brief.h1 || '') || d.meta !== (brief.meta || '') || d.content !== (brief.content || '');
+  const save = async () => { if (await onSave(d)) setEdit(false); };
+  const cancelEdit = () => { setD({ title: brief.title || '', h1: brief.h1 || '', meta: brief.meta || '', content: brief.content || '' }); setEdit(false); };
+
+  const footer = edit
+    ? html`<div class="flex items-center justify-end gap-2 flex-wrap">
+        <span class="text-xs text-slate-400 mr-auto">Edits save to the draft — the edited version is what publishes.</span>
+        <${Btn} size="sm" onClick=${cancelEdit} disabled=${busy}>Cancel</${Btn}>
+        <${Btn} size="sm" variant="cta" onClick=${save} disabled=${busy || !dirty || !d.title.trim() || !d.content.trim()}>${busy ? 'Saving…' : '💾 Save changes'}</${Btn}>
+      </div>`
+    : html`<div class="flex items-center justify-end gap-2 flex-wrap">
+        ${st === 'published' && brief.wp_link && html`<a href=${brief.wp_link} target="_blank" rel="noopener" class="text-sm text-brand-700 underline self-center mr-auto">view live ↗</a>`}
+        ${editable && html`<${Btn} size="sm" onClick=${() => setEdit(true)} disabled=${busy}>✏️ Edit</${Btn}>`}
+        ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" onClick=${onReject} disabled=${busy}>Reject</${Btn}>`}
+        ${['pending_approval', 'drafted'].includes(st) && html`<${Btn} size="sm" variant="cta" onClick=${onApprove} disabled=${busy}>${busy ? 'Scheduling…' : '✓ Approve & schedule'}</${Btn}>`}
+        ${st === 'approved' && html`<${Btn} size="sm" variant="cta" onClick=${onPublish} disabled=${busy}>${busy ? 'Publishing…' : 'Publish now'}</${Btn}>`}
+        <${Btn} size="sm" onClick=${onClose}>Close</${Btn}>
+      </div>`;
+
+  return html`<${Modal} title=${edit ? `Editing: ${brief.title || row.keyword}` : (brief.title || row.keyword)} wide onClose=${onClose} footer=${footer}>
     <div class="space-y-3 text-sm">
       <div class="flex flex-wrap items-center gap-2 text-xs">
         <span class="px-2 py-0.5 rounded-full bg-brand-100 text-brand-700">${String(brief.format || brief.page_type || 'blog').replace('_', ' ')}</span>
@@ -323,17 +355,29 @@ function PreviewModal({ row, brief, busy, onClose, onApprove, onReject, onPublis
         ${brief.slug && html`<span class="text-slate-400">/${brief.slug}</span>`}
         ${row.status === 'approved' && row.scheduled_for && html`<span class="text-emerald-700">🗓️ publishes ${new Date(row.scheduled_for).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>`}
       </div>
-      <div class="rounded-lg bg-slate-50 p-3 space-y-1">
-        <div><span class="text-[11px] font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>
-        ${brief.h1 && html`<div><span class="text-[11px] font-semibold text-slate-400 uppercase">H1</span> <span class="text-slate-800">${brief.h1}</span></div>`}
-        <div><span class="text-[11px] font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
-      </div>
-      <div class="text-[11px] text-slate-400">📷 <span class="font-medium">[IMAGE: …]</span> markers below are filled with real photos at publish time, per your image setting.</div>
-      <article class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 border-t border-slate-100 pt-3">${mdRender(brief.content)}</article>
-      ${(brief.external_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100 text-xs">
-        <span class="font-semibold text-slate-400 uppercase">Authority sources</span>
-        <ul class="list-disc ml-5 text-slate-600 mt-1">${brief.external_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
-      </div>`}
+      ${edit ? html`
+        <div class="space-y-2">
+          <div><label class="text-[11px] font-semibold text-slate-400 uppercase">SEO Title</label><${Input} value=${d.title} onInput=${(v) => setF('title', v)} class="mt-0.5" /></div>
+          <div><label class="text-[11px] font-semibold text-slate-400 uppercase">H1</label><${Input} value=${d.h1} onInput=${(v) => setF('h1', v)} class="mt-0.5" /></div>
+          <div><label class="text-[11px] font-semibold text-slate-400 uppercase">Meta description</label><${Textarea} value=${d.meta} onInput=${(v) => setF('meta', v)} rows=${2} class="mt-0.5" /></div>
+          <div>
+            <label class="text-[11px] font-semibold text-slate-400 uppercase">Content (markdown)</label>
+            <p class="text-[11px] text-slate-400 mb-0.5">Keep the <span class="font-medium">[IMAGE: …]</span> lines where you want photos — they're filled at publish time. Headings use ## / ###.</p>
+            <${Textarea} value=${d.content} onInput=${(v) => setF('content', v)} rows=${18} class="mt-0.5 font-mono text-xs" />
+          </div>
+        </div>`
+      : html`
+        <div class="rounded-lg bg-slate-50 p-3 space-y-1">
+          <div><span class="text-[11px] font-semibold text-slate-400 uppercase">SEO Title</span> <span class="text-slate-800">${brief.title}</span></div>
+          ${brief.h1 && html`<div><span class="text-[11px] font-semibold text-slate-400 uppercase">H1</span> <span class="text-slate-800">${brief.h1}</span></div>`}
+          <div><span class="text-[11px] font-semibold text-slate-400 uppercase">Meta</span> <span class="text-slate-600">${brief.meta}</span></div>
+        </div>
+        <div class="text-[11px] text-slate-400">📷 <span class="font-medium">[IMAGE: …]</span> markers below are filled with real photos at publish time, per your image setting.</div>
+        <article class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 border-t border-slate-100 pt-3">${mdRender(brief.content)}</article>
+        ${(brief.external_links || []).length > 0 && html`<div class="pt-2 border-t border-slate-100 text-xs">
+          <span class="font-semibold text-slate-400 uppercase">Authority sources</span>
+          <ul class="list-disc ml-5 text-slate-600 mt-1">${brief.external_links.map((l) => html`<li><a href=${l.url} target="_blank" rel="noopener" class="text-brand-700 underline">${l.anchor}</a></li>`)}</ul>
+        </div>`}`}
     </div>
   </${Modal}>`;
 }

@@ -597,6 +597,8 @@ export const seoAutoblogReject = (siteId, queueId, reason, markNegative) => seoI
 export const seoAutoblogPublishOne = (siteId, queueId) => seoInvokeAutoblog('publish_one', { siteId, queueId });
 export const seoAutoblogRetry = (siteId, queueId) => seoInvokeAutoblog('retry', { siteId, queueId });
 export const seoAutoblogRemove = (siteId, queueId) => seoInvokeAutoblog('remove', { siteId, queueId });
+// Edit a written draft's title/H1/meta/content before it goes live (blocked once published).
+export const seoAutoblogEditPost = (siteId, queueId, patch) => seoInvokeAutoblog('edit_post', { siteId, queueId, ...patch });
 export const seoTeamSetPassword = (userId, password) => seoInvokeTeam('set_password', { userId, password });
 export const seoTeamSendReset = (userId, mode) => seoInvokeTeam('send_reset', { userId, mode });
 export const seoTeamDeleteUser = (userId) => seoInvokeTeam('delete_user', { userId });
