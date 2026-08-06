@@ -7,7 +7,7 @@
 // sends all of it; the images regenerate and a fresh email follows.
 // Vanilla JS on purpose: this page must work standalone for non-users.
 // ---------------------------------------------------------------------------
-const FN = 'https://ghwmaluhbrainprieoaq.supabase.co/functions/v1/seo-approval';
+const FN = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-approval';
 const token = new URLSearchParams(location.search).get('t') || '';
 const app = document.getElementById('app');
 const esc = (v) => String(v ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));

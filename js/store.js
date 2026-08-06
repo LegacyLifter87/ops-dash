@@ -758,7 +758,7 @@ async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };
   // Super acting inside an entered agency targets THAT agency's JT link.
   if (state.identity?.superAdmin && state.curAgency && body.agencyId === undefined) body.agencyId = state.curAgency.id;
-  const { data, error } = await supabase.functions.invoke('jt-bridge', { body });
+  const { data, error } = await supabase.functions.invoke('jt-proxy', { body });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
   if (data?.error) throw new Error(data.error);
   return data;
