@@ -1001,10 +1001,10 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
             </details>
             ${post.format === 'image' && (library || []).length > 0 && html`<div>
               <div class="text-xs font-medium text-slate-500 mb-1">Real photos for this post <span class="font-normal text-slate-400">— best matches first, pick up to 3 (then Regenerate)</span></div>
-              <div class="flex flex-wrap gap-2 max-h-64 overflow-y-auto pr-1">
+              <div class="flex flex-wrap gap-2 max-h-96 overflow-y-auto pr-1">
                 ${(library || []).map((p) => ({ p, s: photoScore(p, post) })).sort((a, b) => b.s - a.s).map(({ p, s }) => html`<button onClick=${() => toggleRef(p.url)} title=${p.description || p.name || ''}
                   class=${cx('relative rounded-lg overflow-hidden border-2', refSel.has(p.url) ? 'border-brand-500' : 'border-transparent opacity-70 hover:opacity-100')}>
-                  <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-24 w-24 object-cover" />
+                  <img src=${p.url} alt="" loading="lazy" onError=${imgFallback} class="h-40 w-40 object-cover" />
                   ${refSel.has(p.url) && html`<span class="absolute top-1 right-1 bg-brand-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✓</span>`}
                   ${!refSel.has(p.url) && s > 0 && html`<span class="absolute top-1 right-1 bg-white/85 rounded-full px-1 text-xs" title="matches this topic">✨</span>`}</button>`)}
               </div>

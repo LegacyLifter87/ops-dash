@@ -14,7 +14,41 @@ const esc = (v) => String(v ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>'
 
 let data = null;                // last 'view' payload
 let sel = new Map();            // postId -> feedback text
+let refs = new Map();           // postId -> uploaded replacement-photo URL
+let uploading = new Set();      // postIds with an upload in flight
 let busy = false;
+
+// Full-screen image viewer — tap any post image to inspect it at full size.
+// Inline styles on purpose: the prebuilt (purged) Tailwind css may not contain
+// utilities that aren't used elsewhere in the app.
+function openZoom(src) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:50;background:rgba(2,6,23,.93);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+  ov.innerHTML = `<img src="${esc(src)}" alt="post graphic" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5)" />
+    <div style="position:absolute;top:14px;right:18px;color:#fff;font:600 15px system-ui;opacity:.8">✕ close</div>`;
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  ov.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(ov);
+}
+
+// Downscale a picked photo in the browser (max 1600px, JPEG) so uploads stay
+// fast on phone connections, then hand it to the fn as base64.
+async function fileToJpegBase64(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('That image could not be read — please try a JPG or PNG photo.')); img.src = url; });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL('image/jpeg', 0.87);
+    return dataUrl.split(',')[1];
+  } finally { URL.revokeObjectURL(url); }
+}
 
 async function call(body) {
   const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, token }) });
@@ -55,13 +89,14 @@ function renderPending() {
     const fb = sel.get(p.id) || '';
     return `
     <div class="rounded-2xl border ${on ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'} bg-white overflow-hidden flex flex-col" data-card="${p.id}">
-      <div class="bg-slate-50 flex items-center justify-center" style="min-height:180px">
+      <div class="bg-slate-50 flex items-center justify-center" style="min-height:220px">
         ${p.media
           ? (p.format === 'video'
-            ? `<video src="${esc(p.media)}" controls playsinline preload="metadata" class="w-full max-h-80 object-contain"></video>`
-            : `<img src="${esc(p.media)}" alt="post graphic" loading="lazy" class="w-full max-h-80 object-contain" />`)
+            ? `<video src="${esc(p.media)}" controls playsinline preload="metadata" class="w-full max-h-96 object-contain"></video>`
+            : `<img src="${esc(p.media)}" alt="post graphic — tap to enlarge" loading="lazy" data-zoom="${esc(p.media)}" style="cursor:zoom-in" class="w-full max-h-96 object-contain" />`)
           : '<div class="text-slate-300 text-sm py-16">No preview</div>'}
       </div>
+      ${p.format !== 'video' && p.media ? '<div class="text-center text-xs text-slate-400 -mt-1 pb-1">🔍 tap the image to enlarge</div>' : ''}
       <div class="p-3 flex-1 flex flex-col gap-2">
         <div class="text-xs font-medium text-slate-500">${esc(dateLabel(p.date, p.time))}${p.format === 'video' ? ' · 🎬 video' : ''}</div>
         <div class="text-sm text-slate-700 whitespace-pre-line max-h-28 overflow-y-auto">${esc(p.caption)}</div>
@@ -71,9 +106,21 @@ function renderPending() {
           </button>
           ${on ? `
           <div class="mt-2">
-            <label class="text-xs font-medium text-amber-700">What should be different? <span class="text-amber-500">(required)</span></label>
+            <label class="text-xs font-medium text-amber-700">What should be different? ${refs.has(p.id) ? '<span class="text-amber-500">(optional — your photo drives the redo)</span>' : '<span class="text-amber-500">(required — or upload a photo below)</span>'}</label>
             <textarea data-fb="${p.id}" rows="3" placeholder="e.g. Use a lighter background, show a house not an office, change the headline wording…"
               class="mt-1 w-full text-sm border border-amber-300 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300">${esc(fb)}</textarea>
+            ${refs.has(p.id)
+              ? `<div class="mt-2 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-2">
+                   <img src="${esc(refs.get(p.id))}" alt="your photo" style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:zoom-in" data-zoom="${esc(refs.get(p.id))}" />
+                   <div class="text-xs text-emerald-800 flex-1">✓ Your photo is attached — the new post will be designed from it.</div>
+                   <button data-refdel="${p.id}" class="text-xs text-slate-400 underline">remove</button>
+                 </div>`
+              : `<div class="mt-2">
+                   <button data-upbtn="${p.id}" ${uploading.has(p.id) ? 'disabled' : ''} class="w-full text-sm rounded-lg px-3 py-2 border border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
+                     ${uploading.has(p.id) ? '⏳ Uploading your photo…' : '📷 Upload your own photo to use instead'}
+                   </button>
+                   <input type="file" accept="image/jpeg,image/png,image/webp,image/*" data-upinput="${p.id}" style="display:none" />
+                 </div>`}
           </div>` : ''}
         </div>
       </div>
@@ -81,7 +128,7 @@ function renderPending() {
   }).join('');
 
   const n = sel.size;
-  const missing = [...sel.values()].filter((v) => v.trim().length < 5).length;
+  const missing = [...sel.entries()].filter(([id, v]) => v.trim().length < 5 && !refs.has(id)).length;
   const footer = n === 0
     ? `<button data-approve class="w-full sm:w-auto text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color1 || '#0f766e')}">✓ Approve all ${posts.length} post${posts.length === 1 ? '' : 's'}</button>
        <div class="text-xs text-slate-400">Approving schedules everything automatically. Or tap any post above to request a replacement.</div>`
@@ -91,7 +138,7 @@ function renderPending() {
 
   app.innerHTML = `
     ${header(b, `${posts.length} post${posts.length === 1 ? '' : 's'} ready for your review${data.round > 1 ? ` · updated round ${data.round}` : ''}`)}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">${cards}</div>
     <div data-bar class="fixed bottom-0 inset-x-0 z-20 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3">
       <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-center">${footer}</div>
     </div>`;
@@ -117,15 +164,25 @@ async function load() {
 }
 
 app.addEventListener('click', async (e) => {
+  const z = e.target.closest('[data-zoom]');
+  if (z) { openZoom(z.dataset.zoom); return; }
+  const up = e.target.closest('[data-upbtn]');
+  if (up && !busy && !uploading.has(up.dataset.upbtn)) {
+    const inp = app.querySelector(`[data-upinput="${up.dataset.upbtn}"]`);
+    if (inp) inp.click();
+    return;
+  }
+  const rd = e.target.closest('[data-refdel]');
+  if (rd && !busy) { refs.delete(rd.dataset.refdel); renderPending(); return; }
   const t = e.target.closest('[data-toggle],[data-approve],[data-submit],[data-clear]');
   if (!t || busy) return;
   if (t.dataset.toggle) {
     const id = t.dataset.toggle;
-    if (sel.has(id)) sel.delete(id); else sel.set(id, sel.get(id) || '');
+    if (sel.has(id)) { sel.delete(id); refs.delete(id); } else sel.set(id, sel.get(id) || '');
     renderPending();
     return;
   }
-  if (t.dataset.clear !== undefined && t.hasAttribute('data-clear')) { sel = new Map(); renderPending(); return; }
+  if (t.dataset.clear !== undefined && t.hasAttribute('data-clear')) { sel = new Map(); refs = new Map(); renderPending(); return; }
   if (t.hasAttribute('data-approve')) {
     if (!confirm(`Approve all ${data.posts.length} posts? They will be scheduled automatically.`)) return;
     busy = true; t.textContent = 'Approving…';
@@ -136,8 +193,8 @@ app.addEventListener('click', async (e) => {
     return;
   }
   if (t.hasAttribute('data-submit')) {
-    const requests = [...sel.entries()].map(([postId, feedback]) => ({ postId, feedback: feedback.trim() }));
-    if (requests.some((r) => r.feedback.length < 5)) return;
+    const requests = [...sel.entries()].map(([postId, feedback]) => ({ postId, feedback: feedback.trim(), ...(refs.has(postId) ? { refUrl: refs.get(postId) } : {}) }));
+    if (requests.some((r) => r.feedback.length < 5 && !r.refUrl)) return;
     busy = true; t.textContent = 'Sending…';
     try {
       const r = await call({ action: 'submit', decision: 'changes', requests });
@@ -145,12 +202,29 @@ app.addEventListener('click', async (e) => {
     } catch (err) { busy = false; alert(err.message); renderPending(); }
   }
 });
+app.addEventListener('change', async (e) => {
+  const inp = e.target.closest('[data-upinput]');
+  if (!inp || !inp.files?.[0]) return;
+  const id = inp.dataset.upinput;
+  const file = inp.files[0];
+  uploading.add(id); renderPending();
+  try {
+    const image = await fileToJpegBase64(file);
+    const r = await call({ action: 'upload_ref', postId: id, image, mime: 'image/jpeg' });
+    refs.set(id, r.url);
+  } catch (err) {
+    alert(err.message || 'Upload failed — please try a different photo.');
+  } finally {
+    uploading.delete(id); renderPending();
+  }
+});
+
 app.addEventListener('input', (e) => {
   const ta = e.target.closest('[data-fb]');
   if (!ta) return;
   sel.set(ta.dataset.fb, ta.value);
   // Refresh only the footer state without re-rendering (keeps focus).
-  const missing = [...sel.values()].filter((v) => v.trim().length < 5).length;
+  const missing = [...sel.entries()].filter(([id, v]) => v.trim().length < 5 && !refs.has(id)).length;
   const btn = app.querySelector('[data-submit]');
   if (btn) {
     btn.disabled = !!missing;
