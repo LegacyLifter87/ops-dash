@@ -360,6 +360,7 @@ async function seoInvokeGrid(action, extra = {}) {
   return data;
 }
 export const seoGeogridRun = (siteId, opts) => seoInvokeGrid('run', { siteId, ...opts });
+export const seoGeogridRunStatus = (siteId, runId) => seoInvokeGrid('run_status', { siteId, runId });
 export const seoGeogridScheduleSave = (siteId, opts) => seoInvokeGrid('schedule_save', { siteId, ...opts });
 export const seoGeogridScheduleDelete = (siteId, scheduleId) => seoInvokeGrid('schedule_delete', { siteId, scheduleId });
 export async function seoLoadGeogrids(siteId) {

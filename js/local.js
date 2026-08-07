@@ -4,7 +4,7 @@
 // invisible). Powered by DataForSEO maps results at precise coordinates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useRef, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadGeogrids, seoGeogridRun, seoGeogridScheduleSave, seoGeogridScheduleDelete, seoLoadGeogridSchedules, seoLoadGeogridHistory } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadGeogrids, seoGeogridRun, seoGeogridRunStatus, seoGeogridScheduleSave, seoGeogridScheduleDelete, seoLoadGeogridSchedules, seoLoadGeogridHistory } from './store.js';
 import { Card, Btn, Select, Input } from './ui.js';
 import { ProfileAudit } from './gbp.js';
 import { Citations } from './citations.js';
@@ -30,9 +30,14 @@ function GridMap({ grid, pin, pickable, onPick }) {
     lg.clearLayers();
     const latlngs = [];
     if (grid) {
+      // Big grids (9×9 … 25×25) shrink the markers so the heatmap stays readable.
+      const gs = Number(grid.grid_size) || 5;
+      const sz = gs >= 21 ? 16 : gs >= 13 ? 20 : gs >= 9 ? 24 : 30;
+      const fs = gs >= 21 ? 8 : gs >= 13 ? 9 : gs >= 9 ? 10 : 12;
+      const bw = gs >= 13 ? 1 : 2;
       for (const p of (grid.points || [])) {
-        const label = p.rank == null ? '—' : p.rank > 20 ? '20+' : String(p.rank);
-        const icon = L.divIcon({ html: `<div style="width:30px;height:30px;border-radius:9999px;background:${pointColor(p.rank)};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif">${label}</div>`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+        const label = p.rank == null ? '—' : p.rank > 20 ? (gs >= 21 ? '+' : '20+') : String(p.rank);
+        const icon = L.divIcon({ html: `<div style="width:${sz}px;height:${sz}px;border-radius:9999px;background:${pointColor(p.rank)};border:${bw}px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff;font:700 ${fs}px system-ui,sans-serif">${label}</div>`, className: '', iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
         L.marker([p.lat, p.lng], { icon }).addTo(lg);
         latlngs.push([p.lat, p.lng]);
       }
@@ -114,6 +119,7 @@ export function Local() {
   const [gridSize, setGridSize] = useState('5');
   const [spacing, setSpacing] = useState('1');
   const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState(null); // {scanned,total} while a big grid runs in the background
   const [err, setErr] = useState('');
   const [view, setView] = useState('grid');
   const [pin, setPin] = useState(null);
@@ -133,9 +139,23 @@ export function Local() {
   const locArgs = () => ({ ...(pin ? { lat: pin.lat, lng: pin.lng } : {}), address: address.trim() });
   const run = async () => {
     if (!kw.trim() || (!address.trim() && !pin)) { setErr('Enter a keyword, then an address — or drop a pin on the map.'); return; }
-    setBusy(true); setErr('');
-    try { await seoGeogridRun(site, { keyword: kw.trim(), gridSize: Number(gridSize), spacing: Number(spacing), ...locArgs() }); setPinMode(false); await load(site); if (kw.trim()) seoLoadGeogridHistory(site, kw.trim()).then(setHist); }
-    catch (e) { setErr(e.message); } finally { setBusy(false); }
+    setBusy(true); setErr(''); setProg(null);
+    try {
+      const r = await seoGeogridRun(site, { keyword: kw.trim(), gridSize: Number(gridSize), spacing: Number(spacing), ...locArgs() });
+      if (r?.queued && r.runId) {
+        // Big grid: the scan runs server-side in chunks — poll until it lands.
+        setProg({ scanned: 0, total: r.total });
+        for (let i = 0; i < 180; i++) {
+          await new Promise((res) => setTimeout(res, 6000));
+          let st;
+          try { st = await seoGeogridRunStatus(site, r.runId); } catch (_) { continue; }
+          setProg({ scanned: st.scanned || 0, total: st.total || r.total });
+          if (st.state === 'error') throw new Error(st.error || 'Scan failed.');
+          if (st.state === 'done') break;
+        }
+      }
+      setPinMode(false); await load(site); if (kw.trim()) seoLoadGeogridHistory(site, kw.trim()).then(setHist);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); setProg(null); }
   };
   const schedule = async () => {
     if (!kw.trim() || (!address.trim() && !pin)) { setErr('Enter a keyword, then an address — or drop a pin on the map.'); return; }
@@ -181,7 +201,7 @@ export function Local() {
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs text-slate-500">Grid</span>
-            <${Select} value=${gridSize} onChange=${setGridSize} options=${[{ value: '3', label: '3×3' }, { value: '5', label: '5×5' }, { value: '7', label: '7×7' }]} />
+            <${Select} value=${gridSize} onChange=${setGridSize} options=${[{ value: '3', label: '3×3' }, { value: '5', label: '5×5' }, { value: '7', label: '7×7' }, { value: '9', label: '9×9' }, { value: '13', label: '13×13' }, { value: '17', label: '17×17' }, { value: '21', label: '21×21' }, { value: '25', label: '25×25' }]} />
             <span class="text-xs text-slate-500">Spacing</span>
             <${Select} value=${spacing} onChange=${setSpacing} options=${[{ value: '0.5', label: '0.5 mi' }, { value: '1', label: '1 mi' }, { value: '2', label: '2 mi' }]} />
             <button onClick=${() => { setPinMode((v) => !v); }} class=${cx('px-3 py-1.5 rounded-lg text-sm border', pinMode ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300')}>📍 ${pinMode ? 'Click the map…' : 'Drop pin'}</button>
@@ -203,7 +223,9 @@ export function Local() {
             </span>`)}
           </div>`}
           ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
-          ${busy && html`<div class="text-xs text-slate-400">Checking map rank at ${Number(gridSize) * Number(gridSize)} points — this takes ~30s.</div>`}
+          ${busy && html`<div class="text-xs text-slate-400">${prog
+            ? `Scanning ${prog.scanned}/${prog.total} map points — big grids run in the background (~${Math.max(1, Math.ceil((prog.total - prog.scanned) / 100))} min left). Safe to leave this page; the result saves automatically.`
+            : `Checking map rank at ${Number(gridSize) * Number(gridSize)} points — this takes ~30s.`}</div>`}
         </div></${Card}>
 
         ${!g && (pinMode || pin) && html`<${Card}><div class="p-4">
