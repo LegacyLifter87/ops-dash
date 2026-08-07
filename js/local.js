@@ -224,7 +224,7 @@ export function Local() {
           </div>`}
           ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
           ${busy && html`<div class="text-xs text-slate-400">${prog
-            ? `Scanning ${prog.scanned}/${prog.total} map points — big grids run in the background (~${Math.max(1, Math.ceil((prog.total - prog.scanned) / 100))} min left). Safe to leave this page; the result saves automatically.`
+            ? `Scanning ${prog.scanned}/${prog.total} map points — big grids run in the background (~${Math.max(1, Math.ceil((prog.total - prog.scanned) / 45))} min left). Safe to leave this page; the result saves automatically.`
             : `Checking map rank at ${Number(gridSize) * Number(gridSize)} points — this takes ~30s.`}</div>`}
         </div></${Card}>
 
