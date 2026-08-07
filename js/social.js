@@ -1279,6 +1279,30 @@ export function Social() {
     } catch (e) { setErr(e.message); setProg(''); } finally { setBusy(''); }
   };
 
+  // Bulk do-over for finished artwork: after a brand-kit fix (logo, colors,
+  // badges) every image post regenerates with the CURRENT kit — no need to
+  // re-plan the month or touch captions. Videos and GHL-scheduled posts are
+  // deliberately left alone (cost and client-facing schedule respectively).
+  const regenAllImages = async () => {
+    const eligible = posts.filter((p) => p.format !== 'video' && ['ready', 'approved', 'rejected', 'written'].includes(p.status));
+    if (!eligible.length) { setErr('No image posts are in a regenerable state.'); return; }
+    const scheduled = posts.filter((p) => p.format !== 'video' && p.status === 'scheduled').length;
+    if (!confirm(`Regenerate the artwork for ${eligible.length} image post(s) using the current brand kit? Captions and the plan stay as they are — only the images are redone (a few cents each).${scheduled ? ` ${scheduled} post(s) already scheduled in GoHighLevel are left untouched.` : ''}`)) return;
+    setBusy('media'); setErr(''); setProg(`🔁 Regenerating ${eligible.length} images with the current brand kit…`);
+    try {
+      let started = 1;
+      while (started > 0) {
+        const r = await seoSocialMediaBatch(site, cal.id, 4, true);
+        started = r.started;
+        if (r.errors?.length) setErr(r.errors.join(' · '));
+        if (started) setProg(`🔁 Started ${started} more regenerations — they finish in the background…`);
+        if (started) await new Promise((res) => setTimeout(res, 12000));
+      }
+      setProg(''); setBanner('🔁 All image regenerations started — new artwork appears as it finishes (auto-refreshing).');
+      await load();
+    } catch (e) { setErr(e.message); setProg(''); } finally { setBusy(''); }
+  };
+
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create an account first.</div>`;
   if (sites === null) return html`<div class="p-8 text-sm text-slate-400">Loading social manager…</div>`;
   if (sites.length === 0) return html`<div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
@@ -1363,6 +1387,7 @@ export function Social() {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           ${cal && posts.some((p) => p.status === 'written') && html`<${Btn} size="sm" variant="cta" onClick=${genMedia} disabled=${!!busy}>${busy === 'media' ? 'Generating…' : '🎨 Generate all media'}</${Btn}>`}
+          ${cal && !posts.some((p) => p.status === 'written') && posts.some((p) => p.format !== 'video' && ['ready', 'approved', 'rejected'].includes(p.status)) && html`<${Btn} size="sm" variant="secondary" onClick=${regenAllImages} disabled=${!!busy} title="Redo every image with the current brand kit — captions and plan stay">${busy === 'media' ? 'Regenerating…' : '🔁 Regenerate all images'}</${Btn}>`}
           ${cal && readyCount > 0 && html`<${Btn} size="sm" variant="cta" onClick=${() => setRevId((posts.find((p) => p.status === 'ready') || posts[0]).id)} disabled=${!!busy}>👀 Review ${readyCount}</${Btn}>`}
           ${cal && readyCount > 0 && (() => {
             // No client approval email set → the agency approves internally.
