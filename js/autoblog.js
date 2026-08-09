@@ -28,6 +28,7 @@ const SMETA = {
   generating: ['✍️', 'Writing…', 'bg-amber-100 text-amber-700'],
   drafted: ['📄', 'Draft ready', 'bg-sky-100 text-sky-700'],
   pending_approval: ['👀', 'Needs approval', 'bg-amber-100 text-amber-700'],
+  pending_client: ['📧', 'With the client', 'bg-violet-100 text-violet-700'],
   approved: ['🗓️', 'Scheduled', 'bg-emerald-100 text-emerald-700'],
   scheduled: ['🗓️', 'Scheduled', 'bg-emerald-100 text-emerald-700'],
   published: ['🌐', 'Published', 'bg-emerald-100 text-emerald-700'],
@@ -63,7 +64,7 @@ export function Autoblog() {
       const d = await seoAutoblogStatus(sid);
       setSt(d);
       const s = d.schedule || {};
-      setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_sources: Array.isArray(s.image_sources) ? s.image_sources : (s.image_source && s.image_source !== 'none' ? [s.image_source] : ['stock']) });
+      setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_sources: Array.isArray(s.image_sources) ? s.image_sources : (s.image_source && s.image_source !== 'none' ? [s.image_source] : ['stock']), client_approval_email: s.client_approval_email || '', client_approval_cc: s.client_approval_cc || '' });
     } catch (e) { setErr(e.message); }
   };
   useEffect(() => { if (site) { setSt(null); setCfg(null); setBriefs(null); setPreview(null); load(site); } }, [site]);
@@ -165,6 +166,10 @@ export function Autoblog() {
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${st && !st.wp_connected && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-amber-50 text-amber-800">⚠ WordPress isn't connected for this site — connect the plugin in the <span class="font-medium">SEO</span> tab, or posts will only be written as drafts here, not published.</div>`}
+    ${st?.schedule?.paused_reason && !st.schedule.enabled && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-amber-50 text-amber-800 border border-amber-200">
+      <span class="font-medium">⏸ Autoblogging paused itself:</span> ${st.schedule.paused_reason}
+      <span class="block text-xs mt-1 text-amber-700">Review the client's rejection feedback in the queue below, adjust the direction, then turn Automation back on and save — the rejection counter resets.</span>
+    </div>`}
 
     ${!cfg ? html`<div class="p-8 text-sm text-slate-400">Loading settings…</div>` : html`
     <${Card}><div class="p-4 space-y-4">
@@ -218,6 +223,15 @@ export function Autoblog() {
         </span>
       </label>
 
+      <div class="rounded-lg border ${cfg.client_approval_email ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200'} p-3">
+        <div class="text-sm font-medium text-slate-800">📧 Customer approval</div>
+        <p class="text-xs text-slate-500 mt-0.5 mb-2">Enter the client's email and every finished article goes <span class="font-medium">straight to them</span> for review — they get a private link to read it, make light edits, and approve (publishes live instantly) or reject with feedback (a replacement is written automatically). 3 rejections in a row pause the autoblogger and alert your team. Leave empty to keep approvals in this dashboard.</p>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div><label class="text-[11px] uppercase tracking-wide text-slate-400">Customer approval email</label><${Input} type="email" value=${cfg.client_approval_email} onInput=${(v) => setC('client_approval_email', v)} placeholder="client@theirbusiness.com" class="mt-1" /></div>
+          <div><label class="text-[11px] uppercase tracking-wide text-slate-400">CC <span class="normal-case">(optional)</span></label><${Input} type="email" value=${cfg.client_approval_cc} onInput=${(v) => setC('client_approval_cc', v)} placeholder="office@theirbusiness.com" class="mt-1" /></div>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between gap-3 flex-wrap pt-1">
         <div class="text-xs text-slate-400">${st?.keywords_available ?? 0} strategic keyword(s) available to write about.</div>
         <${Btn} onClick=${save} disabled=${!!busy}>${busy === 'save' ? 'Saving…' : 'Save settings'}</${Btn}>
@@ -270,7 +284,7 @@ export function Autoblog() {
                 ${!b && q.brief_id && html`<button onClick=${() => openPreview(q)} class="text-brand-700 hover:underline">${pvBusy === q.id ? '…' : '📖 read'}</button>`}
                 ${!b && ['planned', 'failed'].includes(q.status) && html`<button onClick=${() => rowAct(q.status === 'failed' ? seoAutoblogRetry : seoAutoblogGenerateOne, q.id, null, true)} class="text-brand-700 hover:underline">${q.status === 'failed' ? 'retry' : 'write it'}</button>`}
                 ${!b && ['pending_approval', 'drafted'].includes(q.status) && html`
-                  <button onClick=${() => rowAct(seoAutoblogApprove, q.id, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)} class="text-emerald-700 font-medium hover:underline">approve</button>
+                  <button onClick=${() => rowAct(seoAutoblogApprove, q.id, (r) => r.gated ? (r.emailed ? 'Sent to the client for their approval — it publishes when they approve.' : 'Queued for client approval, but the email could not be sent — check the customer approval email.') : `Approved — publishes ${when(r.scheduled_for)}.`)} class="text-emerald-700 font-medium hover:underline">approve</button>
                   <button onClick=${() => setReject({ id: q.id, keyword: q.keyword })} class="text-slate-400 hover:text-rose-600">reject</button>`}
                 ${!b && q.status === 'approved' && html`
                   <button onClick=${() => rowAct(seoAutoblogPublishOne, q.id, () => 'Published.')} class="text-emerald-700 hover:underline">publish now</button>
@@ -286,7 +300,7 @@ export function Autoblog() {
 
     ${preview && html`<${PreviewModal} row=${preview.row} brief=${preview.brief} busy=${pvBusy === preview.row.id}
       onClose=${() => setPreview(null)}
-      onApprove=${() => pvAct(seoAutoblogApprove, (r) => `Approved — publishes ${when(r.scheduled_for)}.`)}
+      onApprove=${() => pvAct(seoAutoblogApprove, (r) => r.gated ? (r.emailed ? 'Sent to the client for their approval — it publishes when they approve.' : 'Queued for client approval, but the email could not be sent — check the customer approval email.') : `Approved — publishes ${when(r.scheduled_for)}.`)}
       onReject=${() => setReject({ id: preview.row.id, keyword: preview.row.keyword })}
       onPublish=${() => pvAct(seoAutoblogPublishOne, () => 'Published.')}
       onSave=${pvSave} />`}

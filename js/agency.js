@@ -20,7 +20,8 @@ function ContactCard({ onBanner }) {
     contactName: r.agency?.contactName || '', contactEmail: r.agency?.contactEmail || '',
     contactPhone: r.agency?.contactPhone || '', contactWebsite: r.agency?.contactWebsite || '',
     socialDirectorEmail: r.agency?.socialDirectorEmail || '',
-  })).catch((e) => { setErr(e.message); setForm({ contactName: '', contactEmail: '', contactPhone: '', contactWebsite: '', socialDirectorEmail: '' }); });
+    blogManagerEmail: r.agency?.blogManagerEmail || '',
+  })).catch((e) => { setErr(e.message); setForm({ contactName: '', contactEmail: '', contactPhone: '', contactWebsite: '', socialDirectorEmail: '', blogManagerEmail: '' }); });
   useEffect(() => { load(); }, []);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const save = async () => {
@@ -42,6 +43,11 @@ function ContactCard({ onBanner }) {
         <div class="text-sm font-medium text-slate-700">🔔 Social media director <span class="text-xs font-normal text-slate-400">— internal, never shown to businesses</span></div>
         <p class="text-xs text-slate-400 mt-0.5 mb-2">Gets an email when a client approves their social posts (with the auto-schedule result), and a heads-up when the approval loop needs a human eye — a client asking for a second round of changes, or posts that couldn't push to GoHighLevel. Leave empty to turn the alerts off.</p>
         <${Field} label="Alert email"><${Input} type="email" value=${form.socialDirectorEmail} onInput=${setF('socialDirectorEmail')} placeholder="director@youragency.com" /></${Field}>
+      </div>
+      <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="text-sm font-medium text-slate-700">📝 Blog manager <span class="text-xs font-normal text-slate-400">— internal, never shown to businesses</span></div>
+        <p class="text-xs text-slate-400 mt-0.5 mb-2">Gets an email every time an automated blog publishes to any client website (with the live link), and an alert when a client rejects 3 articles in a row and their autoblogger pauses. Leave empty to turn the alerts off.</p>
+        <${Field} label="Alert email"><${Input} type="email" value=${form.blogManagerEmail} onInput=${setF('blogManagerEmail')} placeholder="content@youragency.com" /></${Field}>
       </div>
       ${err && html`<div class="text-sm text-rose-600 mt-2">${err}</div>`}
       <div class="mt-3"><${Btn} size="sm" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save agency details'}</${Btn}></div>`}
