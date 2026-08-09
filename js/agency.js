@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -60,6 +60,56 @@ function ContactCard({ onBanner }) {
 // (app_secrets.google_ads_developer_token) and from then on every user — this
 // agency, other agencies, and businesses with their own ad account — just signs
 // in with Google. Non-super owners only see the status, nothing to enter.
+// Actual API spend per business for a month: AI text (seo_api_usage ledger),
+// kie.ai images/video (real credits reported per task), geogrid map scans.
+function ApiCostsCard() {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { setData(null); setErr(''); seoUsageSummary(month).then(setData).catch((e) => setErr(e.message)); }, [month]);
+  const shift = (n) => { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); setMonth(d.toISOString().slice(0, 7)); };
+  const usd = (v) => `$${(v || 0).toFixed(2)}`;
+  const label = (() => { try { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }); } catch { return month; } })();
+  const cur = new Date().toISOString().slice(0, 7);
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">💸 API costs by business <span class="text-xs font-normal text-slate-400">— what each account actually consumed</span></div>
+      <div class="flex items-center gap-1 text-sm">
+        <button onClick=${() => shift(-1)} class="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">‹</button>
+        <span class="font-medium text-slate-700 min-w-[9rem] text-center">${label}</span>
+        <button onClick=${() => shift(1)} disabled=${month >= cur} class="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30">›</button>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Images & video are actual kie.ai credits per generation; map scans are geogrid points at cost. AI writing covers calls logged since tracking began${data?.ai_tracked_since ? ` (${new Date(data.ai_tracked_since).toLocaleDateString()})` : ''} — older writing predates the meter.</p>
+    ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+    ${!err && data === null && html`<div class="text-sm text-slate-400">Loading…</div>`}
+    ${data && (data.rows || []).length === 0 && html`<div class="text-sm text-slate-400 py-3 text-center">No usage recorded for ${label}.</div>`}
+    ${data && data.rows?.length > 0 && html`
+      <div class="overflow-x-auto"><table class="w-full text-sm">
+        <thead><tr class="text-[11px] uppercase tracking-wide text-slate-400 text-left">
+          <th class="py-1.5 pr-3 font-medium">Business</th>
+          <th class="py-1.5 pr-3 font-medium text-right">AI writing</th>
+          <th class="py-1.5 pr-3 font-medium text-right">Images & video</th>
+          <th class="py-1.5 pr-3 font-medium text-right">Map scans</th>
+          <th class="py-1.5 font-medium text-right">Total</th>
+        </tr></thead>
+        <tbody class="divide-y divide-slate-50">
+          ${data.rows.map((r) => html`<tr>
+            <td class="py-2 pr-3 text-slate-800">${r.name}</td>
+            <td class="py-2 pr-3 text-right text-slate-600" title="${r.ai_calls} call(s) · ${r.ai_in + r.ai_out} tokens">${usd(r.ai_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600" title="${r.media_images} image(s), ${r.media_videos} video(s) · ${r.media_credits} credits">${usd(r.media_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600" title="${r.grid_scans} scan(s) · ${r.grid_points} grid points">${usd(r.grid_usd)}</td>
+            <td class="py-2 text-right font-semibold text-slate-800">${usd(r.total_usd)}</td>
+          </tr>`)}
+        </tbody>
+        <tfoot><tr class="border-t border-slate-200">
+          <td class="py-2 pr-3 text-xs text-slate-400">Agency total</td><td></td><td></td><td></td>
+          <td class="py-2 text-right font-bold text-slate-900">${usd(data.totals?.usd)}</td>
+        </tr></tfoot>
+      </table></div>`}
+  </div></${Card}>`;
+}
+
 function GoogleAdsTokenCard({ onBanner }) {
   const [st, setSt] = useState(null);
   const [open, setOpen] = useState(false);
@@ -170,6 +220,8 @@ export function AgencySettings() {
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}
 
     <${ContactCard} onBanner=${setBanner} />
+
+    <${ApiCostsCard} />
 
     <${GoogleAdsTokenCard} onBanner=${setBanner} />
 
