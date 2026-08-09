@@ -36,7 +36,9 @@ function inline(s) {
   return t;
 }
 const anchorOf = (raw) => { const m = String(raw).match(/\{#([^}]+)\}/); return m ? ` data-anchor="${esc(m[1])}"` : ''; };
-const imgCard = (desc) => `<figure class="ph" contenteditable="false"><div class="ph-i">📷</div><div class="ph-t"><b>Photo goes here</b><span>${esc(desc.trim())}</span></div><i class="ph-d" style="display:none">${esc(desc.trim())}</i></figure>`;
+// The hidden .ph-d keeps the ORIGINAL raw slot line (incl. "| purpose" hints
+// used to pick the photo at publish) so saving edits round-trips it verbatim.
+const imgCard = (desc, rawLine) => `<figure class="ph" contenteditable="false"><div class="ph-i">📷</div><div class="ph-t"><b>Photo goes here</b><span>${esc(desc.trim())}</span></div><i class="ph-d" style="display:none">${esc(rawLine.trim())}</i></figure>`;
 function mdToHtml(md) {
   const out = []; let list = null, olist = null, table = null, quote = null, first = true;
   hadH1 = false;
@@ -68,7 +70,7 @@ function mdToHtml(md) {
   const flush = () => { flushList(); flushOl(); flushTable(); flushQuote(); };
   for (const ln of String(md || '').split(/\r?\n/)) {
     const im = ln.match(IMG_RE);
-    if (im) { flush(); out.push(imgCard(im[1])); continue; }
+    if (im) { flush(); out.push(imgCard(im[1], ln)); continue; }
     if (/^\s*>\s?/.test(ln)) { flushList(); flushOl(); flushTable(); if (!quote) quote = []; quote.push(ln.replace(/^\s*>\s?/, '')); continue; }
     if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); flushOl(); flushQuote(); if (!table) table = []; table.push(ln); continue; }
     if (/^\s*###\s+/.test(ln)) { flush(); const raw = ln.replace(/^\s*###\s+/, ''); out.push(`<h3${anchorOf(raw)}>${inline(raw)}</h3>`); continue; }
@@ -103,7 +105,7 @@ function htmlToMd(container) {
   const out = [];
   for (const el of container.children) {
     const tag = el.tagName;
-    if (el.classList?.contains('ph')) { const d = el.querySelector('.ph-d'); out.push(`[IMAGE: ${(d?.textContent || 'photo').trim()}]`, ''); continue; }
+    if (el.classList?.contains('ph')) { const d = el.querySelector('.ph-d'); out.push((d?.textContent || '[IMAGE: photo]').trim(), ''); continue; }
     if (tag === 'H2') { out.push(`## ${withAnchor(el, inlineMd(el).trim())}`, ''); continue; }
     if (tag === 'H3') { out.push(`### ${withAnchor(el, inlineMd(el).trim())}`, ''); continue; }
     if (tag === 'UL') { for (const li of el.querySelectorAll(':scope > li')) out.push(`- ${inlineMd(li).trim()}`); out.push(''); continue; }
