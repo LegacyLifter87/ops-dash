@@ -481,6 +481,8 @@ export const seoWpConnect = (siteId, wpUrl) => seoInvokeWp('connect', { siteId, 
 // the real key itself (seo-wp-pair), so no human ever copies the long key.
 export const seoWpPairStart = (siteId, wpUrl) => seoInvokeWp('pair_start', { siteId, wpUrl });
 export const seoWpStatus = (siteId) => seoInvokeWp('status', { siteId });
+export const seoWpCategories = (siteId) => seoInvokeWp('wp_categories', { siteId });
+export const seoWpCreateCategory = (siteId, name) => seoInvokeWp('wp_categories', { siteId, op: 'create', name });
 export const seoWpPublish = (siteId, key, mode, featuredImageUrl, imageSource) => seoInvokeWp('publish', { siteId, key, mode, featuredImageUrl, imageSource });
 export const seoWpSuggestMeta = (siteId, url) => seoInvokeWp('suggest_meta', { siteId, url });
 // action ∈ fix_meta | fix_schema | fix_alts | fix_h1 | fix_canonical — one page per call.

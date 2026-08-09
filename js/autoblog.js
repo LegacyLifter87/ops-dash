@@ -5,7 +5,7 @@
 // Approval ON: "Generate batch" → review → approve → auto-scheduled publishing.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost, seoWpCategories, seoWpCreateCategory } from './store.js';
 import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
 import { mdRender } from './keywords.js';
 import { BriefsLibrary } from './briefs.js';
@@ -54,8 +54,15 @@ export function Autoblog() {
   const [preview, setPreview] = useState(null);  // { row, brief }
   const [pvBusy, setPvBusy] = useState(0);       // queueId being loaded/acted on
   const [reject, setReject] = useState(null);    // { id, keyword } — row being rejected
+  const [cats, setCats] = useState(null);        // WP categories: null=loading, {list, outdated}
+  const [newCat, setNewCat] = useState('');
+  const [catBusy, setCatBusy] = useState(false);
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }).catch((e) => setErr(e.message)); }, [accountId]);
+
+  const loadCats = (sid) => seoWpCategories(sid)
+    .then((r) => setCats({ list: r.categories || [], outdated: !!r.plugin_outdated }))
+    .catch(() => setCats({ list: [], outdated: false }));
 
   const load = async (sid) => {
     if (!sid) return;
@@ -67,7 +74,21 @@ export function Autoblog() {
       setCfg({ enabled: !!s.enabled, cadence_per_week: s.cadence_per_week || 3, approval_required: s.approval_required !== false && s.approval_required !== undefined ? !!s.approval_required : true, publish_mode: s.publish_mode || 'publish', image_sources: Array.isArray(s.image_sources) ? s.image_sources : (s.image_source && s.image_source !== 'none' ? [s.image_source] : ['stock']), client_approval_email: s.client_approval_email || '', client_approval_cc: s.client_approval_cc || '' });
     } catch (e) { setErr(e.message); }
   };
-  useEffect(() => { if (site) { setSt(null); setCfg(null); setBriefs(null); setPreview(null); load(site); } }, [site]);
+  useEffect(() => { if (site) { setSt(null); setCfg(null); setBriefs(null); setPreview(null); setCats(null); load(site); loadCats(site); } }, [site]);
+
+  const addCat = async () => {
+    const name = newCat.trim();
+    if (!name) return;
+    setCatBusy(true); setErr('');
+    try { await seoWpCreateCategory(site, name); setNewCat(''); await loadCats(site); setBanner(`Category “${name}” created on the WordPress site.`); }
+    catch (e) { setErr(e.message); } finally { setCatBusy(false); }
+  };
+
+  const setRowCategory = async (q, v) => {
+    setRowBusy(q.id); setErr('');
+    try { await seoAutoblogEditPost(site, q.id, { category: v }); await load(site); }
+    catch (e) { setErr(e.message); } finally { setRowBusy(0); }
+  };
 
   const setC = (k, v) => setCfg((p) => ({ ...p, [k]: v }));
 
@@ -256,6 +277,21 @@ export function Autoblog() {
       <span class="font-medium text-emerald-700">Hands-free mode is on.</span> The system checks every ~10 minutes and, when this site is due, writes the next post and publishes it. ${st?.schedule?.next_run_at ? `Next post around ${when(st.schedule.next_run_at)}.` : ''} You can still see everything it does below.
     </div></${Card}>`}
 
+    ${st?.wp_connected && html`<${Card}><div class="p-4">
+      <div class="font-semibold text-slate-800">WordPress categories</div>
+      <p class="text-xs text-slate-400 mt-0.5 mb-2">The AI files each new article into the best fit from these (you can override per article in the queue below). Posts with no category use the site's default.</p>
+      ${cats === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
+        ${cats.outdated && html`<div class="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-2">The site's connector plugin is older than 1.9.0 — categories appear here after it self-updates (within the hour).</div>`}
+        <div class="flex flex-wrap gap-1.5 mb-2">
+          ${cats.list.length === 0 && !cats.outdated && html`<span class="text-xs text-slate-400">No categories on this site yet — add one below.</span>`}
+          ${cats.list.map((c) => html`<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">🏷 ${c.name}${c.count ? html` <span class="text-slate-400">· ${c.count}</span>` : ''}</span>`)}
+        </div>
+        <div class="flex items-center gap-2">
+          <${Input} value=${newCat} onInput=${setNewCat} placeholder="New category name (created on the WP site)" class="max-w-xs" />
+          <${Btn} size="sm" onClick=${addCat} disabled=${catBusy || !newCat.trim()}>${catBusy ? 'Adding…' : '＋ Add'}</${Btn}>
+        </div>`}
+    </div></${Card}>`}
+
     <${Card}><div class="p-4">
       <div class="flex items-center justify-between mb-2">
         <div class="font-semibold text-slate-800">Queue</div>
@@ -281,6 +317,14 @@ export function Autoblog() {
               </div>
               <div class="flex items-center gap-2 text-xs">
                 ${b && html`<span class="text-slate-400">working…</span>`}
+                ${!b && q.brief_id && q.status !== 'published' && (cats?.list?.length || q.category) && html`
+                  <select value=${q.category || ''} onChange=${(e) => setRowCategory(q, e.target.value)} title="WordPress category"
+                    class="text-[11px] border border-slate-200 rounded-md px-1 py-0.5 text-slate-500 bg-white max-w-[9rem]">
+                    <option value="">🏷 default</option>
+                    ${(cats?.list || []).map((c) => html`<option value=${c.name}>🏷 ${c.name}</option>`)}
+                    ${q.category && !(cats?.list || []).some((c) => c.name === q.category) && html`<option value=${q.category}>🏷 ${q.category}</option>`}
+                  </select>`}
+                ${!b && q.status === 'published' && q.category && html`<span class="text-[11px] text-slate-400">🏷 ${q.category}</span>`}
                 ${!b && q.brief_id && html`<button onClick=${() => openPreview(q)} class="text-brand-700 hover:underline">${pvBusy === q.id ? '…' : '📖 read'}</button>`}
                 ${!b && ['planned', 'failed'].includes(q.status) && html`<button onClick=${() => rowAct(q.status === 'failed' ? seoAutoblogRetry : seoAutoblogGenerateOne, q.id, null, true)} class="text-brand-700 hover:underline">${q.status === 'failed' ? 'retry' : 'write it'}</button>`}
                 ${!b && ['pending_approval', 'drafted'].includes(q.status) && html`

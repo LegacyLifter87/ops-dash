@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.8.2
+ * Version: 1.9.0
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.8.2');
+define('OPSDASH_VERSION', '1.9.0');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -565,6 +565,32 @@ add_action('rest_api_init', function () {
 		},
 	]);
 
+	// Post categories: list the site's existing ones, or create a new one so
+	// Ops Dash can organize blog posts without a wp-admin round trip.
+	register_rest_route('opsdash/v1', '/categories', [
+		'methods' => 'GET',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function () {
+			$cats = get_categories(['hide_empty' => false, 'number' => 200]);
+			return array_map(function ($c) {
+				return ['id' => (int) $c->term_id, 'name' => $c->name, 'slug' => $c->slug, 'count' => (int) $c->count];
+			}, $cats);
+		},
+	]);
+	register_rest_route('opsdash/v1', '/categories', [
+		'methods' => 'POST',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function (WP_REST_Request $req) {
+			$p = $req->get_json_params();
+			$name = sanitize_text_field($p['name'] ?? '');
+			if ($name === '') return new WP_Error('opsdash_bad_request', 'name is required', ['status' => 400]);
+			$id = opsdash_category_id($name);
+			if (!$id) return new WP_Error('opsdash_cat_failed', 'could not create category', ['status' => 500]);
+			$t = get_term($id, 'category');
+			return ['ok' => true, 'id' => (int) $id, 'name' => $t ? $t->name : $name, 'slug' => $t ? $t->slug : sanitize_title($name)];
+		},
+	]);
+
 	// Publish (or re-publish via update_id) a piece of content drafted in Ops Dash.
 	register_rest_route('opsdash/v1', '/publish', [
 		'methods' => 'POST',
@@ -594,6 +620,22 @@ add_action('rest_api_init', function () {
 		'callback' => 'opsdash_fix_h1',
 	]);
 });
+
+// Find a category by name (case-insensitive, then slug), creating it if needed.
+function opsdash_category_id($name) {
+	$name = trim((string) $name);
+	if ($name === '') return 0;
+	$t = get_term_by('name', $name, 'category');
+	if (!$t) $t = get_term_by('slug', sanitize_title($name), 'category');
+	if ($t) return (int) $t->term_id;
+	$new = wp_insert_term($name, 'category');
+	if (is_wp_error($new)) {
+		// Race or slug collision: one more lookup before giving up.
+		$t = get_term_by('slug', sanitize_title($name), 'category');
+		return $t ? (int) $t->term_id : 0;
+	}
+	return (int) $new['term_id'];
+}
 
 // Resolve a target post from {post_id|url}, refusing anything that isn't a
 // post/page so no endpoint can touch products, templates or attachments.
@@ -720,6 +762,15 @@ function opsdash_publish(WP_REST_Request $req) {
 	];
 	if (!empty($p['slug']))    $args['post_name']    = sanitize_title($p['slug']);
 	if (!empty($p['excerpt'])) $args['post_excerpt'] = sanitize_text_field($p['excerpt']);
+	// Categories by NAME (find-or-create) — posts only; pages have no categories.
+	if ($type === 'post' && !empty($p['category_names']) && is_array($p['category_names'])) {
+		$cat_ids = [];
+		foreach (array_slice($p['category_names'], 0, 5) as $cn) {
+			$cid = opsdash_category_id(sanitize_text_field((string) $cn));
+			if ($cid) $cat_ids[] = $cid;
+		}
+		if ($cat_ids) $args['post_category'] = $cat_ids;
+	}
 	if (!empty($p['update_id'])) {
 		$existing = get_post((int) $p['update_id']);
 		// Only ever update a post/page. Without this, an update_id pointing at a
