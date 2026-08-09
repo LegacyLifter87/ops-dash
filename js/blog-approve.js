@@ -1,14 +1,12 @@
 // ---------------------------------------------------------------------------
 // blog-approve.js — public client blog-approval page (no login; token-gated).
 // Opened from the branded approval email: /blog-approve.html?t=TOKEN.
-// The client reads the article, can make light edits directly in the text
-// (title + body are editable in place), then either:
-//   ✓ Approve & publish  — edits are saved and the article goes LIVE on their
-//     website immediately; they get the live link.
-//   ✕ Request a different article — feedback is required; the autoblogger
-//     writes a replacement on the next available topic and emails a fresh
-//     review link (3 rejections in a row pause the autoblogger).
-// Vanilla JS on purpose: must work standalone for non-users.
+// The article is stored as MARKDOWN in seo_briefs; WordPress receives it via
+// seo-wp's mdToHtml at publish time. This page mirrors that same conversion so
+// the client reviews the article looking exactly like it will on their site,
+// and serializes edits BACK to markdown (blog_save_edits stores markdown).
+// [IMAGE: …] slots are filled with real photos at publish — shown here as
+// locked placeholder cards. Vanilla JS on purpose: standalone for non-users.
 // ---------------------------------------------------------------------------
 const FN = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-autoblog';
 const token = new URLSearchParams(location.search).get('t') || '';
@@ -17,6 +15,9 @@ const esc = (v) => String(v ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>'
 
 let data = null;
 let busy = false;
+let hadH1 = false;          // original markdown began with a "# " line
+let initialBodyHtml = '';   // rendered snapshot — detects whether the client edited
+let initialTitle = '';
 
 async function call(body) {
   const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, token }) });
@@ -25,6 +26,114 @@ async function call(body) {
   return j;
 }
 
+// ── markdown → HTML (mirror of seo-wp mdToHtml, display flavor) ─────────────
+const IMG_RE = /^\s*\*?\s*\[IMAGE:\s*([^|\]]+?)(?:\|[^\]]*)?\]\s*\*?\s*$/i;
+function inline(s) {
+  let t = esc(String(s).replace(/\{#[^}]*\}/g, ''));
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, txt, url) => (/^(https?:\/\/|#|\/)/.test(url) ? `<a href="${url.replace(/"/g, '%22')}" target="_blank" rel="noopener">${txt}</a>` : txt));
+  t = t.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+  return t;
+}
+const anchorOf = (raw) => { const m = String(raw).match(/\{#([^}]+)\}/); return m ? ` data-anchor="${esc(m[1])}"` : ''; };
+const imgCard = (desc) => `<figure class="ph" contenteditable="false"><div class="ph-i">📷</div><div class="ph-t"><b>Photo goes here</b><span>${esc(desc.trim())}</span></div><i class="ph-d" style="display:none">${esc(desc.trim())}</i></figure>`;
+function mdToHtml(md) {
+  const out = []; let list = null, olist = null, table = null, quote = null, first = true;
+  hadH1 = false;
+  const flushList = () => { if (list) { out.push('<ul>' + list.map((li) => `<li>${li}</li>`).join('') + '</ul>'); list = null; } };
+  const flushOl = () => { if (olist) { out.push('<ol>' + olist.map((li) => `<li>${li}</li>`).join('') + '</ol>'); olist = null; } };
+  const flushTable = () => {
+    if (!table) return;
+    const rows = table.map((l) => l.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim()))
+      .filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c) || c === ''));
+    table = null;
+    if (!rows.length) return;
+    const [h, ...rest] = rows;
+    out.push('<figure class="wp-block-table"><table><thead><tr>' + h.map((c) => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>'
+      + rest.map((r) => '<tr>' + r.map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table></figure>');
+  };
+  const flushQuote = () => {
+    if (!quote) return;
+    const lines = quote; quote = null;
+    const inner = []; let ql = null;
+    const qf = () => { if (ql) { inner.push('<ul>' + ql.map((li) => `<li>${li}</li>`).join('') + '</ul>'); ql = null; } };
+    for (const q of lines) {
+      if (/^\s*[-*]\s+/.test(q)) { if (!ql) ql = []; ql.push(inline(q.replace(/^\s*[-*]\s+/, ''))); }
+      else if (q.trim() === '') qf();
+      else { qf(); inner.push(`<p>${inline(q)}</p>`); }
+    }
+    qf();
+    out.push('<blockquote>' + inner.join('') + '</blockquote>');
+  };
+  const flush = () => { flushList(); flushOl(); flushTable(); flushQuote(); };
+  for (const ln of String(md || '').split(/\r?\n/)) {
+    const im = ln.match(IMG_RE);
+    if (im) { flush(); out.push(imgCard(im[1])); continue; }
+    if (/^\s*>\s?/.test(ln)) { flushList(); flushOl(); flushTable(); if (!quote) quote = []; quote.push(ln.replace(/^\s*>\s?/, '')); continue; }
+    if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); flushOl(); flushQuote(); if (!table) table = []; table.push(ln); continue; }
+    if (/^\s*###\s+/.test(ln)) { flush(); const raw = ln.replace(/^\s*###\s+/, ''); out.push(`<h3${anchorOf(raw)}>${inline(raw)}</h3>`); continue; }
+    if (/^\s*##\s+/.test(ln)) { flush(); const raw = ln.replace(/^\s*##\s+/, ''); out.push(`<h2${anchorOf(raw)}>${inline(raw)}</h2>`); continue; }
+    if (/^\s*#\s+/.test(ln)) { flush(); if (first) { first = false; hadH1 = true; continue; } const raw = ln.replace(/^\s*#\s+/, ''); out.push(`<h2${anchorOf(raw)}>${inline(raw)}</h2>`); continue; }
+    if (/^\s*\d+\.\s+/.test(ln)) { flushList(); flushTable(); flushQuote(); if (!olist) olist = []; olist.push(inline(ln.replace(/^\s*\d+\.\s+/, ''))); continue; }
+    if (/^\s*[-*]\s+/.test(ln)) { flushOl(); flushTable(); flushQuote(); if (!list) list = []; list.push(inline(ln.replace(/^\s*[-*]\s+/, ''))); continue; }
+    if (ln.trim() === '') { flush(); continue; }
+    flush(); out.push(`<p>${inline(ln)}</p>`);
+  }
+  flush();
+  return out.join('\n');
+}
+
+// ── edited HTML → markdown (round-trips exactly what mdToHtml produced) ─────
+function inlineMd(node) {
+  let s = '';
+  for (const c of node.childNodes) {
+    if (c.nodeType === Node.TEXT_NODE) { s += c.textContent; continue; }
+    if (c.nodeType !== Node.ELEMENT_NODE) continue;
+    const tag = c.tagName;
+    if (tag === 'STRONG' || tag === 'B') s += `**${inlineMd(c)}**`;
+    else if (tag === 'EM' || tag === 'I') s += `*${inlineMd(c)}*`;
+    else if (tag === 'A') s += `[${inlineMd(c)}](${c.getAttribute('href') || '#'})`;
+    else if (tag === 'BR') s += ' ';
+    else s += inlineMd(c);
+  }
+  return s.replace(/ /g, ' ').replace(/\s+/g, ' ');
+}
+const withAnchor = (el, text) => (el.dataset.anchor ? `${text} {#${el.dataset.anchor}}` : text);
+function htmlToMd(container) {
+  const out = [];
+  for (const el of container.children) {
+    const tag = el.tagName;
+    if (el.classList?.contains('ph')) { const d = el.querySelector('.ph-d'); out.push(`[IMAGE: ${(d?.textContent || 'photo').trim()}]`, ''); continue; }
+    if (tag === 'H2') { out.push(`## ${withAnchor(el, inlineMd(el).trim())}`, ''); continue; }
+    if (tag === 'H3') { out.push(`### ${withAnchor(el, inlineMd(el).trim())}`, ''); continue; }
+    if (tag === 'UL') { for (const li of el.querySelectorAll(':scope > li')) out.push(`- ${inlineMd(li).trim()}`); out.push(''); continue; }
+    if (tag === 'OL') { let n = 1; for (const li of el.querySelectorAll(':scope > li')) out.push(`${n++}. ${inlineMd(li).trim()}`); out.push(''); continue; }
+    if (tag === 'BLOCKQUOTE') {
+      for (const ch of el.children) {
+        if (ch.tagName === 'UL') { for (const li of ch.querySelectorAll(':scope > li')) out.push(`> - ${inlineMd(li).trim()}`); }
+        else out.push(`> ${inlineMd(ch).trim()}`);
+      }
+      out.push(''); continue;
+    }
+    if (tag === 'FIGURE' || tag === 'TABLE') {
+      const t = tag === 'TABLE' ? el : el.querySelector('table');
+      if (!t) continue;
+      const rows = [...t.querySelectorAll('tr')].map((tr) => [...tr.children].map((c) => inlineMd(c).trim().replace(/\|/g, '/')));
+      if (rows.length) {
+        out.push(`| ${rows[0].join(' | ')} |`);
+        out.push(`| ${rows[0].map(() => '---').join(' | ')} |`);
+        for (const r of rows.slice(1)) out.push(`| ${r.join(' | ')} |`);
+        out.push('');
+      }
+      continue;
+    }
+    const txt = inlineMd(el).trim();
+    if (txt) out.push(txt, '');
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// ── UI ──────────────────────────────────────────────────────────────────────
 const header = (b, subtitle) => `
   <div class="rounded-2xl overflow-hidden border border-slate-200 bg-white mb-4">
     <div class="px-6 py-5 text-center" style="background:${esc(b.color || '#0f766e')}">
@@ -46,14 +155,15 @@ const centerCard = (b, emoji, title, text, extraHtml = '') => {
 function renderPending() {
   const b = data.branding || {};
   const blog = data.blog || {};
+  const bodyHtml = mdToHtml(blog.content || '');
   app.innerHTML = `
-    ${header(b, 'Your new article — read it over, click into the text to fix anything, then approve or request a different one.')}
+    ${header(b, 'Your new article, shown just like it will appear on your website. Click into any text to fix wording, then approve or request a different one.')}
     <div class="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      <div class="px-6 pt-6">
-        <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">✏️ You can edit the title and article text directly</div>
-        <h1 data-title contenteditable="true" spellcheck="true" class="text-2xl font-bold text-slate-800 leading-snug focus:outline-none rounded-md px-1" style="box-shadow:inset 0 0 0 1px transparent" onfocus="this.style.boxShadow='inset 0 0 0 2px #f59e0b33'" onblur="this.style.boxShadow='inset 0 0 0 1px transparent'">${esc(blog.title)}</h1>
+      <div class="px-6 sm:px-10 pt-8">
+        <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-2">✏️ You can edit the title and article text directly · photos are added automatically when it publishes</div>
+        <h1 data-title contenteditable="true" spellcheck="true" class="wp-title focus:outline-none">${esc(blog.title)}</h1>
       </div>
-      <div data-content contenteditable="true" spellcheck="true" class="px-6 py-4 text-[15px] leading-relaxed text-slate-700 focus:outline-none blog-body" style="max-width:none">${blog.content || '<p>(no content)</p>'}</div>
+      <div data-content contenteditable="true" spellcheck="true" class="wp-body px-6 sm:px-10 pb-8 focus:outline-none">${bodyHtml}</div>
     </div>
     <div data-rej style="display:none" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <div class="text-sm font-semibold text-amber-800 mb-1">What didn't work about this article?</div>
@@ -71,14 +181,10 @@ function renderPending() {
         <div class="text-xs text-slate-400 sm:ml-2">Approving publishes it live right away.</div>
       </div>
     </div>`;
+  initialBodyHtml = app.querySelector('[data-content]').innerHTML;
+  initialTitle = (app.querySelector('[data-title]').textContent || '').trim();
   const bar = app.querySelector('[data-bar]');
   if (bar) app.style.paddingBottom = `${bar.offsetHeight + 24}px`;
-}
-
-function currentEdits() {
-  const t = app.querySelector('[data-title]');
-  const c = app.querySelector('[data-content]');
-  return { title: t ? t.textContent.trim() : '', content: c ? c.innerHTML.trim() : '' };
 }
 
 async function load() {
@@ -123,8 +229,19 @@ app.addEventListener('click', async (e) => {
     if (!confirm('Publish this article live on your website now?')) return;
     busy = true; ap.textContent = 'Publishing…';
     try {
-      const edits = currentEdits();
-      if (edits.title || edits.content) { try { await call({ action: 'blog_save_edits', ...edits }); } catch (_) { /* edits are best-effort — approval proceeds */ } }
+      const titleEl = app.querySelector('[data-title]');
+      const bodyEl = app.querySelector('[data-content]');
+      const newTitle = (titleEl?.textContent || '').trim();
+      const bodyChanged = bodyEl && bodyEl.innerHTML !== initialBodyHtml;
+      const titleChanged = newTitle && newTitle !== initialTitle;
+      // Only save when the client actually changed something — an untouched
+      // article keeps its original markdown byte-for-byte.
+      if (bodyChanged || titleChanged) {
+        let md = bodyChanged ? htmlToMd(bodyEl) : null;
+        if (md !== null && hadH1) md = `# ${newTitle || initialTitle}\n\n${md}`;
+        try { await call({ action: 'blog_save_edits', title: titleChanged ? newTitle : undefined, content: md || undefined }); }
+        catch (_) { /* edits are best-effort — approval proceeds */ }
+      }
       const r = await call({ action: 'blog_approve' });
       centerCard(data.branding, '🎉', 'Published!', 'Your article is live on your website.', r.link ? `<a href="${esc(r.link)}" class="inline-block mt-4 text-white font-semibold rounded-xl px-6 py-3 text-sm" style="background:${esc((data.branding || {}).color || '#0f766e')}">🔗 View it on your site</a>` : '');
     } catch (err) { busy = false; ap.textContent = '✓ Approve & publish to the website'; alert(err.message); }
@@ -132,3 +249,6 @@ app.addEventListener('click', async (e) => {
 });
 
 load();
+
+// Debug/QA hook: lets automated checks exercise the md↔html round-trip.
+window.__blogApprove = { mdToHtml, htmlToMd };
