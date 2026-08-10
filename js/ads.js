@@ -5,7 +5,7 @@
 // Live data needs app_secrets.google_ads_developer_token (Google-approved).
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsSyncNegatives, seoAdsDisconnect } from './store.js';
+import { useStore, getActiveAccountId, seoAdsStatus, seoAdsConnect, seoAdsCustomers, seoAdsSelectCustomer, seoAdsSync, seoAdsSyncNegatives, seoAdsDisconnect, seoAdsNgrams, seoAdsAddNegative, seoAdsAudit, seoAdsDismissAlert } from './store.js';
 import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -68,6 +68,9 @@ export function Ads() {
       setBanner(r.attempted ? `Pushed ${num(r.attempted)} negative keyword${r.attempted === 1 ? '' : 's'} to "${r.listName}" (${num(r.added)} new) — applied to ${num(r.searchCampaigns)} Search campaign${r.searchCampaigns === 1 ? '' : 's'}.` : (r.note || 'Nothing to push.'));
       await load();
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const dismissAlert = async (id) => {
+    try { await seoAdsDismissAlert(id); setSt((s) => ({ ...s, alerts: (s.alerts || []).filter((a) => a.id !== id) })); } catch (e) { setErr(e.message); }
   };
   const disconnect = async () => {
     if (!confirm('Disconnect Google Ads for this account? Stored report data is removed.')) return;
@@ -134,6 +137,7 @@ export function Ads() {
   ];
 
   return wrap(html`
+    ${(st.alerts || []).length > 0 && html`<${AlertsCard} alerts=${st.alerts} admin=${st.admin} onDismiss=${dismissAlert} />`}
     ${!st.last_sync ? html`<${Card}><div class="p-6 text-center text-sm text-slate-500">Account selected. Click <span class="font-medium">↻ Sync</span> to pull the last 30 days.</div></${Card}>`
       : html`
       <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
@@ -143,12 +147,14 @@ export function Ads() {
 
       <${Card}><div class="p-3">
         <div class="flex gap-1 border-b border-slate-100 mb-2 flex-wrap">
-          ${[['campaigns', `Campaigns (${(snaps.campaigns || []).length})`], ['keywords', `Keywords (${(snaps.keywords || []).length})`], ['search_terms', `Search terms (${(snaps.search_terms || []).length})`], ['recommendations', `Recommendations (${(snaps.recommendations || []).length})`]]
+          ${[['campaigns', `Campaigns (${(snaps.campaigns || []).length})`], ['keywords', `Keywords (${(snaps.keywords || []).length})`], ['search_terms', `Search terms (${(snaps.search_terms || []).length})`], ['ngrams', 'N-grams'], ['audit', 'Audit'], ['recommendations', `Recommendations (${(snaps.recommendations || []).length})`]]
             .map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
         </div>
         ${view === 'campaigns' && html`<${CampaignsTable} rows=${snaps.campaigns || []} cur=${cur} />`}
         ${view === 'keywords' && html`<${KeywordsTable} rows=${snaps.keywords || []} cur=${cur} />`}
         ${view === 'search_terms' && html`<${SearchTermsTable} rows=${snaps.search_terms || []} cur=${cur} />`}
+        ${view === 'ngrams' && html`<${NgramsView} cur=${cur} admin=${st.admin} onChange=${load} />`}
+        ${view === 'audit' && html`<${AuditView} cur=${cur} />`}
         ${view === 'recommendations' && html`<${RecsTable} rows=${snaps.recommendations || []} />`}
       </div></${Card}>`}
   `);
@@ -256,6 +262,116 @@ function SearchTermsTable({ rows, cur }) {
       <td class="py-1.5 pr-3 text-right tabular-nums">${r.cpa ? money(r.cpa, cur) : '—'}</td>
     </tr>`)}</tbody>
   </table></div>`;
+}
+
+// Open budget/anomaly alerts (written by the daily seo-ads cron; auto-resolve
+// when the condition clears, or dismiss here).
+function AlertsCard({ alerts, admin, onDismiss }) {
+  const sevCls = (s) => (s === 'critical' ? 'bg-rose-50 text-rose-700' : s === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-600');
+  const sevIcon = (s) => (s === 'critical' ? '🚨' : s === 'warn' ? '⚠️' : 'ℹ️');
+  return html`<${Card}><div class="p-4 space-y-2">
+    <div class="flex items-center justify-between">
+      <div class="font-semibold text-slate-800 text-sm">🔔 Ads alerts</div>
+      <span class="text-xs text-slate-400">Checked daily — alerts clear automatically when the condition resolves.</span>
+    </div>
+    ${alerts.map((a) => html`<div class=${cx('rounded-lg px-3 py-2 text-sm flex items-start justify-between gap-3', sevCls(a.severity))}>
+      <div>
+        <span class="mr-1">${sevIcon(a.severity)}</span>${a.title}
+        <span class="block text-xs opacity-70 mt-0.5">${a.day || ''}${a.detail?.mtd_spend != null ? ` · spent ${money(a.detail.mtd_spend)} vs ${money(a.detail.expected_to_date)} expected to date` : ''}</span>
+      </div>
+      ${admin && html`<button onClick=${() => onDismiss(a.id)} title="Dismiss" class="opacity-50 hover:opacity-100">✕</button>`}
+    </div>`)}
+  </div></${Card}>`;
+}
+
+// N-gram wasted-spend finder: 1–3-word fragments aggregated across the synced
+// search terms — recurring money-burners that no single term makes obvious.
+function NgramsView({ cur, admin, onChange }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [wastedOnly, setWastedOnly] = useState(true);
+  const [busyGram, setBusyGram] = useState('');
+  const [added, setAdded] = useState({});
+  const [note, setNote] = useState('');
+  useEffect(() => { seoAdsNgrams().then(setData).catch((e) => setErr(e.message)); }, []);
+  if (err) return html`<div class="p-6 text-center text-sm text-rose-600">${/Unknown action/i.test(err) ? 'The n-gram analyzer is still deploying — check back shortly.' : err}</div>`;
+  if (!data) return html`<div class="p-6 text-center text-sm text-slate-400">Crunching n-grams…</div>`;
+  if (!data.termCount) return html`<div class="p-6 text-center text-sm text-slate-400">No search-term data yet — run ↻ Sync first.</div>`;
+  const rows = (data.grams || []).filter((g) => (wastedOnly ? g.wasted : true));
+  const addNeg = async (g) => {
+    setBusyGram(g.gram); setNote('');
+    try {
+      const r = await seoAdsAddNegative(g.gram, 'phrase', `Ads n-gram wasted spend (${money(g.cost, cur)}, ${g.clicks} clicks, 0 conv)`);
+      setAdded((m) => ({ ...m, [g.gram]: true }));
+      setNote(r.existed ? `"${g.gram}" was already a negative keyword.` : `"${g.gram}" added — ${r.negatives_unsynced} negative${r.negatives_unsynced === 1 ? '' : 's'} ready to push to Google (button in the header).`);
+      onChange && onChange();
+    } catch (e) { setNote(e.message); } finally { setBusyGram(''); }
+  };
+  return html`<div>
+    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+      <p class="text-xs text-slate-500 max-w-2xl">Word fragments (1–3 words) aggregated across the top ${num(data.termCount)} search terms by spend. A gram with real spend and <span class="font-medium">zero conversions</span> is wasted money — add it as a negative keyword, then push negatives to Google from the header button.</p>
+      <label class="text-xs text-slate-500 flex items-center gap-1.5"><input type="checkbox" checked=${wastedOnly} onChange=${(e) => setWastedOnly(e.target.checked)} /> wasted only</label>
+    </div>
+    ${note && html`<div class="rounded-lg px-3 py-2 text-xs bg-emerald-50 text-emerald-700 mb-2 flex justify-between"><span>${note}</span><button onClick=${() => setNote('')} class="opacity-60">✕</button></div>`}
+    ${rows.length === 0 ? html`<div class="p-6 text-center text-sm text-slate-400">${wastedOnly ? 'No wasted-spend n-grams found. 🎉' : 'No n-gram data.'}</div>` : html`<div class="overflow-x-auto"><table class="w-full text-sm">
+      <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100">
+        <th class="py-1.5 pr-3">N-gram</th><th class="py-1.5 pr-3 text-right">Terms</th><th class="py-1.5 pr-3 text-right">Spend</th>
+        <th class="py-1.5 pr-3 text-right">Clicks</th><th class="py-1.5 pr-3 text-right">Conv.</th>${admin && html`<th class="py-1.5"></th>`}</tr></thead>
+      <tbody>${rows.map((g) => html`<tr class="border-b border-slate-50">
+        <td class="py-1.5 pr-3 text-slate-800 font-medium" title=${(g.examples || []).join('\n')}>${g.gram}${g.wasted && html`<${Pill} cls="bg-amber-100 text-amber-700 ml-2">wasted</${Pill}>`}</td>
+        <td class="py-1.5 pr-3 text-right tabular-nums text-slate-500">${num(g.terms)}</td>
+        <td class="py-1.5 pr-3 text-right tabular-nums">${money(g.cost, cur)}</td>
+        <td class="py-1.5 pr-3 text-right tabular-nums">${num(g.clicks)}</td>
+        <td class="py-1.5 pr-3 text-right tabular-nums ${g.wasted ? 'text-amber-600' : ''}">${dec(g.conversions, g.conversions >= 10 ? 0 : 1)}</td>
+        ${admin && html`<td class="py-1.5 text-right">
+          ${(g.is_negative || added[g.gram]) ? html`<${Pill} cls="bg-emerald-100 text-emerald-700">✓ negative</${Pill}>`
+            : html`<${Btn} size="sm" onClick=${() => addNeg(g)} disabled=${busyGram === g.gram}>${busyGram === g.gram ? 'Adding…' : '🚫 Add negative'}</${Btn}>`}
+        </td>`}
+      </tr>`)}</tbody>
+    </table></div>`}
+  </div>`;
+}
+
+// Account audit checklist v1 — computed from the stored snapshots (no live
+// Google calls): budget-limited campaigns, low-QS clusters, wasted search
+// terms, campaigns without conversions.
+function AuditView({ cur }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { seoAdsAudit().then(setData).catch((e) => setErr(e.message)); }, []);
+  if (err) return html`<div class="p-6 text-center text-sm text-rose-600">${/Unknown action/i.test(err) ? 'The audit checklist is still deploying — check back shortly.' : err}</div>`;
+  if (!data) return html`<div class="p-6 text-center text-sm text-slate-400">Auditing…</div>`;
+  const cl = data.checklist || {};
+  const CountPill = ({ count, warn }) => html`<${Pill} cls=${count > 0 ? (warn ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700') : 'bg-emerald-100 text-emerald-700'}>${count > 0 ? count : '✓ clear'}</${Pill}>`;
+  const Section = ({ title, sub, count, warn, children }) => html`<details class="rounded-lg border border-slate-100">
+    <summary class="px-3 py-2.5 text-sm flex items-center justify-between cursor-pointer select-none">
+      <span><span class="font-medium text-slate-800">${title}</span><span class="block text-xs text-slate-400">${sub}</span></span>
+      <${CountPill} count=${count} warn=${warn} />
+    </summary>
+    <div class="px-3 pb-3 text-sm">${children}</div>
+  </details>`;
+  return html`<div class="space-y-2">
+    <p class="text-xs text-slate-500">Computed from the last sync${data.synced_at ? ` (${String(data.synced_at).slice(0, 10)})` : ''} — re-sync for fresh numbers.</p>
+    <${Section} title="Campaigns limited by budget" sub="Impression share lost because the daily budget ran out" count=${cl.budget_limited?.count || 0}>
+      ${!cl.budget_limited?.available ? html`<div class="text-xs text-amber-600">Budget-lost data isn't in this snapshot yet — run ↻ Sync once to capture it.</div>`
+        : (cl.budget_limited?.items || []).length === 0 ? html`<div class="text-xs text-slate-400">No enabled campaign is losing meaningful impression share to budget.</div>`
+        : (cl.budget_limited.items).map((c) => html`<div class="flex justify-between py-1 border-b border-slate-50"><span class="truncate pr-3">${c.campaign}</span><span class="tabular-nums text-amber-600">${pct(c.budget_lost, 0)} lost</span></div>`)}
+    </${Section}>
+    <${Section} title="Low Quality Score keywords" sub="QS ≤ 4 — raises your CPCs across the board" count=${cl.low_qs?.count || 0}>
+      ${(cl.low_qs?.clusters || []).length === 0 ? html`<div class="text-xs text-slate-400">No low-QS keywords with impressions.</div>`
+        : (cl.low_qs.clusters).map((c) => html`<div class="flex justify-between py-1 border-b border-slate-50"><span class="truncate pr-3">${c.group}</span><span class="tabular-nums text-slate-500">${c.keywords} kw · worst QS ${c.worst} · ${money(c.cost, cur)}</span></div>`)}
+    </${Section}>
+    <${Section} title="Wasted-spend search terms" sub=${`Real spend, zero conversions${cl.wasted_terms?.total_cost ? ` — ${money(cl.wasted_terms.total_cost, cur)} total` : ''}`} count=${cl.wasted_terms?.count || 0}>
+      ${(cl.wasted_terms?.items || []).length === 0 ? html`<div class="text-xs text-slate-400">No search term spent ≥ $5 without converting.</div>`
+        : (cl.wasted_terms.items).map((t) => html`<div class="flex justify-between py-1 border-b border-slate-50"><span class="truncate pr-3">${t.term}</span><span class="tabular-nums text-slate-500">${money(t.cost, cur)} · ${num(t.clicks)} clicks</span></div>`)}
+      <div class="text-xs text-slate-400 mt-2">Mine the N-grams tab for the recurring fragments behind these, then add negatives.</div>
+    </${Section}>
+    <${Section} title="Campaigns without conversions" sub="≥ 20 clicks and nothing recorded — check conversion tracking" count=${cl.no_conversion?.count || 0} warn=${cl.no_conversion?.tracking_suspect}>
+      ${cl.no_conversion?.tracking_suspect && html`<div class="rounded-lg bg-rose-50 text-rose-700 text-xs px-3 py-2 mb-2">No campaign in this account recorded ANY conversion in 30 days — conversion tracking itself may not be set up.</div>`}
+      ${(cl.no_conversion?.items || []).length === 0 ? html`<div class="text-xs text-slate-400">Every campaign with meaningful clicks has conversions.</div>`
+        : (cl.no_conversion.items).map((c) => html`<div class="flex justify-between py-1 border-b border-slate-50"><span class="truncate pr-3">${c.campaign}</span><span class="tabular-nums text-slate-500">${num(c.clicks)} clicks · ${money(c.cost, cur)}</span></div>`)}
+    </${Section}>
+  </div>`;
 }
 
 function RecsTable({ rows }) {
