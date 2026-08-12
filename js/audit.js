@@ -9,6 +9,17 @@ import { Card, Btn, Select, Modal, Input } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
 const num = (n) => (n || 0).toLocaleString();
+// Which source(s) actually produced the page list. A site behind a caching/CDN
+// layer serves our servers a challenge instead of its sitemap, so without this
+// an audit that shrank to the handful of Search Console pages looks identical to
+// a genuinely small site.
+const sourceSummary = (d) => {
+  const parts = [];
+  if (d.from_sitemap) parts.push(`sitemap (${num(d.from_sitemap)})`);
+  if (d.from_connector) parts.push(`WordPress connector (${num(d.from_connector)})`);
+  if (d.from_gsc) parts.push(`Search Console (${num(d.from_gsc)})`);
+  return parts.length ? parts.join(' + ') : 'no page source';
+};
 const shortUrl = (u) => { try { const x = new URL(u); return (x.pathname === '/' ? x.hostname : x.pathname) + (x.search || ''); } catch { return u; } };
 const scoreColor = (s) => (s >= 80 ? 'bg-emerald-500 text-white' : s >= 50 ? 'bg-amber-400 text-white' : 'bg-rose-500 text-white');
 const sevColor = { critical: 'text-rose-600', warning: 'text-amber-600', info: 'text-slate-400' };
@@ -23,6 +34,7 @@ export function Audit() {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [banner, setBanner] = useState('');
+  const [disco, setDisco] = useState(null);
   const [openUrl, setOpenUrl] = useState(null);
   const [wpConnected, setWpConnected] = useState(false);
   const [siteAudit, setSiteAudit] = useState(null);
@@ -30,7 +42,7 @@ export function Audit() {
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
   const load = async (sid) => setPages(await seoLoadAudit(sid));
-  useEffect(() => { if (site) load(site); else setPages([]); }, [site]);
+  useEffect(() => { setDisco(null); if (site) load(site); else setPages([]); }, [site]);
   useEffect(() => { setWpConnected(false); if (site) seoWpStatus(site).then((w) => setWpConnected(!!w?.connected)).catch(() => {}); }, [site]);
   useEffect(() => { setSiteAudit(null); if (site) seoSiteAuditLoad(site).then((d) => setSiteAudit(d.audit)).catch(() => {}); }, [site]);
 
@@ -41,13 +53,14 @@ export function Audit() {
   };
 
   const runAudit = async () => {
-    setBusy('crawl'); setErr(''); setBanner('');
+    setBusy('crawl'); setErr(''); setBanner(''); setDisco(null);
     try {
-      // Full-site discovery: sitemap(s) + Search Console pages, then crawl in chunks.
-      setBanner('Discovering pages (sitemap + Search Console)…');
+      // Full-site discovery: sitemap, WordPress connector, and Search Console.
+      setBanner('Discovering pages (sitemap + WordPress + Search Console)…');
       const d = await seoAuditDiscover(site);
+      setDisco(d);
       const urls = d.urls || [];
-      if (!urls.length) throw new Error('No pages found to audit — connect Search Console or check the site has a sitemap.');
+      if (!urls.length) throw new Error('No pages found to audit — connect Search Console, connect the WordPress plugin, or check the site has a readable sitemap.');
       let done = 0;
       const CHUNK = 15;
       for (let i = 0; i < urls.length; i += CHUNK) {
@@ -56,7 +69,7 @@ export function Audit() {
         done += r.audited || 0;
         await load(site); // table fills in progressively
       }
-      setBanner(`Audited ${num(done)} of ${num(urls.length)} pages${d.from_sitemap ? ` — full site via sitemap (${num(d.from_sitemap)} pages) + Search Console (${num(d.from_gsc)})` : ' — Search Console pages only (no readable sitemap found)'}.`);
+      setBanner(`Audited ${num(done)} of ${num(urls.length)} pages — discovered via ${sourceSummary(d)}.`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const analyzeAi = async (url) => {
@@ -107,6 +120,7 @@ export function Audit() {
       </div>
     </div>
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
+    ${disco?.note && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-amber-50 text-amber-800 flex justify-between gap-3"><span>${disco.note}</span><button onClick=${() => setDisco(null)} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
 
     ${sites.length === 0
