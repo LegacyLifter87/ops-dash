@@ -99,24 +99,24 @@ function renderPending() {
       ${p.format !== 'video' && p.media ? '<div class="text-center text-xs text-slate-400 -mt-1 pb-1">🔍 tap the image to enlarge</div>' : ''}
       <div class="p-3 flex-1 flex flex-col gap-2">
         <div class="text-xs font-medium text-slate-500">${esc(dateLabel(p.date, p.time))}${p.format === 'video' ? ' · 🎬 video' : ''}</div>
-        <div class="text-sm text-slate-700 whitespace-pre-line max-h-28 overflow-y-auto">${esc(p.caption)}</div>
+        <div class="text-sm text-slate-700 whitespace-pre-line break-words max-h-28 overflow-y-auto">${esc(p.caption)}</div>
         <div class="mt-auto pt-1">
-          <button data-toggle="${p.id}" class="w-full text-sm font-medium rounded-lg px-3 py-2 border ${on ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:border-amber-400 hover:text-amber-700'}">
+          <button data-toggle="${p.id}" class="w-full text-sm font-medium rounded-lg px-3 py-3 border ${on ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:border-amber-400 hover:text-amber-700'}">
             ${on ? '✓ Marked for replacement — tap to undo' : '🔁 Request a replacement'}
           </button>
           ${on ? `
           <div class="mt-2">
             <label class="text-xs font-medium text-amber-700">What should be different? ${refs.has(p.id) ? '<span class="text-amber-500">(optional — your photo drives the redo)</span>' : '<span class="text-amber-500">(required — or upload a photo below)</span>'}</label>
             <textarea data-fb="${p.id}" rows="3" placeholder="e.g. Use a lighter background, show a house not an office, change the headline wording…"
-              class="mt-1 w-full text-sm border border-amber-300 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300">${esc(fb)}</textarea>
+              class="mt-1 w-full text-base border border-amber-300 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300">${esc(fb)}</textarea>
             ${refs.has(p.id)
               ? `<div class="mt-2 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-2">
                    <img src="${esc(refs.get(p.id))}" alt="your photo" style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:zoom-in" data-zoom="${esc(refs.get(p.id))}" />
                    <div class="text-xs text-emerald-800 flex-1">✓ Your photo is attached — the new post will be designed from it.</div>
-                   <button data-refdel="${p.id}" class="text-xs text-slate-400 underline">remove</button>
+                   <button data-refdel="${p.id}" class="text-xs text-slate-400 underline px-2 py-2">remove</button>
                  </div>`
               : `<div class="mt-2">
-                   <button data-upbtn="${p.id}" ${uploading.has(p.id) ? 'disabled' : ''} class="w-full text-sm rounded-lg px-3 py-2 border border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
+                   <button data-upbtn="${p.id}" ${uploading.has(p.id) ? 'disabled' : ''} class="w-full text-sm rounded-lg px-3 py-3 border border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
                      ${uploading.has(p.id) ? '⏳ Uploading your photo…' : '📷 Upload your own photo to use instead'}
                    </button>
                    <input type="file" accept="image/jpeg,image/png,image/webp,image/*" data-upinput="${p.id}" style="display:none" />
@@ -130,9 +130,9 @@ function renderPending() {
   const n = sel.size;
   const missing = [...sel.entries()].filter(([id, v]) => v.trim().length < 5 && !refs.has(id)).length;
   const footer = n === 0
-    ? `<button data-approve class="w-full sm:w-auto text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color1 || '#0f766e')}">✓ Approve all ${posts.length} post${posts.length === 1 ? '' : 's'}</button>
+    ? `<button data-approve class="w-full sm:w-auto shrink-0 text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color1 || '#0f766e')}">✓ Approve all ${posts.length} post${posts.length === 1 ? '' : 's'}</button>
        <div class="text-xs text-slate-400">Approving schedules everything automatically. Or tap any post above to request a replacement.</div>`
-    : `<button data-submit ${missing ? 'disabled' : ''} class="w-full sm:w-auto font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg ${missing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-amber-500 text-white'}">📨 Send feedback & request ${n} replacement${n === 1 ? '' : 's'}</button>
+    : `<button data-submit ${missing ? 'disabled' : ''} class="w-full sm:w-auto shrink-0 font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg ${missing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-amber-500 text-white'}">📨 Send feedback & request ${n} replacement${n === 1 ? '' : 's'}</button>
        <div class="text-xs ${missing ? 'text-amber-700 font-medium' : 'text-slate-400'}">${missing ? `Add feedback to ${missing} flagged post${missing === 1 ? '' : 's'} — it tells us what to change.` : `The other ${posts.length - n} post${posts.length - n === 1 ? '' : 's'} will be approved and scheduled right away — your next email covers only the ${n} replacement${n === 1 ? '' : 's'}.`}</div>
        <button data-clear class="text-xs text-slate-400 underline">clear selections</button>`;
 
@@ -146,9 +146,14 @@ function renderPending() {
   // grows when replacements are selected (extra hint text, stacked on mobile),
   // and a fixed padding class was being overridden by sm:p-6 on desktop,
   // leaving the last row of cards buried under the bar and unclickable.
+  syncBarPad();
+}
+
+function syncBarPad() {
   const bar = app.querySelector('[data-bar]');
   if (bar) app.style.paddingBottom = `${bar.offsetHeight + 24}px`;
 }
+window.addEventListener('resize', syncBarPad);
 
 async function load() {
   if (!token) { centerCard(null, '🔗', 'Invalid link', 'This page needs the private link from your approval email.'); return; }
@@ -228,7 +233,8 @@ app.addEventListener('input', (e) => {
   const btn = app.querySelector('[data-submit]');
   if (btn) {
     btn.disabled = !!missing;
-    btn.className = `w-full sm:w-auto font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg ${missing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-amber-500 text-white'}`;
+    btn.className = `w-full sm:w-auto shrink-0 font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg ${missing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-amber-500 text-white'}`;
+    syncBarPad();
   }
 });
 

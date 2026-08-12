@@ -170,24 +170,29 @@ function renderPending() {
     <div data-rej style="display:none" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <div class="text-sm font-semibold text-amber-800 mb-1">What didn't work about this article?</div>
       <div class="text-xs text-amber-700 mb-2">Your feedback goes straight to the writer — the replacement is chosen and written around it. (required)</div>
-      <textarea data-fb rows="3" class="w-full text-sm border border-amber-300 rounded-lg px-2.5 py-2 focus:outline-none" placeholder="e.g. Too technical for our customers — keep it simple, and don't mention pricing."></textarea>
+      <textarea data-fb rows="3" class="w-full text-base border border-amber-300 rounded-lg px-2.5 py-2 focus:outline-none" placeholder="e.g. Too technical for our customers — keep it simple, and don't mention pricing."></textarea>
       <div class="flex items-center justify-end gap-2 mt-2">
-        <button data-rej-cancel class="text-sm text-slate-500 px-3 py-2">Cancel</button>
-        <button data-rej-send class="text-sm font-semibold text-white bg-amber-500 rounded-lg px-4 py-2">Send & request a replacement</button>
+        <button data-rej-cancel class="text-sm text-slate-500 px-3 py-3">Cancel</button>
+        <button data-rej-send class="text-sm font-semibold text-white bg-amber-500 rounded-lg px-4 py-3">Send & request a replacement</button>
       </div>
     </div>
     <div data-bar class="fixed bottom-0 inset-x-0 z-20 bg-white/95 border-t border-slate-200 px-4 py-3" style="backdrop-filter:blur(6px)">
       <div class="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-center">
-        <button data-approve class="w-full sm:w-auto text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color || '#0f766e')}">✓ Approve & publish to the website</button>
-        <button data-reject class="w-full sm:w-auto font-medium rounded-xl px-6 py-3.5 text-base border border-slate-300 text-slate-600 bg-white">✕ Request a different article</button>
+        <button data-approve class="w-full sm:w-auto shrink-0 text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color || '#0f766e')}">✓ Approve & publish to the website</button>
+        <button data-reject class="w-full sm:w-auto shrink-0 font-medium rounded-xl px-6 py-3.5 text-base border border-slate-300 text-slate-600 bg-white">✕ Request a different article</button>
         <div class="text-xs text-slate-400 sm:ml-2">Approving publishes it live right away.</div>
       </div>
     </div>`;
   initialBodyHtml = app.querySelector('[data-content]').innerHTML;
   initialTitle = (app.querySelector('[data-title]').textContent || '').trim();
+  syncBarPad();
+}
+
+function syncBarPad() {
   const bar = app.querySelector('[data-bar]');
   if (bar) app.style.paddingBottom = `${bar.offsetHeight + 24}px`;
 }
+window.addEventListener('resize', syncBarPad);
 
 async function load() {
   if (!token) { centerCard(null, '🔗', 'Invalid link', 'This page needs the private link from your email.'); return; }
