@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.9.0
+ * Version: 1.9.1
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.9.0');
+define('OPSDASH_VERSION', '1.9.1');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -619,6 +619,14 @@ add_action('rest_api_init', function () {
 		'permission_callback' => 'opsdash_auth',
 		'callback' => 'opsdash_fix_h1',
 	]);
+
+	// WordPress-authoritative page signals (read-only) — the audit's fallback
+	// when CDN bot protection blocks its crawler. ?url=<public page url>
+	register_rest_route('opsdash/v1', '/page-signals', [
+		'methods' => 'GET',
+		'permission_callback' => 'opsdash_auth',
+		'callback' => 'opsdash_page_signals',
+	]);
 });
 
 // Find a category by name (case-insensitive, then slug), creating it if needed.
@@ -743,6 +751,116 @@ function opsdash_fix_headings(WP_REST_Request $req) {
 	$changed = ($new !== $content);
 	if ($changed) wp_update_post(['ID' => $post_id, 'post_content' => $new]);
 	return ['ok' => true, 'post_id' => $post_id, 'changed' => $changed, 'action' => $action, 'content_h1' => $content_h1, 'rendered_h1' => $rendered_h1];
+}
+
+// WordPress-authoritative page signals for the Ops Dash audit. When a CDN bot
+// challenge (Cloudflare "Just a moment…") blocks the dashboard's crawler, the
+// audit asks this endpoint what the site itself knows — index state, SEO
+// title/description, content stats — instead of scoring the challenge page
+// (whose own noindex meta would false-flag every page of a protected site).
+function opsdash_page_signals(WP_REST_Request $req) {
+	$url = esc_url_raw((string) $req->get_param('url'));
+	if ($url === '') return new WP_Error('opsdash_bad_request', 'url is required', ['status' => 400]);
+	$id = url_to_postid($url);
+	if (!$id) {
+		// url_to_postid() can't resolve the front page — match it by hand.
+		$strip = function ($u) { return strtolower(untrailingslashit(preg_replace('#^https?://(www\.)?#i', '', (string) $u))); };
+		if ($strip($url) === $strip(home_url()) && get_option('show_on_front') === 'page') $id = (int) get_option('page_on_front');
+	}
+	$post = $id ? get_post($id) : null;
+	if (!$post || !in_array($post->post_type, opsdash_allowed_types(), true)) return ['ok' => true, 'resolved' => false];
+
+	$seo = opsdash_seo_plugin();
+
+	// Index state: the site-wide "discourage search engines" switch plus the SEO
+	// plugin's own per-post robots setting — the same data that renders the meta
+	// tag Google reads, without fetching any HTML.
+	$noindex = ((string) get_option('blog_public') !== '1');
+	$title = ''; $desc = '';
+	if ($seo === 'yoast') {
+		if ((string) get_post_meta($id, '_yoast_wpseo_meta-robots-noindex', true) === '1') $noindex = true;
+		$title = (string) get_post_meta($id, '_yoast_wpseo_title', true);
+		$desc  = (string) get_post_meta($id, '_yoast_wpseo_metadesc', true);
+	} elseif ($seo === 'rankmath') {
+		$robots = get_post_meta($id, 'rank_math_robots', true);
+		if (is_array($robots) && in_array('noindex', $robots, true)) $noindex = true;
+		$title = (string) get_post_meta($id, 'rank_math_title', true);
+		$desc  = (string) get_post_meta($id, 'rank_math_description', true);
+	} elseif ($seo === 'aioseo') {
+		// AIOSEO v4 keeps per-post settings in its own table, not post meta.
+		global $wpdb;
+		$table = $wpdb->prefix . 'aioseo_posts';
+		if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+			$row = $wpdb->get_row($wpdb->prepare("SELECT title, description, robots_default, robots_noindex FROM {$table} WHERE post_id = %d", $id));
+			if ($row) {
+				if (!(int) $row->robots_default && (int) $row->robots_noindex) $noindex = true;
+				$title = (string) $row->title;
+				$desc  = (string) $row->description;
+			}
+		}
+	}
+	if ($title === '') $title = (string) get_post_meta($id, '_opsdash_seo_title', true);
+	if ($desc === '')  $desc  = (string) get_post_meta($id, '_opsdash_meta_desc', true);
+	// Unrendered template variables (%%title%%, %post_title%) would fool the
+	// audit's length checks — fall back to the plain post title instead.
+	if ($title === '' || strpos($title, '%%') !== false || preg_match('/%[a-z_]+%/i', $title)) $title = get_the_title($id);
+
+	// Content stats from post_content. Builder pages (Elementor, Beaver,
+	// WPBakery) keep their real content elsewhere, so their stats would read as
+	// false "thin content" — report those as unreliable instead.
+	$raw = (string) $post->post_content;
+	$builder = (bool) get_post_meta($id, '_elementor_data', true)
+		|| (bool) get_post_meta($id, '_fl_builder_data', true)
+		|| strpos($raw, '[vc_row') !== false;
+	$plain = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags(strip_shortcodes($raw))));
+	$words = $plain === '' ? 0 : count(preg_split('/\s+/u', $plain));
+	$content = ['reliable' => false];
+	if (!$builder && $words >= 50) {
+		preg_match_all('/<img\b[^>]*>/i', $raw, $imgs);
+		$no_alt = 0;
+		foreach ($imgs[0] as $tag) { if (!preg_match('/\balt=["\'][^"\']*\S[^"\']*["\']/i', $tag)) $no_alt++; }
+		preg_match_all('/<a\b[^>]*href=["\']([^"\']+)["\']/i', $raw, $links);
+		$internal = 0; $external = 0;
+		$home_host = strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
+		foreach ($links[1] as $href) {
+			if (preg_match('/^(#|mailto:|tel:|javascript:)/i', $href)) continue;
+			$host = strtolower((string) wp_parse_url($href, PHP_URL_HOST));
+			if ($host === '' || $host === $home_host || 'www.' . $host === $home_host || $host === 'www.' . $home_host) $internal++;
+			else $external++;
+		}
+		$content = [
+			'reliable' => true,
+			'word_count' => $words,
+			'h2' => (int) preg_match_all('/<h2[\s>]/i', $raw),
+			'h3' => (int) preg_match_all('/<h3[\s>]/i', $raw),
+			'imgs' => count($imgs[0]),
+			'imgs_no_alt' => $no_alt,
+			'internal_links' => $internal,
+			'external_links' => $external,
+		];
+	}
+
+	return [
+		'ok' => true,
+		'resolved' => true,
+		'post_id' => $id,
+		'post_type' => $post->post_type,
+		'post_status' => $post->post_status,
+		'seo_plugin' => $seo,
+		'site_public' => (string) get_option('blog_public') === '1',
+		'noindex' => $noindex,
+		'title' => $title,
+		'meta_desc' => $desc,
+		// An active SEO plugin emits a self-referencing canonical on its own; so
+		// does the connector when Ops Dash has stored one.
+		'canonical_auto' => ($seo !== 'none' || (bool) get_post_meta($id, '_opsdash_canonical', true)),
+		// Yoast/Rank Math/AIOSEO all output a JSON-LD graph on every page; the
+		// connector's own schema meta counts too. null = genuinely unknown.
+		'has_schema' => ($seo !== 'none' || get_post_meta($id, '_opsdash_schema', true)) ? true : null,
+		'content' => $content,
+		// Plain text for the AI (AEO) analysis when the crawler can't read the page.
+		'text' => function_exists('mb_substr') ? mb_substr($plain, 0, 12000) : substr($plain, 0, 12000),
+	];
 }
 
 function opsdash_publish(WP_REST_Request $req) {
