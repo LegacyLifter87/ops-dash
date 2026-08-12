@@ -6,6 +6,7 @@
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
 import { useStore, getActiveAccountId, activeAccount, seoLoadSites, seoLoadKeywords, seoKeywordsRebuild, seoSetBrandTerms, seoBriefSave, seoLoadBriefs, seoSetEconomics, seoDfsEnrichKeywords, seoWpStatus, seoWpPublish, seoListNegatives, seoSetNegative, seoClearNegative } from './store.js';
 import { ContentModal, generateBrief } from './briefs.js';
+import { Research } from './research.js';
 import { Card, Btn, Select, Input, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -153,11 +154,22 @@ export function Keywords() {
     </div>`;
   }
 
+  // 🔍 Research stands apart from the Search Console database: it works before
+  // there's any GSC data, so it lives outside the rows.length gate below.
+  const tabs = [['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['negatives', `Negatives (${negatives.length})`], ['research', '🔍 Research']];
+
   return html`<div class="max-w-[1600px] mx-auto p-4 sm:p-6 space-y-4">
     <${Head} />
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
 
+    <div class="flex gap-1 border-b border-slate-200 overflow-x-auto">
+      ${tabs.map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2 whitespace-nowrap', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
+    </div>
+
+    ${view === 'research' && html`<${Research} site=${site} gscKeywords=${rows.slice(0, 12).map((r) => r.keyword)} onTargetsChanged=${() => loadKw(site)} />`}
+
+    ${view !== 'research' && html`
     <${Card}><div class="p-3 flex flex-wrap items-center gap-2">
       <span class="text-sm font-medium text-slate-700">Brand terms</span>
       <span class="text-xs text-slate-400 hidden sm:inline">matches are tagged navigational & down-ranked</span>
@@ -183,16 +195,11 @@ export function Keywords() {
             .map(([k, v, sub]) => html`<${Card}><div class="p-3"><div class="text-xs text-slate-400">${k}</div><div class="text-lg font-semibold text-slate-800">${v}</div>${sub && html`<div class="text-[11px] text-slate-400">${sub}</div>`}</div></${Card}>`)}
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex gap-1 border-b border-slate-200">
-            ${[['keywords', 'Keywords'], ['clusters', `Clusters (${stats.clusters})`], ['negatives', `Negatives (${negatives.length})`]].map(([id, label]) => html`<button onClick=${() => setView(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', view === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
-          </div>
-          ${view === 'keywords' && html`<div class="ml-auto flex flex-wrap items-center gap-2">
+        ${view === 'keywords' && html`<div class="flex flex-wrap items-center justify-end gap-2">
             <${Input} value=${q} onInput=${setQ} placeholder="Search…" class="w-40" />
             <${Select} value=${intent} onChange=${setIntent} options=${['all', 'emergency', 'transactional', 'local', 'commercial', 'comparison', 'informational'].map((i) => ({ value: i, label: i === 'all' ? 'All intents' : i }))} />
             <${Select} value=${cluster} onChange=${setCluster} options=${clusterOptions.map((c) => ({ value: c, label: c === 'all' ? 'All clusters' : c }))} />
-          </div>`}
-        </div>
+        </div>`}
 
         ${view === 'keywords'
           ? html`<${Card}><div class="p-3 overflow-x-auto"><table class="w-full text-sm">
@@ -246,6 +253,7 @@ export function Keywords() {
             </div></${Card}>`}
         <div class="text-xs text-slate-400">📄 Written briefs now live in the <span class="font-medium">🤖 Autoblogger</span> tab.</div>
       `}
+    `}
     ${openCluster && html`<${ContentModal} cluster=${openCluster} brief=${briefs.find((b) => b.cluster === openCluster)} busy=${briefBusy === openCluster} error=${err} onClose=${() => setOpenCluster(null)} onGen=${(fmt) => genBrief(openCluster, openKind, fmt)} wpConnected=${!!wp?.connected} wpBusy=${wpBusy} onWp=${(mode, imgUrl, imageSource) => wpPublish(openCluster, mode, imgUrl, imageSource)} onSave=${(patch) => saveBrief(openCluster, patch)} />`}
   </div>`;
 }

@@ -80,7 +80,7 @@ function ApiCostsCard() {
         <button onClick=${() => shift(1)} disabled=${month >= cur} class="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30">›</button>
       </div>
     </div>
-    <p class="text-xs text-slate-400 mb-3">Images & video are actual kie.ai credits per generation; map scans are geogrid points at cost; notifications are emails sent (approval requests, alerts, digests) at the per-email rate. AI writing and notifications cover calls logged since tracking began${data?.ai_tracked_since ? ` (${new Date(data.ai_tracked_since).toLocaleDateString()})` : ''} — older activity predates the meter.</p>
+    <p class="text-xs text-slate-400 mb-3">Images & video are actual kie.ai credits per generation; map scans are geogrid points at cost; keyword research is DataForSEO's own per-pull charge; notifications are emails sent (approval requests, alerts, digests) at the per-email rate. AI writing and notifications cover calls logged since tracking began${data?.ai_tracked_since ? ` (${new Date(data.ai_tracked_since).toLocaleDateString()})` : ''} — older activity predates the meter.</p>
     ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
     ${!err && data === null && html`<div class="text-sm text-slate-400">Loading…</div>`}
     ${data && (data.rows || []).length === 0 && html`<div class="text-sm text-slate-400 py-3 text-center">No usage recorded for ${label}.</div>`}
@@ -91,6 +91,7 @@ function ApiCostsCard() {
           <th class="py-1.5 pr-3 font-medium text-right">AI writing</th>
           <th class="py-1.5 pr-3 font-medium text-right">Images & video</th>
           <th class="py-1.5 pr-3 font-medium text-right">Map scans</th>
+          <th class="py-1.5 pr-3 font-medium text-right">Keyword research</th>
           <th class="py-1.5 pr-3 font-medium text-right">Notifications</th>
           <th class="py-1.5 font-medium text-right">Total</th>
         </tr></thead>
@@ -100,12 +101,13 @@ function ApiCostsCard() {
             <td class="py-2 pr-3 text-right text-slate-600" title="${r.ai_calls} call(s) · ${r.ai_in + r.ai_out} tokens">${usd(r.ai_usd)}</td>
             <td class="py-2 pr-3 text-right text-slate-600" title="${r.media_images} image(s), ${r.media_videos} video(s) · ${r.media_credits} credits">${usd(r.media_usd)}</td>
             <td class="py-2 pr-3 text-right text-slate-600" title="${r.grid_scans} scan(s) · ${r.grid_points} grid points">${usd(r.grid_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600" title="${r.research_calls || 0} keyword research pull(s)">${usd(r.research_usd)}</td>
             <td class="py-2 pr-3 text-right text-slate-600" title="${r.notif_emails || 0} email(s)">${usd(r.notif_usd)}</td>
             <td class="py-2 text-right font-semibold text-slate-800">${usd(r.total_usd)}</td>
           </tr>`)}
         </tbody>
         <tfoot><tr class="border-t border-slate-200">
-          <td class="py-2 pr-3 text-xs text-slate-400">Agency total</td><td></td><td></td><td></td><td></td>
+          <td class="py-2 pr-3 text-xs text-slate-400">Agency total</td><td></td><td></td><td></td><td></td><td></td>
           <td class="py-2 text-right font-bold text-slate-900">${usd(data.totals?.usd)}</td>
         </tr></tfoot>
       </table></div>`}

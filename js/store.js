@@ -299,6 +299,13 @@ export const seoKeywordsRebuild = (siteId) => seoInvokeKw('rebuild', siteId ? { 
 export const seoListNegatives = (siteId) => seoInvokeKw('list_negatives', { siteId });
 export const seoSetNegative = (siteId, keyword, reason) => seoInvokeKw('set_negative', { siteId, keyword, reason });
 export const seoClearNegative = (siteId, keyword) => seoInvokeKw('clear_negative', { siteId, keyword });
+// Research targets: keywords promoted out of the 🔍 Research planner. The blog
+// picker (seo_pick_blog_keywords) reads these, so adding one is all it takes
+// for the Autoblogger to start writing about it.
+export const seoListTargets = (siteId) => seoInvokeKw('list_targets', { siteId });
+export const seoAddTargets = (siteId, items) => seoInvokeKw('add_targets', { siteId, items });
+export const seoUpdateTarget = (siteId, targetId, patch) => seoInvokeKw('update_target', { siteId, targetId, ...patch });
+export const seoRemoveTarget = (siteId, targetId) => seoInvokeKw('remove_target', { siteId, targetId });
 async function seoInvokeComp(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-competitors', { body: { action, accountId: getActiveAccountId(), ...extra } });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
@@ -335,6 +342,14 @@ async function seoInvokeDfs(action, extra = {}) {
 export const seoDfsEnrichKeywords = (siteId) => seoInvokeDfs('enrich_keywords', { siteId });
 export const seoDfsCheckRanks = (siteId, location) => seoInvokeDfs('check_ranks', { siteId, location });
 export const seoDfsBacklinks = (siteId) => seoInvokeDfs('backlinks', { siteId });
+// --- Keyword & search-trend research planner --------------------------------
+// research_load and research_cached are free (cache reads); lookup and expand
+// call DataForSEO and are billed, so the UI confirms the cost first.
+export const seoResearchLoad = (siteId, location) => seoInvokeDfs('research_load', { siteId, location });
+export const seoResearchCached = (siteId, keywords) => seoInvokeDfs('research_cached', { siteId, keywords });
+export const seoResearchLookup = (siteId, keywords, location, force) => seoInvokeDfs('research_lookup', { siteId, keywords, location, force });
+export const seoResearchExpand = (siteId, seed, mode, limit, location) => seoInvokeDfs('research_expand', { siteId, seed, mode, limit, location });
+export const seoResearchForget = (siteId, keywords) => seoInvokeDfs('research_forget', { siteId, keywords });
 export async function seoLoadSerpRanks(siteId) {
   if (!siteId) return [];
   const { data } = await supabase.from('seo_serp_ranks').select('*').eq('site_id', siteId).order('volume', { ascending: false });
