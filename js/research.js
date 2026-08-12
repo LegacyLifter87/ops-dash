@@ -173,6 +173,11 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
   const [picked, setPicked] = useState(() => new Set());
   const [detail, setDetail] = useState(null);
   const [job, setJob] = useState(null);
+  // Keywords from the MOST RECENT pull. Results merge into one volume-sorted
+  // list, so a fresh long-tail lookup lands at the bottom and the page looks
+  // unchanged — after every pull we narrow the list to what just came back
+  // until the user clicks "show all".
+  const [justAdded, setJustAdded] = useState(null);
   const sort = useSort('volume', 'desc');
 
   const load = async () => {
@@ -182,9 +187,10 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
       setRows(r.rows || []); setNegatives(r.negatives || []); setMonth(r.month);
       setLocation(r.location); setLocSource(r.locationSource); setRates(r.rates);
       setTargets(t.targets || []);
-    } catch (e) { setErr(e.message); } finally { setLoading(false); }
+      return r.rows || [];
+    } catch (e) { setErr(e.message); return []; } finally { setLoading(false); }
   };
-  useEffect(() => { if (site) { setPicked(new Set()); load(); } }, [site]);
+  useEffect(() => { if (site) { setPicked(new Set()); setJustAdded(null); load(); } }, [site]);
 
   // Phrase-level negatives, matching the rule the blog picker uses.
   const blockedBy = (kw) => { const s = ' ' + String(kw).toLowerCase() + ' '; return negatives.find((n) => s.includes(' ' + String(n).toLowerCase().trim() + ' ')); };
@@ -201,6 +207,9 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
     try {
       const { fresh, cached } = await seoResearchCached(site, list);
       if (!fresh.length) {
+        // Already researched this month: don't dead-end — surface those rows.
+        setJustAdded(new Set(cached));
+        setTab('results');
         setBanner(`All ${cached.length} of those are already researched this month — showing the cached numbers, no charge.`);
         setSeeds(''); setBusy(false); return;
       }
@@ -228,6 +237,7 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
   const runJob = async () => {
     if (!job) return;
     setBusy(true); setErr('');
+    const before = new Set(rows.map((r) => r.keyword));
     try {
       const r = job.kind === 'lookup'
         ? await seoResearchLookup(site, job.keywords, locOverride || undefined)
@@ -235,7 +245,13 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
       setJob(null);
       if (job.kind === 'lookup') setSeeds('');
       setBanner(`Added ${r.added} keyword${r.added === 1 ? '' : 's'} for ${r.location || location}${r.questions ? `, ${r.questions} of them questions` : ''} — charged ${usd(r.cost)}.`);
-      await load();
+      const after = await load();
+      // Show what this pull produced, not the same volume-sorted top of list.
+      const added = after.filter((x) => !before.has(x.keyword)).map((x) => x.keyword);
+      const seeded = job.kind === 'lookup' ? job.keywords : [job.seed];
+      const focus = added.length ? added : seeded;
+      setJustAdded(new Set(focus));
+      setTab('results');
     } catch (e) { setErr(e.message); setJob(null); } finally { setBusy(false); }
   };
 
@@ -278,11 +294,12 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
     const min = Number(minVol) || 0;
     const needle = q.trim().toLowerCase();
     return rows.filter((r) =>
-      (srcFilter === 'all' || r.source === srcFilter)
+      (!justAdded || justAdded.has(r.keyword))
+      && (srcFilter === 'all' || r.source === srcFilter)
       && (!needle || r.keyword.includes(needle))
       && (Number(r.volume) || 0) >= min
       && (!risersOnly || (trendTag(r)?.dir === 1)));
-  }, [rows, srcFilter, q, minVol, risersOnly]);
+  }, [rows, srcFilter, q, minVol, risersOnly, justAdded]);
 
   const stats = useMemo(() => {
     const risers = rows.filter((r) => trendTag(r)?.dir === 1).length;
@@ -362,6 +379,8 @@ export function Research({ site, gscKeywords = [], onTargetsChanged }) {
           <button onClick=${() => setTab(id)} class=${cx('px-3 py-2 text-sm -mb-px border-b-2', tab === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500')}>${label}</button>`)}
       </div>
       ${tab === 'results' && rows.length > 0 && html`<div class="ml-auto flex flex-wrap items-center gap-2">
+        ${justAdded && html`<button onClick=${() => setJustAdded(null)} title="Show every researched keyword again"
+          class="text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 font-medium">✨ Latest pull (${justAdded.size}) · show all ${rows.length}</button>`}
         <${Input} value=${q} onInput=${setQ} placeholder="Search…" class="w-36" />
         <${Select} value=${srcFilter} onChange=${setSrcFilter} options=${[{ value: 'all', label: 'All sources' }, ...Object.entries(SOURCE_LABEL).map(([v, l]) => ({ value: v, label: l }))]} />
         <div class="flex items-center gap-1"><span class="text-xs text-slate-500">min vol</span><${Input} value=${minVol} onInput=${setMinVol} class="w-16" /></div>
