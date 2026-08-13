@@ -2,7 +2,7 @@
  *  Regenerate after UI changes:  ./tailwindcss.exe -c tailwind.config.js -i tw-input.css -o tailwind.css --minify
  *  Mirrors the colors that were in index.html's Play-CDN inline config. */
 module.exports = {
-  content: ['./index.html', './approve.html', './blog-approve.html', './js/**/*.js'],
+  content: ['./index.html', './approve.html', './blog-approve.html', './report.html', './js/**/*.js'],
   theme: {
     extend: {
       colors: {

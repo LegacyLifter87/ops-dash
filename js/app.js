@@ -6,6 +6,7 @@ import { useStore, initAuth, signOut, getUserEmail, activeAccount, setActiveAcco
 import { LoadingScreen, AuthScreen, Onboarding } from './auth.js';
 import { AgencyConsole } from './agencies.js';
 import { Dashboard } from './dashboard.js';
+import { Report } from './report.js';
 import { SEO } from './seo.js';
 import { Keywords } from './keywords.js';
 import { Competitors } from './competitors.js';
@@ -27,6 +28,7 @@ import { Select, Btn, Modal, Field, Input } from './ui.js';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
+  { id: 'report', label: 'Reporting', icon: '💹' },
   { id: 'seo', label: 'SEO', icon: '🔍' },
   { id: 'profile', label: 'Business', icon: '🏢' },
   { id: 'keywords', label: 'Keywords', icon: '🔑' },
@@ -218,6 +220,7 @@ function App() {
           </div>`}
           ${accts.length > 0 && html`
             ${view === 'dashboard' && html`<${Dashboard} navigate=${navigate} />`}
+            ${view === 'report' && html`<${Report} />`}
             ${view === 'seo' && html`<${SEO} />`}
             ${view === 'keywords' && html`<${Keywords} />`}
             ${view === 'profile' && html`<${Profile} />`}

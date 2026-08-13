@@ -783,6 +783,26 @@ export const seoMediaList = (limit) => seoInvokeMedia('list', { limit });
 export const seoMediaRemove = (id) => seoInvokeMedia('remove', { id });
 export const seoMediaCredits = () => seoInvokeMedia('credits', {});
 
+// --- Reporting (seo-report fn) ----------------------------------------------
+// The flagship cross-channel report: money loop, rank-to-revenue ledger and
+// marketing P&L. `view` only affects what THIS user sees — share links are
+// forced to the client lens server-side, so nothing here can leak agency costs.
+async function seoInvokeReport(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-report', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const reportSummary = ({ siteId, months, view } = {}) => seoInvokeReport('summary', { siteId, months, view });
+export const reportShareList = () => seoInvokeReport('share_list');
+export const reportShareCreate = (siteId, label) => seoInvokeReport('share_create', { siteId, label });
+export const reportShareRevoke = (shareId) => seoInvokeReport('share_revoke', { shareId });
+export async function reportSetTerms(terms) {
+  const r = await seoInvokeReport('set_terms', terms);
+  await loadAccounts();   // monthly_fee / avg_ticket / ltv_multiple live on seo_accounts
+  return r;
+}
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };

@@ -13,7 +13,7 @@ import { Card, Btn, Input, Textarea, Select, Modal, Field } from './ui.js';
 
 const ROLE_OPTS = [{ value: 'member', label: 'Member' }, { value: 'admin', label: 'Admin' }, { value: 'owner', label: 'Owner' }];
 const roleTone = (r) => r === 'owner' ? 'bg-violet-100 text-violet-700' : r === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600';
-const TAB_OPTS = [['dashboard', '▣ Dashboard'], ['seo', '🔍 SEO'], ['profile', '🏢 Business'], ['keywords', '🔑 Keywords'], ['social', '📣 Social'], ['autoblog', '🤖 Autoblogger'], ['competitors', '⚔️ Competitors'], ['ranks', '📈 Ranks'], ['local', '📍 Local'], ['audit', '🩺 Audit'], ['backlinks', '🔗 Backlinks'], ['ads', '💰 Google Ads'], ['analytics', '📶 Analytics'], ['jt', '📊 Job Tracker'], ['team', '👥 Team']];
+const TAB_OPTS = [['dashboard', '▣ Dashboard'], ['report', '💹 Reporting'], ['seo', '🔍 SEO'], ['profile', '🏢 Business'], ['keywords', '🔑 Keywords'], ['social', '📣 Social'], ['autoblog', '🤖 Autoblogger'], ['competitors', '⚔️ Competitors'], ['ranks', '📈 Ranks'], ['local', '📍 Local'], ['audit', '🩺 Audit'], ['backlinks', '🔗 Backlinks'], ['ads', '💰 Google Ads'], ['analytics', '📶 Analytics'], ['jt', '📊 Job Tracker'], ['team', '👥 Team']];
 
 // Per-member tab access editor. null / all-checked = full access.
 function TabsModal({ m, onClose, onSave }) {
