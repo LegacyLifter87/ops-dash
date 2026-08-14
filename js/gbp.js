@@ -6,8 +6,8 @@
 // Owner sign-in (business.manage) for private metrics is a gated add-on.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan, seoGbpStatus, seoGbpConnect, seoGbpDisconnect, seoGbpLocations, seoGbpSelectLocation, seoGbpMetrics, seoGbpGetLocation, seoGbpUpdate } from './store.js';
-import { Card, Btn, Input } from './ui.js';
+import { seoGbpAudit, seoGbpLoad, seoGbpAiPlan, seoGbpStatus, seoGbpConnect, seoGbpDisconnect, seoGbpLocations, seoGbpSelectLocation, seoGbpMetrics, seoGbpGetLocation, seoGbpUpdate, seoGbpAgencyPortfolio, seoGbpAgencyPick, activeAccount } from './store.js';
+import { Card, Btn, Input, Modal } from './ui.js';
 
 const nfmt = (n) => (n || 0).toLocaleString();
 
@@ -120,7 +120,104 @@ function GbpEditor() {
   </div>`;
 }
 
-function GbpLive({ canRun }) {
+// --- agency portfolio picker ------------------------------------------------
+// Agencies hold manager access to every client profile under ONE Google login,
+// so instead of a per-business OAuth dance the admin just picks the profile out
+// of the agency's portfolio. Portfolios run to hundreds of locations, so this
+// is searchable, marks profiles already attached to another business, and floats
+// the likeliest match for THIS business to the top.
+const normTxt = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+const STOPWORDS = new Set(['llc', 'inc', 'the', 'and', 'co', 'company', 'corp', 'services', 'service', 'of', 'group']);
+const wordsOf = (s) => normTxt(s).split(' ').filter((w) => w.length > 2 && !STOPWORDS.has(w));
+const domainCore = (d) => normTxt(String(d || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].replace(/\.[a-z.]+$/, '')).replace(/ /g, '');
+
+function matchScore(loc, nameWords, core) {
+  const title = wordsOf(loc.title);
+  let score = 0;
+  if (nameWords.length) score += (nameWords.filter((w) => title.includes(w)).length / nameWords.length) * 100;
+  if (core) {
+    const flat = normTxt(loc.title).replace(/ /g, '');
+    if (flat && (flat.includes(core) || core.includes(flat))) score += 45;
+  }
+  return score;
+}
+
+function AgencyPicker({ businessName, domain, onClose, onPicked }) {
+  const [data, setData] = useState(null);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const load = async (refresh = false) => {
+    setBusy(refresh ? 'refresh' : 'load'); setErr('');
+    try { setData(await seoGbpAgencyPortfolio(refresh)); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  useEffect(() => { load(false); }, []);
+
+  const me = activeAccount()?.name || '';
+  const locs = data?.locations || [];
+  const taken = data?.taken || {};
+  const nameWords = wordsOf(businessName || me);
+  const core = domainCore(domain);
+  const needle = normTxt(q);
+  const filtered = needle
+    ? locs.filter((l) => normTxt(`${l.title} ${l.address} ${l.accountName}`).includes(needle))
+    : locs;
+  const best = needle ? [] : locs
+    .map((l) => ({ l, s: matchScore(l, nameWords, core) }))
+    .filter((x) => x.s >= 40)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 3)
+    .map((x) => x.l);
+  const bestIds = new Set(best.map((l) => l.id));
+
+  const pick = async (l) => {
+    const who = taken[l.id];
+    if (who && who !== me && !confirm(`“${l.title}” is already attached to ${who}.\n\nAttach it to ${me || 'this business'} as well?`)) return;
+    setBusy('pick'); setErr('');
+    try { await seoGbpAgencyPick(l); onPicked(l); }
+    catch (e) { setErr(e.message); setBusy(''); }
+  };
+
+  const Row = (l) => {
+    const who = taken[l.id];
+    const mine = who && who === me;
+    return html`<button onClick=${() => pick(l)} disabled=${busy === 'pick'} class="w-full text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40 disabled:opacity-50">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-sm font-medium text-slate-800">${l.title}</span>
+        ${l.verified && html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">verified</span>`}
+        ${mine ? html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100">current</span>`
+          : who && html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">on ${who}</span>`}
+      </div>
+      <div class="text-xs text-slate-400">${l.address || l.id}${l.accountName ? ` · ${l.accountName}` : ''}</div>
+    </button>`;
+  };
+
+  return html`<${Modal} wide title="Choose a profile from your agency's portfolio" onClose=${onClose}>
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex-1 min-w-[220px]"><${Input} value=${q} onInput=${setQ} placeholder="Search by name, address or Google account…" /></div>
+        <${Btn} size="sm" variant="ghost" onClick=${() => load(true)} disabled=${!!busy}>${busy === 'refresh' ? 'Refreshing…' : '↻ Refresh from Google'}</${Btn}>
+      </div>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      ${data?.note && html`<div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">${data.note}</div>`}
+      ${busy === 'load' && html`<div class="text-sm text-slate-500 py-6 text-center">Loading the agency portfolio…</div>`}
+      ${data && locs.length === 0 && busy !== 'load' && html`<div class="text-sm text-slate-500 py-6 text-center">No profiles found on the agency's Google account. Use “Refresh from Google” after the profiles are shared with it.</div>`}
+      ${best.length > 0 && html`<div>
+        <div class="text-xs font-semibold text-slate-500 mb-1">Likely match for ${businessName || me}</div>
+        <div class="space-y-1">${best.map(Row)}</div>
+      </div>`}
+      ${filtered.length > 0 && html`<div>
+        <div class="text-xs font-semibold text-slate-500 mb-1">${needle ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : `All profiles (${locs.length})`}</div>
+        <div class="space-y-1">${filtered.filter((l) => !bestIds.has(l.id)).map(Row)}</div>
+      </div>`}
+      ${needle && filtered.length === 0 && locs.length > 0 && html`<div class="text-sm text-slate-500 py-4 text-center">No profile matches “${q}”.</div>`}
+      ${data?.cached_at && html`<div class="text-[11px] text-slate-400 text-center">Portfolio listed ${new Date(data.cached_at).toLocaleString()}${data.accounts ? ` · ${data.accounts} Google account(s)` : ''}</div>`}
+    </div>
+  </${Modal}>`;
+}
+
+function GbpLive({ canRun, businessName, domain }) {
   const [st, setSt] = useState(null);
   const [locs, setLocs] = useState(null);
   const [manualId, setManualId] = useState('');
@@ -129,6 +226,7 @@ function GbpLive({ canRun }) {
   const [err, setErr] = useState('');
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [autoTried, setAutoTried] = useState(false);
+  const [picker, setPicker] = useState(false);
 
   const load = async () => { try { setSt(await seoGbpStatus()); } catch (e) { setErr(e.message); } };
   useEffect(() => { load(); }, []);
@@ -145,24 +243,40 @@ function GbpLive({ canRun }) {
 
   if (!st) return null;
 
-  // Not connected — invite / gated note.
+  // The agency may already manage this profile under its own Google login —
+  // then there is nothing to sign into here, just a profile to pick.
+  const fromAgency = !!(st.agency?.connected && st.agency?.can_pick && canRun);
+  const onPicked = async () => { setPicker(false); setLocs(null); setQuotaBlocked(false); await load(); await refresh(); };
+  const pickerEl = picker && html`<${AgencyPicker} businessName=${businessName} domain=${domain} onClose=${() => setPicker(false)} onPicked=${onPicked} />`;
+  const agencyBtn = (variant = 'primary') => html`<${Btn} size="sm" variant=${variant} onClick=${() => setPicker(true)}>📍 Choose from agency profiles</${Btn}>`;
+
+  // Not connected — pick from the agency portfolio, or sign in for this business.
   if (!st.connected) {
     return html`<${Card}><div class="p-4 flex flex-wrap items-center gap-3 justify-between">
       <div class="min-w-0">
         <div class="font-semibold text-slate-800">Connect Google Business Profile <span class="text-xs font-normal text-slate-400">— private metrics</span></div>
-        <div class="text-xs text-slate-500 mt-0.5">Sign in with the Google account that manages the profile to see impressions, calls, direction requests, website clicks, and the exact search terms customers used.</div>
+        <div class="text-xs text-slate-500 mt-0.5">${fromAgency
+          ? html`Your agency is signed in as <span class="font-medium text-slate-700">${st.agency.email}</span> — pick this business's profile from the portfolio it already manages. Or sign in with a Google account that belongs to this business.`
+          : 'Sign in with the Google account that manages the profile to see impressions, calls, direction requests, website clicks, and the exact search terms customers used.'}</div>
       </div>
-      ${canRun ? html`<${Btn} size="sm" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Connect'}</${Btn}>` : html`<span class="text-xs text-slate-400">Ask an admin to connect.</span>`}
+      <div class="flex items-center gap-2">
+        ${fromAgency && agencyBtn()}
+        ${canRun ? html`<${Btn} size="sm" variant=${fromAgency ? 'ghost' : 'primary'} onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : (fromAgency ? 'Use its own Google account' : 'Connect')}</${Btn}>` : html`<span class="text-xs text-slate-400">Ask an admin to connect.</span>`}
+      </div>
       ${err && html`<div class="w-full text-sm text-rose-600">${err}</div>`}
+      ${pickerEl}
     </div></${Card}>`;
   }
 
   // Connected but no location chosen — auto-detect first, manual ID fallback.
   if (!st.location) {
     return html`<${Card}><div class="p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <div class="text-sm text-slate-600">Connected as <span class="font-medium text-slate-800">${st.email}</span></div>
-        <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="text-sm text-slate-600">Connected as <span class="font-medium text-slate-800">${st.email}</span>${st.source === 'agency' ? html`<span class="text-xs text-slate-400"> · agency sign-in</span>` : ''}</div>
+        <div class="flex items-center gap-2">
+          ${fromAgency && agencyBtn('secondary')}
+          <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+        </div>
       </div>
       ${busy === 'locs' && html`<div class="text-sm text-slate-500">Looking up the business locations on this Google account…</div>`}
       ${locs && locs.length > 0 && html`<div>
@@ -186,6 +300,7 @@ function GbpLive({ canRun }) {
         <button onClick=${pickLocations} class="mt-2 text-xs text-slate-500 hover:text-slate-700 underline">↻ Retry auto-detect</button>
       </div>`}
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      ${pickerEl}
     </div></${Card}>`;
   }
 
@@ -202,16 +317,19 @@ function GbpLive({ canRun }) {
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="min-w-0">
         <div class="font-semibold text-slate-800 flex items-center gap-2">${st.location.title} <span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">● Live</span></div>
-        <div class="text-xs text-slate-400">${st.location.address || ''} · ${st.email}${m ? ` · last 90 days` : ''}</div>
+        <div class="text-xs text-slate-400">${st.location.address || ''} · ${st.email}${st.source === 'agency' ? ' (agency sign-in)' : ''}${m ? ` · last 90 days` : ''}</div>
       </div>
       <div class="flex items-center gap-2">
+        ${fromAgency && html`<${Btn} size="sm" variant="ghost" onClick=${() => setPicker(true)}>📍 Change profile</${Btn}>`}
         ${canRun && html`<${Btn} size="sm" variant="ghost" onClick=${() => setShowEdit((v) => !v)}>${showEdit ? 'Close editor' : '✏️ Edit'}</${Btn}>`}
         ${canRun && html`<${Btn} size="sm" variant="secondary" onClick=${refresh} disabled=${busy === 'metrics'}>${busy === 'metrics' ? 'Loading…' : (m ? '↻ Refresh' : 'Load metrics')}</${Btn}>`}
         <button onClick=${disconnect} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
       </div>
     </div>
     ${canRun && showEdit && html`<${GbpEditor} />`}
+    ${st.needs_reconnect && st.source === 'agency' && html`<div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Your agency's Google sign-in needs attention — an agency owner should reconnect it in ⚙ Agency settings. The chosen profile stays put in the meantime.</div>`}
     ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+    ${pickerEl}
 
     ${!m ? html`<div class="text-sm text-slate-400">Click “Load metrics” to pull the last 90 days.</div>` : html`
       <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -267,7 +385,7 @@ export function ProfileAudit({ siteId, defaultName = '', domain, canRun = true }
   const ex = report?.extracted;
 
   return html`<div class="space-y-4">
-    <${GbpLive} canRun=${canRun} />
+    <${GbpLive} canRun=${canRun} businessName=${name || defaultName} domain=${domain} />
     <${Card}><div class="p-3 space-y-2">
       <div class="flex flex-wrap items-end gap-2">
         <div class="flex-1 min-w-[200px]">

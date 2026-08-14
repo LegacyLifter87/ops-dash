@@ -464,6 +464,25 @@ async function seoInvokeGbpWrite(action, extra = {}) {
 }
 export const seoGbpGetLocation = () => seoInvokeGbpWrite('gbp_get_location', {});
 export const seoGbpUpdate = (fields) => seoInvokeGbpWrite('gbp_update', { fields });
+// Agency-level Google Business Profile: ONE Google sign-in for the whole client
+// portfolio (agencies hold manager access to every client's profile under a
+// single login), then each business just picks its profile from that portfolio.
+// Agency-scoped, so these carry agencyId instead of accountId.
+async function seoInvokeGbpAgency(action, extra = {}) {
+  const body = { action, ...extra };
+  const agencyId = state.curAgency?.id || state.identity?.agencyId || null;
+  if (agencyId && body.agencyId === undefined) body.agencyId = agencyId;
+  const { data, error } = await supabase.functions.invoke('seo-gbp', { body });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoGbpAgencyStatus = () => seoInvokeGbpAgency('gbp_agency_status');
+export const seoGbpAgencyConnect = () => seoInvokeGbpAgency('gbp_agency_connect');
+export const seoGbpAgencyDisconnect = () => seoInvokeGbpAgency('gbp_agency_disconnect');
+export const seoGbpAgencyPortfolio = (refresh = false) => seoInvokeGbpAgency('gbp_agency_portfolio', { refresh });
+// Attaching a portfolio profile is business-scoped (it writes that business's row).
+export const seoGbpAgencyPick = (loc) => seoInvokeGbp('gbp_agency_pick', { locationId: loc.id, title: loc.title, address: loc.address });
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);

@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -159,6 +159,79 @@ function GoogleAdsTokenCard({ onBanner }) {
   </div></${Card}>`;
 }
 
+// ONE Google Business Profile sign-in for the entire agency. Agencies normally
+// hold manager access to every client's profile under a single Google login, so
+// signing in here once replaces a separate OAuth dance per business — each
+// business then just picks its profile out of the portfolio (Local → Profile).
+function GbpAgencyCard({ onBanner }) {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  // Until seo-gbp v8 is deployed the agency actions don't exist yet — stay
+  // quietly inert rather than showing the raw "No account."/"Unknown action".
+  const load = () => seoGbpAgencyStatus().then(setSt).catch((e) => {
+    if (/no account|unknown action/i.test(e.message || '')) setSt({ connected: false, canManage: false, pending: true });
+    else { setErr(e.message); setSt({}); }
+  });
+  useEffect(() => {
+    load();
+    // Returning from Google's consent screen (seo-gbp-callback → ?gbp=agency).
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('gbp') === 'agency') { onBanner('✅ Google Business Profile connected for the agency — every business can now pick its profile from the portfolio.'); history.replaceState(null, '', location.pathname + location.hash); }
+      else if (q.get('gbp') === 'error') { setErr('Google sign-in did not complete. Try again.'); history.replaceState(null, '', location.pathname + location.hash); }
+    } catch { /* ignore */ }
+  }, []);
+  const connect = async () => {
+    setBusy('connect'); setErr('');
+    try { const d = await seoGbpAgencyConnect(); location.href = d.url; }
+    catch (e) { setErr(e.message); setBusy(''); }
+  };
+  const refresh = async () => {
+    setBusy('refresh'); setErr('');
+    try { const d = await seoGbpAgencyPortfolio(true); await load(); if (d.note) onBanner(d.note); else onBanner(`✅ Portfolio refreshed — ${(d.locations || []).length} profile(s) reachable.`); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const disconnect = async () => {
+    if (!confirm('Disconnect the agency Google Business Profile sign-in?\n\nBusinesses using it lose their live profile data until the agency signs in again (or each one connects its own Google account). Nothing changes on Google itself.')) return;
+    setBusy('disc'); setErr('');
+    try { await seoGbpAgencyDisconnect(); await load(); onBanner('Agency Google Business Profile sign-in removed.'); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const stale = st?.portfolio_at && (Date.now() - new Date(st.portfolio_at).getTime()) > 86400000;
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">📍 Google Business Profile <span class="text-xs font-normal text-slate-400">— one sign-in for every client profile</span></div>
+      ${st !== null && !st.pending && (st.connected
+        ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ connected</span>`
+        : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">not connected</span>`)}
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Sign in once with the Google account that already manages your clients' profiles. Every business then just picks its profile from that portfolio — no separate Google sign-in per client. It also keeps you well clear of Google's ~100-live-token limit per Google account, which is what used to knock connections offline: one grant instead of one per business. Businesses whose owner keeps their own Google account can still connect it themselves on their Local tab; that keeps working exactly as before.</p>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>`
+      : st.connected ? html`
+        <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+          <div class="text-sm text-slate-800">Signed in as <span class="font-medium">${st.email || 'a Google account'}</span></div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+            <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Profiles reachable</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.locations == null ? '—' : st.locations.toLocaleString()}</div></div>
+            <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Google accounts</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.accounts == null ? '—' : st.accounts}</div></div>
+            <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Businesses using it</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.attached || 0}<span class="text-xs font-normal text-slate-400"> / ${st.businesses || 0}</span></div></div>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-2">
+            ${st.portfolio_at ? `Portfolio listed ${new Date(st.portfolio_at).toLocaleString()}${stale ? ' — refresh to pick up new client profiles' : ''}` : 'Portfolio not listed yet — refresh to pull it from Google.'}
+          </div>
+          ${st.canManage && html`<div class="flex flex-wrap items-center gap-2 mt-3">
+            <${Btn} size="sm" variant="secondary" onClick=${refresh} disabled=${busy === 'refresh'}>${busy === 'refresh' ? 'Listing profiles…' : '↻ Refresh portfolio'}</${Btn}>
+            <${Btn} size="sm" variant="ghost" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : '🔑 Sign in again'}</${Btn}>
+            <button onClick=${disconnect} disabled=${busy === 'disc'} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+          </div>`}
+        </div>`
+      : st.pending ? html`<div class="text-sm text-slate-500">Agency sign-in isn't switched on for this dashboard yet.</div>`
+      : st.canManage ? html`<${Btn} size="sm" variant="cta" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Sign in with Google'}</${Btn}>`
+        : html`<div class="text-sm text-slate-500">An agency owner needs to sign in before profiles can be picked from the portfolio.</div>`}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+  </div></${Card}>`;
+}
+
 export function AgencySettings() {
   const s = useStore();
   const myEmail = getUserEmail();
@@ -228,6 +301,8 @@ export function AgencySettings() {
     <${ApiCostsCard} />
 
     <${GoogleAdsTokenCard} onBanner=${setBanner} />
+
+    <${GbpAgencyCard} onBanner=${setBanner} />
 
     <${Card}><div class="p-4 border-l-4 border-amber-300">
       <div class="font-semibold text-slate-800 mb-1">Agency owners <span class="text-xs font-normal text-slate-400">— full access to every business + staff management</span></div>
