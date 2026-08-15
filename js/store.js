@@ -692,6 +692,12 @@ export const seoSocialPlanMonth = (siteId, month, holidays) => seoInvokeSocial('
 export const seoSocialWriteBatch = (siteId, calendarId, limit) => seoInvokeSocial('write_batch', { siteId, calendarId, limit });
 export const seoSocialMediaBatch = (siteId, calendarId, limit, regenAll = false) => seoInvokeSocial('media_batch', { siteId, calendarId, limit, ...(regenAll ? { regenAll: true } : {}) });
 export const seoSocialRegenMedia = (siteId, postId, feedback) => seoInvokeSocial('regen_media', { siteId, postId, feedback });
+// Maintenance: find posts still pointing at reference photos that no longer
+// exist (they permanently fail image generation — kie.ai rejects the whole task
+// on one dead image_input URL), strip the dead pointers and delete the orphaned
+// photo-library rows. Reports only until you pass { dryRun: false }; omit
+// siteId to sweep every site in the account.
+export const seoSocialRefsSweep = (siteId, opts = {}) => seoInvokeSocial('refs_sweep', { siteId: siteId || null, ...opts });
 // AI-rewrite ONE post's text (fresh hook/caption/hashtags/cta + matching
 // generation prompt), optionally steered by feedback. Status is preserved.
 export const seoSocialRewritePost = (siteId, postId, feedback) => seoInvokeSocial('rewrite_post', { siteId, postId, feedback });

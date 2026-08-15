@@ -983,6 +983,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
           <div class="space-y-3 min-w-0">
             ${post.topic && html`<div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">📋 ${post.topic}${post.target_city ? ` · 📍 ${post.target_city}` : ''}${post.target_service ? ` · 🛠 ${post.target_service}` : ''}</div>`}
             ${post.reject_reason && html`<div class="text-xs text-rose-600 bg-rose-50 rounded px-2 py-1">${post.reject_reason}</div>`}
+            ${post.gen_notes && html`<div class="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">🖼 ${post.gen_notes}</div>`}
             <${Field} label="Caption"><${Textarea} value=${f.caption} onInput=${(v) => setF({ ...f, caption: v })} rows=${7} /></${Field}>
             <div class="grid sm:grid-cols-2 gap-3">
               ${post.format === 'image' && html`<${Field} label="On-image headline (3-8 words)"><${Input} value=${f.overlay} onInput=${(v) => setF({ ...f, overlay: v })} /></${Field}>`}
