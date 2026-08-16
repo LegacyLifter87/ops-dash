@@ -348,8 +348,11 @@ export const seoPleperDiag = () => seoInvokePleper('diag');
 export const seoPleperIntel = (siteId) => seoInvokePleper('intel', { siteId });
 export const seoPleperCompetitors = (siteId) => seoInvokePleper('competitors_list', { siteId });
 export const seoPleperSnapshots = (siteId, competitorId) => seoInvokePleper('snapshots', { siteId, competitorId });
-export const seoPleperDiscoverPreview = (siteId, keywords) => seoInvokePleper('discover_preview', { siteId, keywords });
-export const seoPleperDiscover = (siteId, keywords) => seoInvokePleper('discover', { siteId, keywords });
+// opts: { keywords, cities, max } for the preview; the same plus
+// { enrich, aiGate } to run it. Passing keywords means "these exact queries",
+// which is how the seed editor sends back an edited plan.
+export const seoPleperDiscoverPreview = (siteId, opts = {}) => seoInvokePleper('discover_preview', { siteId, ...opts });
+export const seoPleperDiscover = (siteId, opts = {}) => seoInvokePleper('discover', { siteId, ...opts });
 export const seoPleperTeardown = (siteId, competitorIds) => seoInvokePleper('teardown', { siteId, competitorIds });
 export const seoPleperAddCompetitor = (siteId, url, name) => seoInvokePleper('competitor_add', { siteId, url, name });
 export const seoPleperSetCompetitor = (siteId, competitorId, patch) => seoInvokePleper('competitor_set', { siteId, competitorId, ...patch });

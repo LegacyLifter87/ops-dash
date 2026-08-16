@@ -159,6 +159,114 @@ function Mining({ mining, onRun, busy, canRun }) {
   </div></${Card}>`;
 }
 
+// Where a search term came from. Showing this is the difference between "12
+// map searches" and "12 map searches, and here are the exact words".
+const SEED_SOURCE = {
+  category: 'your Google category',
+  'service-page': 'service page',
+  'gbp-service': 'service on your profile',
+  you: 'typed by you',
+};
+// How confident the relevance filter was. 'reject' never appears here — those
+// listings live in the rejected drawer.
+const REL_BADGE = {
+  match: ['bg-emerald-100 text-emerald-800', 'same category'],
+  likely: ['bg-emerald-50 text-emerald-700', 'same industry'],
+  review: ['bg-amber-100 text-amber-800', 'worth a look'],
+  unknown: ['bg-slate-100 text-slate-600', 'no category'],
+};
+
+// The seed editor. The entire Trident Pools failure — 59 proposals, two of them
+// pool companies — was a discovery run nobody could see before it spent the
+// credits. This panel is that missing step: the exact queries, where each came
+// from, which ones we had to qualify with the industry noun, and the cost.
+function DiscoveryPlan({ plan, onChange, onRun, onCancel, busy }) {
+  const [draft, setDraft] = useState('');
+  if (!plan) return '';
+  const { seeds = [], cities = [], available = [], industry, credits, usdCost, enrichUsdMax, maxTargets } = plan;
+  const setSeeds = (next) => onChange({ seeds: next, cities });
+  const setCities = (next) => onChange({ seeds, cities: next });
+  const addDraft = () => {
+    const q = draft.trim();
+    if (!q || seeds.some((s) => s.query.toLowerCase() === q.toLowerCase())) { setDraft(''); return; }
+    setSeeds([...seeds, { query: q, source: 'you', qualified: false }]);
+    setDraft('');
+  };
+  const toggleCity = (c) => setCities(cities.includes(c) ? cities.filter((x) => x !== c) : [...cities, c]);
+
+  return html`<${Card} class="border-amber-200"><div class="p-4 space-y-3">
+    <div>
+      <div class="font-semibold text-slate-800">Find local competitors — check the searches first</div>
+      <div class="text-xs text-slate-500 mt-0.5">
+        ${industry?.primaryCategory
+          ? html`Searching as a <span class="font-medium text-slate-700">${industry.primaryCategory}</span> business. Terms taken from your service list are qualified with <span class="font-mono text-[11px]">${industry.noun}</span> so a search for "automation" can't come back with automation firms.`
+          : html`<span class="text-amber-700">We don't know this business's primary Google category, so nothing can be qualified automatically. Run the Google Business audit on the Local tab, or type the search terms yourself below.</span>`}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-[11px] uppercase tracking-wide text-slate-400 font-medium mb-1.5">Search terms (${seeds.length})</div>
+      <div class="flex flex-wrap gap-1.5">
+        ${seeds.map((s) => html`<span class=${cx('inline-flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 text-xs border',
+          s.source === 'category' ? 'bg-brand-50 border-brand-200 text-brand-800' : 'bg-white border-slate-200 text-slate-700')}>
+          <span class="font-medium">${s.query}</span>
+          <span class="text-[10px] text-slate-400">${SEED_SOURCE[s.source] || s.source}${s.qualified ? ' · qualified' : ''}</span>
+          <button onClick=${() => setSeeds(seeds.filter((x) => x !== s))} class="text-slate-300 hover:text-rose-600 px-1" title="Don't search this">✕</button>
+        </span>`)}
+        ${seeds.length === 0 && html`<span class="text-xs text-rose-600">No search terms — add at least one.</span>`}
+      </div>
+      <div class="flex items-center gap-2 mt-2">
+        <${Input} value=${draft} onInput=${setDraft} placeholder="add a search term, e.g. pool builder" class="w-64" />
+        <${Btn} size="sm" variant="ghost" onClick=${addDraft} disabled=${!draft.trim()}>Add</${Btn}>
+      </div>
+    </div>
+
+    ${available.length > 0 && html`<div>
+      <div class="text-[11px] uppercase tracking-wide text-slate-400 font-medium mb-1.5">Cities (${cities.length})</div>
+      <div class="flex flex-wrap gap-1.5">${available.map((c) => html`<button onClick=${() => toggleCity(c.city)}
+        class=${cx('rounded-full px-2.5 py-1 text-xs border',
+          cities.includes(c.city) ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-400')}>
+        ${c.priority ? '⭐ ' : ''}${c.city}</button>`)}</div>
+      <div class="text-[11px] text-slate-400 mt-1">Priority cities from the Strategy tab are starred. Every search term is run in every selected city, up to ${maxTargets || 24} searches.</div>
+    </div>`}
+
+    <div class="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+      ${plan.loading ? 'Recalculating…' : html`
+        <span class="font-semibold">${credits || 0} map search${credits === 1 ? '' : 'es'} — ${usd(usdCost)}</span>
+        <span class="text-xs text-slate-500"> · ${seeds.length} term(s) × ${cities.length} cit${cities.length === 1 ? 'y' : 'ies'}</span>
+        ${enrichUsdMax ? html`<div class="text-[11px] text-slate-400 mt-0.5">Listings Google publishes no category for get one extra lookup each so they can be judged rather than guessed — at most ${usd(enrichUsdMax)} more.</div>` : ''}`}
+    </div>
+
+    <div class="flex items-center gap-2">
+      <${Btn} size="sm" variant="cta" onClick=${onRun} disabled=${!!busy || !seeds.length || !cities.length || plan.loading}>Run these searches</${Btn}>
+      <${Btn} size="sm" variant="ghost" onClick=${onCancel}>Cancel</${Btn}>
+    </div>
+  </div></${Card}>`;
+}
+
+// The auto-rejected pile. A filter nobody can inspect is a filter nobody can
+// trust, so every rejection is listed with its reason and is one click from
+// being tracked anyway.
+function RejectedDrawer({ rejected, onTrack, busy }) {
+  const [open, setOpen] = useState(false);
+  if (!rejected?.length) return '';
+  return html`<${Card}><div class="p-4">
+    <button onClick=${() => setOpen(!open)} class="w-full flex items-center gap-2 text-left">
+      <span class="font-semibold text-slate-800">Not proposed — ${rejected.length} listing(s) filtered out</span>
+      <span class="text-xs text-slate-400">their Google category is in another trade</span>
+      <div class="flex-1"></div>
+      <span class="text-slate-400 text-xs">${open ? 'hide' : 'show'}</span>
+    </button>
+    ${open && html`<div class="mt-2 space-y-1">${rejected.map((p) => html`<div class="flex items-center gap-2 rounded-lg border border-slate-100 px-3 py-1.5">
+      <div class="min-w-0 flex-1">
+        <div class="text-sm text-slate-600 truncate">${p.name}</div>
+        <div class="text-[11px] text-slate-400 truncate">${p.relevanceReason}${p.seedKeyword ? ` — found searching "${p.seedKeyword}"` : ''}</div>
+      </div>
+      <button onClick=${() => onTrack(p)} disabled=${!!busy} class="text-xs text-slate-400 hover:text-brand-700 underline shrink-0">track anyway</button>
+    </div>`)}</div>`}
+  </div></${Card}>`;
+}
+
 export function LocalPack({ site, isSuper }) {
   const [status, setStatus] = useState(null);
   const [intel, setIntel] = useState(null);
@@ -169,6 +277,7 @@ export function LocalPack({ site, isSuper }) {
   const [manual, setManual] = useState('');
   const [manualName, setManualName] = useState('');
   const [confirm, setConfirm] = useState(null); // {kind, credits, usd, detail, run}
+  const [plan, setPlan] = useState(null);       // the editable discovery plan
   const [watching, setWatching] = useState([]);
 
   const load = async () => {
@@ -177,7 +286,7 @@ export function LocalPack({ site, isSuper }) {
     setStatus(s); setIntel(i);
   };
   useEffect(() => {
-    setStatus(null); setIntel(null); setErr(''); setBanner(''); setSel(new Set()); setWatching([]);
+    setStatus(null); setIntel(null); setErr(''); setBanner(''); setSel(new Set()); setWatching([]); setPlan(null);
     if (site) load().catch((e) => setErr(e.message));
   }, [site]);
 
@@ -187,18 +296,21 @@ export function LocalPack({ site, isSuper }) {
     if (!watching.length) return;
     let dead = false;
     const t = setInterval(async () => {
-      const still = [];
+      const still = [], notes = [];
       for (const id of watching) {
         try {
           const r = await seoPleperTaskStatus(id);
           if (['pending', 'running'].includes(r.task?.state)) still.push(id);
           else if (r.task?.state === 'fail') setErr(r.task.failMsg || 'A scrape failed.');
+          else if (r.task?.note) notes.push(r.task.note);
         } catch (_) { still.push(id); }
       }
       if (dead) return;
       if (still.length !== watching.length) { await load().catch(() => {}); }
       setWatching(still);
-      if (!still.length) setBanner('Scrape finished — the numbers below are up to date.');
+      // The note is where discovery reports how many candidates it rejected and
+      // why the count is smaller than the number of listings on the map.
+      if (!still.length) setBanner(notes.length ? `Finished — ${notes.join(' · ')}.` : 'Scrape finished — the numbers below are up to date.');
     }, 9000);
     return () => { dead = true; clearInterval(t); };
   }, [watching, site]);
@@ -216,31 +328,47 @@ export function LocalPack({ site, isSuper }) {
     catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
 
-  // Every credit-spending action goes through a confirm step that states the
-  // cost in credits AND dollars first.
+  // Every credit-spending action states its cost first. Discovery goes further:
+  // it shows the exact queries and lets them be edited, because a run that
+  // searches the wrong words is the expensive mistake, not the credits.
+  const planFrom = (p, seeds, cities) => ({
+    seeds: seeds ?? p.seeds ?? [],
+    cities: cities ?? p.cities ?? [],
+    available: p.availableCities || (p.cities || []).map((c) => ({ city: c, priority: false })),
+    industry: p.industry, credits: p.credits, usdCost: p.usd,
+    enrichUsdMax: p.enrichUsdMax, maxTargets: p.maxTargets, loading: false,
+  });
   const askDiscover = async () => {
-    setErr('');
+    setErr(''); setPlan({ seeds: [], cities: [], available: [], loading: true });
     try {
       const p = await seoPleperDiscoverPreview(site);
-      if (!p.targets?.length) {
-        setErr(p.missing === 'geography'
-          ? 'No target geography yet — set the service area (and mark priority cities) in the Strategy tab first.'
-          : 'No keywords to search with — mark your service pages in the Strategy tab, or run the Google Business audit.');
+      if (p.missing === 'geography') {
+        setPlan(null);
+        setErr('No target geography yet — set the service area (and mark priority cities) in the Strategy tab first.');
         return;
       }
-      setConfirm({
-        title: 'Find local competitors',
-        detail: `${p.targets.length} map search(es): ${p.keywords.join(', ')} across ${[...new Set(p.targets.map((t) => t.city))].join(', ')}.`,
-        credits: p.credits, usd: p.usd,
-        run: async () => {
-          const r = await act('discover', () => seoPleperDiscover(site));
-          if (r?.taskId) {
-            setWatching((w) => [...w, r.taskId]);
-            setBanner(`Searching ${r.jobs} map view(s) — proposed competitors land here in a minute or two.`);
-          }
-        },
-      });
-    } catch (e) { setErr(e.message); }
+      setPlan(planFrom(p));
+    } catch (e) { setPlan(null); setErr(e.message); }
+  };
+  // Re-price an edited plan. The preview costs nothing, so it runs on every
+  // change rather than making the user guess what their edit cost.
+  const repricePlan = async ({ seeds, cities }) => {
+    setPlan((p) => ({ ...p, seeds, cities, loading: true }));
+    try {
+      const p = await seoPleperDiscoverPreview(site, { keywords: seeds.map((s) => s.query), cities });
+      // Provenance labels stay client-side: the server sees an edited list as
+      // "typed by you" and we would lose which term came from where.
+      setPlan(planFrom(p, seeds, cities));
+    } catch (e) { setErr(e.message); setPlan((p) => ({ ...p, loading: false })); }
+  };
+  const runPlan = async () => {
+    const p = plan;
+    setPlan(null);
+    const r = await act('discover', () => seoPleperDiscover(site, { keywords: p.seeds.map((s) => s.query), cities: p.cities }));
+    if (r?.taskId) {
+      setWatching((w) => [...w, r.taskId]);
+      setBanner(`Searching ${r.jobs} map view(s) — competitors are checked against your Google category before they are proposed, so this takes a minute or two.`);
+    }
   };
   const askTeardown = (ids) => {
     if (!ids.length) { setErr('Pick at least one competitor first.'); return; }
@@ -286,8 +414,10 @@ export function LocalPack({ site, isSuper }) {
       </div>
     </div></${Card}>`}
 
+    <${DiscoveryPlan} plan=${plan} onChange=${repricePlan} onRun=${runPlan} onCancel=${() => setPlan(null)} busy=${busy} />
+
     <div class="flex flex-wrap items-center gap-2">
-      <${Btn} size="sm" onClick=${askDiscover} disabled=${!status?.connected || !!busy}>🔎 Find local competitors</${Btn}>
+      <${Btn} size="sm" onClick=${askDiscover} disabled=${!status?.connected || !!busy || !!plan}>🔎 Find local competitors</${Btn}>
       <${Btn} size="sm" variant="secondary" onClick=${() => askTeardown([...sel])} disabled=${!status?.connected || !sel.size || !!busy}>📥 Scrape selected${sel.size ? ` (${sel.size})` : ''}</${Btn}>
       <div class="flex-1"></div>
       ${watching.length > 0 && html`<span class="text-xs text-slate-400">${watching.length} scrape(s) running…</span>`}
@@ -356,16 +486,28 @@ export function LocalPack({ site, isSuper }) {
       </div></${Card}>
 
       ${proposed.length > 0 && html`<${Card}><div class="p-4">
-        <div class="font-semibold text-slate-800">Proposed by map search <span class="text-xs font-normal text-slate-400">— ${proposed.length} listing(s) found in the pack. Track the real competitors; dismiss the rest.</span></div>
-        <div class="mt-2 space-y-1.5">${proposed.map((p) => html`<div class="flex items-center gap-2 rounded-lg border border-slate-100 px-3 py-2">
+        <div class="font-semibold text-slate-800">Proposed by map search <span class="text-xs font-normal text-slate-400">— ${proposed.length} listing(s) that survived the category check. Track the real competitors; dismiss the rest.</span></div>
+        <div class="mt-2 space-y-1.5">${proposed.map((p) => {
+          const [tone, label] = REL_BADGE[p.relevance] || REL_BADGE.unknown;
+          return html`<div class="flex items-start gap-2 rounded-lg border border-slate-100 px-3 py-2">
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-medium text-slate-800 truncate">${p.name}</div>
-            <div class="text-[11px] text-slate-400 truncate">${[p.primaryCategory, p.city, p.bestRank ? `#${p.bestRank}` : null, `seen ${p.seenCount}×`].filter(Boolean).join(' · ')}${p.discoveredFrom?.length ? ` — ${p.discoveredFrom.map((d) => `"${d.keyword}" in ${d.city}`).slice(-2).join(', ')}` : ''}</div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-slate-800 truncate">${p.name}</span>
+              <span class=${cx('text-[10px] rounded-full px-1.5 py-0.5 shrink-0', tone)}>${label}</span>
+            </div>
+            <div class="text-[11px] text-slate-400 truncate">${[p.primaryCategory, p.city, p.bestRank ? `#${p.bestRank}` : null, `seen ${p.seenCount}×`].filter(Boolean).join(' · ')}</div>
+            <div class="text-[11px] text-slate-500 truncate">
+              ${p.seedKeyword ? html`Found searching <span class="font-medium">"${p.seedKeyword}"</span>${p.discoveredFrom?.slice(-1)[0]?.city ? ` in ${p.discoveredFrom.slice(-1)[0].city}` : ''}. ` : ''}${p.relevanceReason || ''}
+            </div>
           </div>
           <${Btn} size="sm" variant="secondary" onClick=${() => act('set', () => seoPleperSetCompetitor(site, p.competitorId, { status: 'tracked' }), () => `Tracking ${p.name}.`)}>Track</${Btn}>
           <button title="Not a competitor" onClick=${() => act('set', () => seoPleperSetCompetitor(site, p.competitorId, { status: 'dismissed' }))} class="text-slate-300 hover:text-rose-600 px-1">✕</button>
-        </div>`)}</div>
+        </div>`;
+        })}</div>
       </div></${Card}>`}
+
+      <${RejectedDrawer} rejected=${intel?.rejected} busy=${busy}
+        onTrack=${(p) => act('set', () => seoPleperSetCompetitor(site, p.competitorId, { status: 'tracked' }), () => `Tracking ${p.name}.`)} />
 
       ${(intel?.serviceGaps || []).length > 0 && html`<${Card}><div class="p-4">
         <div class="font-semibold text-slate-800">Services the pack lists and you don't</div>
