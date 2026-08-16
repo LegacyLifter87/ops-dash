@@ -11,3 +11,6 @@ node_modules/
 
 # Tailwind standalone CLI binary (download as needed to regenerate tailwind.css)
 tailwindcss.exe
+
+# Local render harness (scratch, never deployed)
+.preview/

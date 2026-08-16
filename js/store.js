@@ -333,6 +333,30 @@ export async function seoLoadGap(siteId, competitor) {
   const { data } = await supabase.from('seo_gap_keywords').select('*').eq('site_id', siteId).eq('competitor_domain', competitor).order('volume', { ascending: false });
   return data || [];
 }
+// --- Local pack intelligence (PlePer scrapes of PUBLIC Google Business data) --
+// Google's own API only reaches profiles we manage, so competitor GBP data can
+// only come from here. `intel` is free (it reads stored snapshots); discover,
+// teardown and review_mine spend credits, so the UI previews the cost first.
+async function seoInvokePleper(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-pleper', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoPleperStatus = (siteId) => seoInvokePleper('status', { siteId });
+export const seoPleperDiag = () => seoInvokePleper('diag');
+export const seoPleperIntel = (siteId) => seoInvokePleper('intel', { siteId });
+export const seoPleperCompetitors = (siteId) => seoInvokePleper('competitors_list', { siteId });
+export const seoPleperSnapshots = (siteId, competitorId) => seoInvokePleper('snapshots', { siteId, competitorId });
+export const seoPleperDiscoverPreview = (siteId, keywords) => seoInvokePleper('discover_preview', { siteId, keywords });
+export const seoPleperDiscover = (siteId, keywords) => seoInvokePleper('discover', { siteId, keywords });
+export const seoPleperTeardown = (siteId, competitorIds) => seoInvokePleper('teardown', { siteId, competitorIds });
+export const seoPleperAddCompetitor = (siteId, url, name) => seoInvokePleper('competitor_add', { siteId, url, name });
+export const seoPleperSetCompetitor = (siteId, competitorId, patch) => seoInvokePleper('competitor_set', { siteId, competitorId, ...patch });
+export const seoPleperRemoveCompetitor = (siteId, competitorId) => seoInvokePleper('competitor_remove', { siteId, competitorId });
+export const seoPleperTaskStatus = (taskId) => seoInvokePleper('task_status', { taskId });
+export const seoPleperReviewMine = (siteId) => seoInvokePleper('review_mine', { siteId });
+
 async function seoInvokeDfs(action, extra = {}) {
   const { data, error } = await supabase.functions.invoke('seo-dfs', { body: { action, accountId: getActiveAccountId(), ...extra } });
   if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }

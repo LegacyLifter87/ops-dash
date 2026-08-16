@@ -8,9 +8,10 @@
 // 30/60/90 plan. Report is AI-written server-side from the data on file.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useMemo, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadCompetitors, seoLoadGap, seoCompetitorsDiscover, seoCompetitorGap, seoAddCompetitor, seoDismissCompetitor, seoResearchRun, seoResearchList, seoResearchGet, seoResearchDelete } from './store.js';
-import { Card, Btn, Select, Input } from './ui.js';
+import { useStore, getActiveAccountId, isSuper, seoLoadSites, seoLoadCompetitors, seoLoadGap, seoCompetitorsDiscover, seoCompetitorGap, seoAddCompetitor, seoDismissCompetitor, seoResearchRun, seoResearchList, seoResearchGet, seoResearchDelete } from './store.js';
+import { Card, Btn, Select, Input, Tabs } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
+import { LocalPack } from './localpack.js';
 
 const num = (n) => (n || 0).toLocaleString();
 const money = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -254,6 +255,10 @@ export function Competitors() {
   const [banner, setBanner] = useState('');
   const [manual, setManual] = useState('');
   const [showHidden, setShowHidden] = useState(false);
+  // Two different competitive questions, two views: who beats us in ORGANIC
+  // search (DataForSEO keyword gap) and who beats us in the LOCAL MAP PACK
+  // (PlePer scrapes of public Google Business profiles).
+  const [view, setView] = useState('organic');
   const sort = useSort('volume', 'desc');
 
   useEffect(() => { if (accountId) seoLoadSites().then((s) => { setSites(s); setSite(s[0]?.id || ''); }); }, [accountId]);
@@ -288,18 +293,26 @@ export function Competitors() {
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 class="text-xl font-bold text-slate-800">Competitor Intelligence</h1>
-        <p class="text-sm text-slate-500">Who outranks you, and exactly which keywords &amp; topics they win that you don't.</p>
+        <p class="text-sm text-slate-500">${view === 'organic'
+          ? html`Who outranks you, and exactly which keywords &amp; topics they win that you don't.`
+          : html`Who wins the Google map pack locally — their categories, review pace and posting cadence against yours.`}</p>
       </div>
       <div class="flex items-center gap-2">
         ${sites.length > 1 && html`<${Select} value=${site} onChange=${setSite} options=${sites.map((s) => ({ value: s.id, label: s.display_name || s.domain }))} />`}
-        ${site && html`<${Btn} onClick=${discover} disabled=${busy === 'discover'}>${busy === 'discover' ? 'Finding…' : 'Find competitors'}</${Btn}>`}
+        ${site && view === 'organic' && html`<${Btn} onClick=${discover} disabled=${busy === 'discover'}>${busy === 'discover' ? 'Finding…' : 'Find competitors'}</${Btn}>`}
       </div>
     </div>
+    ${sites.length > 0 && html`<${Tabs} active=${view} onChange=${setView} tabs=${[
+      { value: 'organic', label: '🔎 Organic search' },
+      { value: 'local', label: '📍 Local pack (Google Business)' },
+    ]} />`}
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
 
     ${sites.length === 0
       ? html`<${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Search Console and add a site in the <span class="font-medium">SEO</span> tab first.</div></${Card}>`
+      : view === 'local'
+      ? html`<${LocalPack} site=${site} isSuper=${isSuper()} key=${'lp' + site} />`
       : html`
         <${DeepResearch} site=${site} key=${site} />
         <div class="grid lg:grid-cols-3 gap-4">
