@@ -61,6 +61,8 @@ function ContactCard({ onBanner }) {
 // agency, other agencies, and businesses with their own ad account — just signs
 // in with Google. Non-super owners only see the status, nothing to enter.
 // Actual API spend per business for a month: AI text (seo_api_usage ledger),
+// AI visibility (the same ledger, split out by the 'ai-visibility-' feature
+// prefix so multi-provider answer-engine spend never lands in AI writing),
 // kie.ai images/video (real credits reported per task), geogrid map scans.
 function ApiCostsCard() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -80,7 +82,7 @@ function ApiCostsCard() {
         <button onClick=${() => shift(1)} disabled=${month >= cur} class="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30">›</button>
       </div>
     </div>
-    <p class="text-xs text-slate-400 mb-3">Images & video are actual kie.ai credits per generation; map scans are geogrid points at cost; local intel is competitor Google Business scrapes at PlePer’s per-credit rate; keyword research is DataForSEO's own per-pull charge; notifications are emails sent (approval requests, alerts, digests) at the per-email rate. AI writing and notifications cover calls logged since tracking began${data?.ai_tracked_since ? ` (${new Date(data.ai_tracked_since).toLocaleDateString()})` : ''} — older activity predates the meter.</p>
+    <p class="text-xs text-slate-400 mb-3">Images & video are actual kie.ai credits per generation; map scans are geogrid points at cost; local intel is competitor Google Business scrapes at PlePer’s per-credit rate; keyword research is DataForSEO's own per-pull charge; AI visibility is every answer-engine probe, extraction and suggestion run (across all model providers, billed at each provider's rate); notifications are emails sent (approval requests, alerts, digests) at the per-email rate. AI writing and notifications cover calls logged since tracking began${data?.ai_tracked_since ? ` (${new Date(data.ai_tracked_since).toLocaleDateString()})` : ''} — older activity predates the meter.</p>
     ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
     ${!err && data === null && html`<div class="text-sm text-slate-400">Loading…</div>`}
     ${data && (data.rows || []).length === 0 && html`<div class="text-sm text-slate-400 py-3 text-center">No usage recorded for ${label}.</div>`}
@@ -88,28 +90,30 @@ function ApiCostsCard() {
       <div class="overflow-x-auto"><table class="w-full text-sm">
         <thead><tr class="text-[11px] uppercase tracking-wide text-slate-400 text-left">
           <th class="py-1.5 pr-3 font-medium">Business</th>
-          <th class="py-1.5 pr-3 font-medium text-right">AI writing</th>
-          <th class="py-1.5 pr-3 font-medium text-right">Images & video</th>
-          <th class="py-1.5 pr-3 font-medium text-right">Map scans</th>
-          <th class="py-1.5 pr-3 font-medium text-right">Keyword research</th>
-          <th class="py-1.5 pr-3 font-medium text-right">Local intel</th>
-          <th class="py-1.5 pr-3 font-medium text-right">Notifications</th>
-          <th class="py-1.5 font-medium text-right">Total</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">AI writing</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">AI visibility</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Images & video</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Map scans</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Keyword research</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Local intel</th>
+          <th class="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Notifications</th>
+          <th class="py-1.5 font-medium text-right whitespace-nowrap">Total</th>
         </tr></thead>
         <tbody class="divide-y divide-slate-50">
           ${data.rows.map((r) => html`<tr>
             <td class="py-2 pr-3 text-slate-800">${r.name}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.ai_calls} call(s) · ${r.ai_in + r.ai_out} tokens">${usd(r.ai_usd)}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.media_images} image(s), ${r.media_videos} video(s) · ${r.media_credits} credits">${usd(r.media_usd)}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.grid_scans} scan(s) · ${r.grid_points} grid points">${usd(r.grid_usd)}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.research_calls || 0} keyword research pull(s)">${usd(r.research_usd)}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.local_scrapes || 0} Google Business scrape(s) · ${r.local_credits || 0} credits">${usd(r.local_usd)}</td>
-            <td class="py-2 pr-3 text-right text-slate-600" title="${r.notif_emails || 0} email(s)">${usd(r.notif_usd)}</td>
-            <td class="py-2 text-right font-semibold text-slate-800">${usd(r.total_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.ai_calls} call(s) · ${r.ai_in + r.ai_out} tokens">${usd(r.ai_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.aivis_calls || 0} answer-engine call(s) · ${(r.aivis_in || 0) + (r.aivis_out || 0)} tokens">${usd(r.aivis_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.media_images} image(s), ${r.media_videos} video(s) · ${r.media_credits} credits">${usd(r.media_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.grid_scans} scan(s) · ${r.grid_points} grid points">${usd(r.grid_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.research_calls || 0} keyword research pull(s)">${usd(r.research_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.local_scrapes || 0} Google Business scrape(s) · ${r.local_credits || 0} credits">${usd(r.local_usd)}</td>
+            <td class="py-2 pr-3 text-right text-slate-600 whitespace-nowrap" title="${r.notif_emails || 0} email(s)">${usd(r.notif_usd)}</td>
+            <td class="py-2 text-right font-semibold text-slate-800 whitespace-nowrap">${usd(r.total_usd)}</td>
           </tr>`)}
         </tbody>
         <tfoot><tr class="border-t border-slate-200">
-          <td class="py-2 pr-3 text-xs text-slate-400">Agency total</td><td></td><td></td><td></td><td></td><td></td><td></td>
+          <td class="py-2 pr-3 text-xs text-slate-400">Agency total</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
           <td class="py-2 text-right font-bold text-slate-900">${usd(data.totals?.usd)}</td>
         </tr></tfoot>
       </table></div>`}
