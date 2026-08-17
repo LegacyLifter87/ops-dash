@@ -892,6 +892,17 @@ export const gbpPerfStatus = () => seoInvokeGbpPerf('status');
 export const gbpPerfCollect = () => seoInvokeGbpPerf('collect');
 export const gbpPerfBackfill = () => seoInvokeGbpPerf('backfill');
 
+// --- Opportunity finder (seo-opps fn) --------------------------------------
+// Separate again, and for the same reason: it reads a lot of tables and does
+// real work, so it must not be able to delay or break the money report.
+async function seoInvokeOpps(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-opps', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const oppsSummary = ({ siteId } = {}) => seoInvokeOpps('summary', { siteId });
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };

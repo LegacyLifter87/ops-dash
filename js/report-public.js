@@ -25,6 +25,7 @@ const FN_AIVIS = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-aivi
 // Google Business Profile engagement, same deal: its own function, validating
 // the SAME share token server-side and always returning the client lens.
 const FN_GBP = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-gbpperf';
+const FN_OPPS = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-opps';
 const token = new URLSearchParams(location.search).get('t') || '';
 
 function Shell({ children }) {
@@ -68,6 +69,7 @@ function Page() {
         };
         side(FN_AIVIS, 'aivis');
         side(FN_GBP, 'gbp');
+        side(FN_OPPS, 'opps');
       } catch (_) {
         if (!dead) setState({ phase: 'error', msg: 'Could not reach the report. Check your connection and try again.' });
       }
@@ -83,7 +85,7 @@ function Page() {
       <p class="text-sm text-slate-500 mt-1">${state.msg}</p>
     </${Shell}>`;
   }
-  return html`<${ReportBody} data=${state.data} aivis=${state.aivis} gbp=${state.gbp} />`;
+  return html`<${ReportBody} data=${state.data} aivis=${state.aivis} gbp=${state.gbp} opps=${state.opps} />`;
 }
 
 render(html`<${Page} />`, document.getElementById('app'));

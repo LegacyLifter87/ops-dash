@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, activeAccount, reportSummary, reportShareList, reportShareCreate, reportShareRevoke, reportSetTerms, seoLoadSites,
-  aivisSummary, aivisStatus, aivisSuggest, aivisSavePrompts, aivisSaveSettings, aivisEstimate, aivisRunStart, aivisRunTick, aivisDiag, gbpPerfSummary } from './store.js';
+  aivisSummary, aivisStatus, aivisSuggest, aivisSavePrompts, aivisSaveSettings, aivisEstimate, aivisRunStart, aivisRunTick, aivisDiag, gbpPerfSummary, oppsSummary } from './store.js';
 import { Card, Btn, Modal, Field, Input, Select, Checkbox, Textarea } from './ui.js';
 import { ReportBody } from './report-body.js';
 import { ensureVizCss } from './report-view.js';
@@ -422,6 +422,7 @@ export function Report() {
   const [showAivis, setShowAivis] = useState(false);
   const [aivis, setAivis] = useState(null);
   const [gbp, setGbp] = useState(null);
+  const [opps, setOpps] = useState(null);
 
   useEffect(() => { ensureVizCss(); }, []);
   useEffect(() => {
@@ -460,7 +461,16 @@ export function Report() {
 
   useEffect(() => { load(); }, [accountId, siteId, months, view]);
   useEffect(() => { loadAivis(); }, [accountId, siteId, view]);
+  // Opportunity finder: keyed on siteId, unlike GBP — it is entirely about
+  // one website's Search Console history.
+  const loadOpps = async () => {
+    if (!accountId) return;
+    try { const r = await oppsSummary({ siteId: siteId || undefined }); setOpps(r.section || null); }
+    catch (_) { setOpps(null); }
+  };
+
   useEffect(() => { loadGbp(); }, [accountId, view]);
+  useEffect(() => { loadOpps(); }, [accountId, siteId]);
 
   const onAction = (kind) => {
     if (kind === 'jt') location.hash = '/jt';
@@ -507,7 +517,7 @@ export function Report() {
       ${!data && loading && html`<div class="py-24 text-center text-sm text-slate-400">Building the report…</div>`}
       ${!data && !loading && !err && html`<div class="py-24 text-center text-sm text-slate-400">No report data yet.</div>`}
       ${data && html`<div class=${cx('transition-opacity', loading && 'opacity-60')}>
-        <${ReportBody} data=${data} aivis=${aivis} gbp=${gbp} onAction=${onAction} />
+        <${ReportBody} data=${data} aivis=${aivis} gbp=${gbp} opps=${opps} onAction=${onAction} />
       </div>`}
 
       ${showShare && html`<${ShareModal} accountId=${accountId} siteId=${siteId} onClose=${() => setShowShare(false)} />`}

@@ -17,6 +17,7 @@ import {
 import { AiVisibility } from './report-aivis.js';
 import { WebsiteWins } from './report-wins.js';
 import { GbpEngagement } from './report-gbp.js';
+import { Opportunities } from './report-opps.js';
 
 // The single number the report leads with. Exactly one per view, ≥48px, in
 // the same sans as everything else.
@@ -96,7 +97,7 @@ function Nudges({ nudges, onAction }) {
 // keeping it out of seo-report means phase 1 stays byte-for-byte unchanged.
 // Both callers fetch the two payloads in parallel and hand them in here, so
 // the composed page is still rendered from one place.
-export function ReportBody({ data, aivis, gbp, onAction }) {
+export function ReportBody({ data, aivis, gbp, opps, onAction }) {
   useEffect(() => { ensureVizCss(); }, []);
   const t = brandTokens(data?.business?.brandColor);
   const isClient = data.view === 'client';
@@ -162,6 +163,15 @@ export function ReportBody({ data, aivis, gbp, onAction }) {
            NOTE: no backticks in this comment — it lives INSIDE a template
            literal and one backtick would terminate it (the phase-1 CSS bug). -->
       ${gbp && html`<${GbpEngagement} gbp=${gbp} business=${data.business} />`}
+
+      <!-- ─────────────── 0d. OPPORTUNITY FINDER (v2 section 4) ───────────── -->
+      <!-- Closes the insight block. The three sections above report what is
+           happening; this one says what to do next and what is behind it, so
+           it belongs last among them and still ahead of the money proof.
+           Own function (seo-opps), fetched in parallel, renders nothing when
+           there is not enough Search Console history to say anything.
+           NOTE: no backticks in this comment — it is INSIDE a template literal. -->
+      ${opps && html`<${Opportunities} opps=${opps} business=${data.business} />`}
 
       <!-- ─────────────────────────── 1. MONEY LOOP ─────────────────────── -->
       <section>
