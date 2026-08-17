@@ -16,6 +16,12 @@ import { ReportBody } from './report-body.js';
 import { ensureVizCss } from './report-view.js';
 
 const FN = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-report';
+// AI search visibility lives in its own function and validates the SAME share
+// token server-side, forcing the client lens exactly as seo-report does. It is
+// fetched alongside, never awaited before the report renders: if it is slow,
+// down, or has never been set up for this business, the client still gets the
+// report and simply does not see that section.
+const FN_AIVIS = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-aivis';
 const token = new URLSearchParams(location.search).get('t') || '';
 
 function Shell({ children }) {
@@ -42,6 +48,17 @@ function Page() {
         if (!r.ok || j.error) { setState({ phase: 'error', msg: j.error || 'This report could not be loaded.' }); return; }
         setState({ phase: 'ok', data: j });
         if (j.business?.name) document.title = `${j.business.name} — marketing report`;
+
+        // Second, non-blocking: the AI visibility section fills in when it lands.
+        try {
+          const ar = await fetch(FN_AIVIS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'public', token }),
+          });
+          const aj = await ar.json().catch(() => ({}));
+          if (!dead && ar.ok && aj?.section?.configured) setState((s) => ({ ...s, aivis: aj.section }));
+        } catch (_) { /* the report stands on its own without it */ }
       } catch (_) {
         if (!dead) setState({ phase: 'error', msg: 'Could not reach the report. Check your connection and try again.' });
       }
@@ -57,7 +74,7 @@ function Page() {
       <p class="text-sm text-slate-500 mt-1">${state.msg}</p>
     </${Shell}>`;
   }
-  return html`<${ReportBody} data=${state.data} />`;
+  return html`<${ReportBody} data=${state.data} aivis=${state.aivis} />`;
 }
 
 render(html`<${Page} />`, document.getElementById('app'));

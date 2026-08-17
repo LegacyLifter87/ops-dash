@@ -12,8 +12,9 @@
 // toggle here only changes what THIS user sees.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, activeAccount, reportSummary, reportShareList, reportShareCreate, reportShareRevoke, reportSetTerms, seoLoadSites } from './store.js';
-import { Card, Btn, Modal, Field, Input, Select } from './ui.js';
+import { useStore, getActiveAccountId, activeAccount, reportSummary, reportShareList, reportShareCreate, reportShareRevoke, reportSetTerms, seoLoadSites,
+  aivisSummary, aivisStatus, aivisSuggest, aivisSavePrompts, aivisSaveSettings, aivisEstimate, aivisRunStart, aivisRunTick, aivisDiag } from './store.js';
+import { Card, Btn, Modal, Field, Input, Select, Checkbox, Textarea } from './ui.js';
 import { ReportBody } from './report-body.js';
 import { ensureVizCss } from './report-view.js';
 
@@ -147,6 +148,264 @@ function TermsModal({ acct, onClose, onSaved }) {
   </${Modal}>`;
 }
 
+// ---------------------------------------------------------------------------
+// AI search visibility — the agency-only control panel for the report section.
+//
+// Everything here is deliberately agency-side: the prompt set, which engines
+// are connected, what a run will cost, and the diagnostics. A client never sees
+// any of it — the share link renders the section's results only.
+// ---------------------------------------------------------------------------
+const INTENTS = [
+  { value: 'local', label: 'Local ("who does X near me")' },
+  { value: 'service', label: 'Service (a specific job)' },
+  { value: 'cost', label: 'Cost ("how much does X cost")' },
+  { value: 'comparison', label: 'Comparison ("X vs Y")' },
+  { value: 'brand', label: 'Brand (names the business)' },
+  { value: 'other', label: 'Other' },
+];
+
+function AivisModal({ siteId, onClose, onRan }) {
+  const [st, setSt] = useState(null);
+  const [prompts, setPrompts] = useState([]);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const [confirm, setConfirm] = useState(null);   // pending run estimate
+  const [progress, setProgress] = useState(null);
+  const [diag, setDiag] = useState(null);
+
+  const load = async () => {
+    setErr('');
+    try {
+      const r = await aivisStatus(siteId);
+      setSt(r);
+      setPrompts((r.prompts || []).filter((p) => p.active !== false));
+    } catch (e) { setErr(e.message); }
+  };
+  useEffect(() => { load(); }, [siteId]);
+
+  const setPrompt = (i, patch) => setPrompts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const addPrompt = () => setPrompts((ps) => [...ps, { prompt: '', intent: 'local', source: 'manual' }]);
+  const removePrompt = (i) => setPrompts((ps) => ps.filter((_, j) => j !== i));
+
+  const suggest = async () => {
+    setBusy('suggest'); setErr(''); setMsg('');
+    try {
+      const r = await aivisSuggest(siteId);
+      // Never clobber human wording: suggestions are appended, and anything
+      // already present (case-insensitively) is skipped.
+      const have = new Set(prompts.map((p) => String(p.prompt || '').trim().toLowerCase()));
+      const add = (r.prompts || [])
+        .filter((p) => p.prompt && !have.has(String(p.prompt).trim().toLowerCase()))
+        .map((p) => ({ prompt: p.prompt, intent: p.intent || 'local', source: 'ai' }));
+      setPrompts((ps) => [...ps, ...add]);
+      setMsg(add.length ? `Added ${add.length} suggested question${add.length === 1 ? '' : 's'} — edit anything that doesn't sound like your customers, then save.` : 'No new suggestions — the set already covers them.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const save = async () => {
+    setBusy('save'); setErr(''); setMsg('');
+    try {
+      const clean = prompts.filter((p) => String(p.prompt || '').trim());
+      const r = await aivisSavePrompts(siteId, clean.map((p) => ({ id: p.id, prompt: p.prompt, intent: p.intent, source: p.source })));
+      setPrompts((r.prompts || []).filter((p) => p.active !== false));
+      setMsg('Saved.');
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const saveSettings = async (patch) => {
+    setErr('');
+    try { const r = await aivisSaveSettings(siteId, patch); setSt((s) => ({ ...s, settings: r.settings })); }
+    catch (e) { setErr(e.message); }
+  };
+
+  // Cost is confirmed BEFORE anything is spent — never after.
+  const askToRun = async () => {
+    setBusy('estimate'); setErr(''); setMsg('');
+    try { const r = await aivisEstimate(siteId); setConfirm(r.estimate); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const doRun = async () => {
+    setConfirm(null); setBusy('run'); setErr('');
+    try {
+      const r = await aivisRunStart(siteId);
+      setProgress({ done: 0, total: r.run?.items_total || 0 });
+      // Drive the drain from here so the operator watches it finish; the cron
+      // would pick it up anyway if this tab is closed mid-run.
+      let guard = 0;
+      for (;;) {
+        const t = await aivisRunTick(r.run.id);
+        setProgress({ done: t.done || 0, total: t.total || r.run.items_total || 0 });
+        if (t.state !== 'running' || (t.remaining || 0) <= 0 || ++guard > 200) break;
+      }
+      setMsg('Measurement complete.');
+      await load();
+      onRan?.();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); setProgress(null); }
+  };
+
+  const runDiag = async () => {
+    setBusy('diag'); setErr(''); setDiag(null);
+    try { const r = await aivisDiag(); setDiag(r.providers || []); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const s = st?.settings || {};
+  const providers = st?.providers || [];
+  const ready = providers.filter((p) => p.ready);
+  const lastRun = (st?.runs || [])[0];
+
+  return html`<${Modal} title="AI search visibility" wide onClose=${onClose}>
+    <div class="space-y-5">
+      <p class="text-sm text-slate-600">
+        We ask each AI assistant the questions your client's customers actually type, then record whether the business
+        was named, whether it was linked to, and who got named instead. Results are stored for every run, so the
+        month-over-month trend builds itself. <span class="font-semibold">This is a sample, not a ranking</span> — the
+        report says so on the client's behalf.
+      </p>
+
+      ${err && html`<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700">${err}</div>`}
+      ${msg && html`<div class="rounded-lg px-3 py-2 text-sm bg-emerald-50 text-emerald-700">${msg}</div>`}
+
+      <!-- ── engines ────────────────────────────────────────────────────── -->
+      <div>
+        <div class="text-sm font-semibold text-slate-800 mb-1.5">Assistants</div>
+        <div class="flex flex-wrap gap-2">
+          ${providers.map((p) => html`
+            <span class=${cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+              p.ready ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-slate-100 text-slate-500 ring-slate-400/20')}>
+              <span class=${cx('h-1.5 w-1.5 rounded-full', p.ready ? 'bg-emerald-500' : 'bg-slate-400')}></span>
+              ${p.label}${p.ready ? '' : ' — no key'}
+            </span>`)}
+        </div>
+        <p class="text-xs text-slate-500 mt-1.5">
+          An assistant with no key is skipped and reported as “not measured”, never as an absence.
+          Add the key as an edge secret, then re-check below.
+        </p>
+        <div class="mt-2 flex items-center gap-2 flex-wrap">
+          <${Btn} size="sm" variant="secondary" onClick=${runDiag} disabled=${busy === 'diag'}>
+            ${busy === 'diag' ? 'Checking…' : 'Check every key now'}
+          </${Btn}>
+          ${lastRun && html`<span class="text-xs text-slate-400">
+            Last run ${new Date(lastRun.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${lastRun.state} · ${lastRun.items_done}/${lastRun.items_total} asks
+          </span>`}
+        </div>
+        ${diag && html`
+          <div class="mt-2 space-y-1">
+            ${diag.map((d) => html`
+              <div class="flex items-start gap-2 text-xs rounded-lg px-2.5 py-1.5 bg-slate-50">
+                <span class=${cx('font-semibold shrink-0', d.ok ? 'text-emerald-700' : 'text-rose-600')}>${d.ok ? '✓' : '✕'}</span>
+                <span class="font-medium text-slate-700 shrink-0 w-40 truncate">${d.label}</span>
+                <span class="text-slate-500 flex-1 min-w-0 break-words">
+                  ${d.ok ? `${d.model} · ${d.ms}ms · ${d.sources ?? 0} sources` : (d.error || 'failed')}
+                </span>
+              </div>`)}
+          </div>`}
+      </div>
+
+      <!-- ── cadence ────────────────────────────────────────────────────── -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <${Field} label="Asks per question" hint="Assistants are non-deterministic. More than one ask is what turns a yes/no into an honest rate.">
+          <${Select} value=${String(s.repeats ?? 2)} onChange=${(v) => saveSettings({ repeats: Number(v) })}
+            options=${[1, 2, 3, 4, 5].map((v) => ({ value: String(v), label: `${v}×` }))} />
+        </${Field}>
+        <${Field} label="Monthly run day" hint="1–28.">
+          <${Input} type="number" value=${String(s.run_day ?? 3)} onInput=${(v) => saveSettings({ runDay: Number(v) })} />
+        </${Field}>
+        <${Field} label="Automatic" hint="Run every month without being asked.">
+          <div class="pt-2">
+            <${Checkbox} checked=${s.auto_monthly !== false} onChange=${(v) => saveSettings({ autoMonthly: v })} label="Run monthly" />
+          </div>
+        </${Field}>
+      </div>
+
+      <!-- ── the prompt set ─────────────────────────────────────────────── -->
+      <div>
+        <div class="flex items-center justify-between gap-3 flex-wrap mb-1.5">
+          <div class="text-sm font-semibold text-slate-800">
+            The questions ${prompts.length > 0 && html`<span class="font-normal text-slate-400">· ${prompts.length}</span>`}
+          </div>
+          <div class="flex items-center gap-2">
+            <${Btn} size="sm" variant="secondary" onClick=${suggest} disabled=${busy === 'suggest'}>
+              ${busy === 'suggest' ? 'Thinking…' : '✨ Suggest from the brand kit'}
+            </${Btn}>
+            <${Btn} size="sm" variant="secondary" onClick=${addPrompt}>+ Add</${Btn}>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mb-2">
+          Write them the way a customer types, not the way a marketer writes. Only the one “brand” question should name the
+          business — the rest are there to find out whether it comes up unprompted.
+        </p>
+        ${prompts.length === 0 && html`<div class="text-sm text-slate-400 py-3">No questions yet — suggest a starting set, then edit it.</div>`}
+        <div class="space-y-2">
+          ${prompts.map((p, i) => html`
+            <div class="flex items-start gap-2">
+              <${Input} value=${p.prompt} onInput=${(v) => setPrompt(i, { prompt: v })} placeholder="best pool builder in ocala" class="flex-1" />
+              <${Select} value=${p.intent || 'local'} onChange=${(v) => setPrompt(i, { intent: v })} options=${INTENTS} class="w-40 shrink-0 text-xs" />
+              <button onClick=${() => removePrompt(i)} title="Remove"
+                class="shrink-0 text-slate-300 hover:text-rose-600 px-2 min-h-[2.75rem] lg:min-h-0 flex items-center">✕</button>
+            </div>`)}
+        </div>
+        <div class="mt-3 flex items-center gap-2 flex-wrap">
+          <${Btn} onClick=${save} disabled=${busy === 'save'}>${busy === 'save' ? 'Saving…' : 'Save questions'}</${Btn}>
+          <${Btn} variant="secondary" onClick=${askToRun} disabled=${!!busy || !prompts.length || !ready.length}>
+            ${busy === 'estimate' ? 'Pricing…' : 'Run now'}
+          </${Btn}>
+          ${!ready.length && html`<span class="text-xs text-slate-400">Connect at least one assistant first.</span>`}
+        </div>
+      </div>
+
+      <!-- ── the "notes" the section carries ────────────────────────────── -->
+      <${Field} label="Note on the report (optional)" hint="Shown to the agency only — the client section carries its own method note.">
+        <${Textarea} value=${s.notes || ''} rows=${2} onInput=${(v) => setSt((x) => ({ ...x, settings: { ...x.settings, notes: v } }))} />
+      </${Field}>
+      <${Btn} size="sm" variant="secondary" onClick=${() => saveSettings({ notes: s.notes || '' })}>Save note</${Btn}>
+
+      <!-- ── run progress ───────────────────────────────────────────────── -->
+      ${progress && html`
+        <div class="rounded-xl border border-slate-200 p-3">
+          <div class="flex items-baseline justify-between text-sm">
+            <span class="text-slate-700">Asking the assistants…</span>
+            <span class="tabular-nums text-slate-500">${progress.done} / ${progress.total}</span>
+          </div>
+          <div class="h-2 mt-1.5 rounded-full bg-slate-100">
+            <div class="h-2 rounded-full bg-brand-600 transition-all" style=${`width:${Math.min(100, (progress.done / Math.max(1, progress.total)) * 100)}%`}></div>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5">Safe to close — the scheduler finishes anything left over.</p>
+        </div>`}
+    </div>
+
+    <!-- Cost confirmation. Nothing is spent until this is accepted. -->
+    ${confirm && html`
+      <${Modal} title="Run this measurement?" onClose=${() => setConfirm(null)}>
+        <div class="space-y-3">
+          <p class="text-sm text-slate-600">
+            ${confirm.prompts} question${confirm.prompts === 1 ? '' : 's'} × ${confirm.providers.length} assistant${confirm.providers.length === 1 ? '' : 's'}
+            × ${confirm.repeats} ask${confirm.repeats === 1 ? '' : 's'} = <span class="font-semibold">${confirm.asks} answers</span>.
+          </p>
+          <div class="rounded-xl bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Estimated API cost</div>
+            <div class="text-2xl font-bold text-slate-800 tabular-nums">
+              $${confirm.low.toFixed(2)} – $${confirm.high.toFixed(2)}
+            </div>
+            <div class="text-xs text-slate-500 mt-1">
+              Charged by ${confirm.providers.map((p) => p.label).join(', ')}. Every call is logged to the agency cost panel.
+            </div>
+          </div>
+          ${confirm.skipped?.length > 0 && html`
+            <p class="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              Not included: ${confirm.skipped.map((p) => p.label).join(', ')} — no API key yet.
+            </p>`}
+          <div class="flex gap-2">
+            <${Btn} class="flex-1" onClick=${doRun}>Run it</${Btn}>
+            <${Btn} variant="secondary" onClick=${() => setConfirm(null)}>Cancel</${Btn}>
+          </div>
+        </div>
+      </${Modal}>`}
+  </${Modal}>`;
+}
+
 export function Report() {
   const store = useStore();
   const accountId = getActiveAccountId();
@@ -160,6 +419,8 @@ export function Report() {
   const [siteId, setSiteId] = useState('');
   const [showShare, setShowShare] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [showAivis, setShowAivis] = useState(false);
+  const [aivis, setAivis] = useState(null);
 
   useEffect(() => { ensureVizCss(); }, []);
   useEffect(() => {
@@ -178,11 +439,21 @@ export function Report() {
     catch (e) { setErr(e.message); setData(null); }
     finally { setLoading(false); }
   };
+  // Fetched separately and never awaited by `load`: a slow or failing AI
+  // measurement must not hold up (or take down) the money report.
+  const loadAivis = async () => {
+    if (!accountId) return;
+    try { const r = await aivisSummary({ siteId: siteId || undefined, months: 6, view }); setAivis(r.section || null); }
+    catch (_) { setAivis(null); }
+  };
+
   useEffect(() => { load(); }, [accountId, siteId, months, view]);
+  useEffect(() => { loadAivis(); }, [accountId, siteId, view]);
 
   const onAction = (kind) => {
     if (kind === 'jt') location.hash = '/jt';
     if (kind === 'terms') setShowTerms(true);
+    if (kind === 'aivis') setShowAivis(true);
   };
 
   if (!accountId) return html`<div class="p-8 text-sm text-slate-400">Select or create a business first.</div>`;
@@ -197,6 +468,7 @@ export function Report() {
           <button onClick=${() => setView(v)}
             class=${cx('px-3 py-2 text-sm font-semibold transition', view === v ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-50')}>${l}</button>`)}
       </div>
+      <${Btn} size="sm" variant="secondary" onClick=${() => setShowAivis(true)}>✨ AI visibility</${Btn}>
       <${Btn} size="sm" variant="secondary" onClick=${() => setShowTerms(true)}>Terms</${Btn}>
       <${Btn} size="sm" onClick=${() => setShowShare(true)}>Share ↗</${Btn}>
     </div>`;
@@ -223,10 +495,15 @@ export function Report() {
       ${!data && loading && html`<div class="py-24 text-center text-sm text-slate-400">Building the report…</div>`}
       ${!data && !loading && !err && html`<div class="py-24 text-center text-sm text-slate-400">No report data yet.</div>`}
       ${data && html`<div class=${cx('transition-opacity', loading && 'opacity-60')}>
-        <${ReportBody} data=${data} onAction=${onAction} />
+        <${ReportBody} data=${data} aivis=${aivis} onAction=${onAction} />
       </div>`}
 
       ${showShare && html`<${ShareModal} accountId=${accountId} siteId=${siteId} onClose=${() => setShowShare(false)} />`}
       ${showTerms && html`<${TermsModal} acct=${acct} onClose=${() => setShowTerms(false)} onSaved=${load} />`}
+      ${showAivis && siteId && html`<${AivisModal} siteId=${siteId} onClose=${() => setShowAivis(false)} onRan=${loadAivis} />`}
+      ${showAivis && !siteId && html`
+        <${Modal} title="AI search visibility" onClose=${() => setShowAivis(false)}>
+          <p class="text-sm text-slate-600">Add a website to this business first — the questions and results are tracked per site.</p>
+        </${Modal}>`}
     </div>`;
 }

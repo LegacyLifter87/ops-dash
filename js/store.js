@@ -855,6 +855,26 @@ export async function reportSetTerms(terms) {
   return r;
 }
 
+// --- AI search visibility (seo-aivis fn) ------------------------------------
+// Deliberately a separate function from seo-report: a slow or failing AI
+// measurement must never delay or break the money report, so the Reporting tab
+// fetches the two in parallel and renders whichever arrives.
+async function seoInvokeAivis(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-aivis', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const aivisSummary = ({ siteId, months, view } = {}) => seoInvokeAivis('summary', { siteId, months, view });
+export const aivisStatus = (siteId) => seoInvokeAivis('status', { siteId });
+export const aivisSuggest = (siteId) => seoInvokeAivis('prompts_suggest', { siteId });
+export const aivisSavePrompts = (siteId, prompts) => seoInvokeAivis('prompts_save', { siteId, prompts });
+export const aivisSaveSettings = (siteId, patch) => seoInvokeAivis('settings_save', { siteId, ...patch });
+export const aivisEstimate = (siteId) => seoInvokeAivis('estimate', { siteId });
+export const aivisRunStart = (siteId) => seoInvokeAivis('run_start', { siteId });
+export const aivisRunTick = (runId) => seoInvokeAivis('run_tick', { runId });
+export const aivisDiag = () => seoInvokeAivis('diag');
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };

@@ -14,6 +14,7 @@ import {
   MoneyLoop, RankLedger, CtrCurve, Waterfall, Tile, Meter, TrendPanels,
   ReportHeader, ReportFooter, Assumptions, SectionHead, Est, CountUp, useInView,
 } from './report-view.js';
+import { AiVisibility } from './report-aivis.js';
 
 // The single number the report leads with. Exactly one per view, ≥48px, in
 // the same sans as everything else.
@@ -87,7 +88,13 @@ function Nudges({ nudges, onAction }) {
     </div>`;
 }
 
-export function ReportBody({ data, onAction }) {
+// `aivis` arrives from a SEPARATE function (seo-aivis) rather than from
+// seo-report. Two reasons: the AI-visibility measurement is slow and expensive
+// to compute and should never be able to delay or fail the money report, and
+// keeping it out of seo-report means phase 1 stays byte-for-byte unchanged.
+// Both callers fetch the two payloads in parallel and hand them in here, so
+// the composed page is still rendered from one place.
+export function ReportBody({ data, aivis, onAction }) {
   useEffect(() => { ensureVizCss(); }, []);
   const t = brandTokens(data?.business?.brandColor);
   const isClient = data.view === 'client';
@@ -123,6 +130,13 @@ export function ReportBody({ data, onAction }) {
         period=${data.period} generatedAt=${data.generatedAt} />
 
       ${!isClient && html`<${Nudges} nudges=${data.nudges} onAction=${onAction} />`}
+
+      <!-- ──────────────────── 0. AI SEARCH VISIBILITY ───────────────────── -->
+      <!-- Leads the report: per the reporting v2 direction the page opens with
+           insight (what the marketing is doing) and closes with the money as
+           proof. Renders nothing at all when the feature has never been set up
+           for this business, so an un-onboarded client sees no empty scaffold. -->
+      ${aivis && html`<${AiVisibility} data=${aivis} onAction=${onAction} />`}
 
       <!-- ─────────────────────────── 1. MONEY LOOP ─────────────────────── -->
       <section>
