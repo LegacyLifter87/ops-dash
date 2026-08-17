@@ -22,6 +22,9 @@ const FN = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-report';
 // down, or has never been set up for this business, the client still gets the
 // report and simply does not see that section.
 const FN_AIVIS = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-aivis';
+// Google Business Profile engagement, same deal: its own function, validating
+// the SAME share token server-side and always returning the client lens.
+const FN_GBP = 'https://dkecnwmzlvwbhnnfompn.supabase.co/functions/v1/seo-gbpperf';
 const token = new URLSearchParams(location.search).get('t') || '';
 
 function Shell({ children }) {
@@ -49,16 +52,22 @@ function Page() {
         setState({ phase: 'ok', data: j });
         if (j.business?.name) document.title = `${j.business.name} — marketing report`;
 
-        // Second, non-blocking: the AI visibility section fills in when it lands.
-        try {
-          const ar = await fetch(FN_AIVIS, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'public', token }),
-          });
-          const aj = await ar.json().catch(() => ({}));
-          if (!dead && ar.ok && aj?.section?.configured) setState((s) => ({ ...s, aivis: aj.section }));
-        } catch (_) { /* the report stands on its own without it */ }
+        // Then the two side sections, in parallel and never awaited before the
+        // report is on screen. Each fills in if and when it lands; neither can
+        // delay, blank, or break the report if it is slow or throttled.
+        const side = async (url, key) => {
+          try {
+            const r2 = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'public', token }),
+            });
+            const j2 = await r2.json().catch(() => ({}));
+            if (!dead && r2.ok && j2?.section?.configured) setState((s) => ({ ...s, [key]: j2.section }));
+          } catch (_) { /* the report stands on its own without it */ }
+        };
+        side(FN_AIVIS, 'aivis');
+        side(FN_GBP, 'gbp');
       } catch (_) {
         if (!dead) setState({ phase: 'error', msg: 'Could not reach the report. Check your connection and try again.' });
       }
@@ -74,7 +83,7 @@ function Page() {
       <p class="text-sm text-slate-500 mt-1">${state.msg}</p>
     </${Shell}>`;
   }
-  return html`<${ReportBody} data=${state.data} aivis=${state.aivis} />`;
+  return html`<${ReportBody} data=${state.data} aivis=${state.aivis} gbp=${state.gbp} />`;
 }
 
 render(html`<${Page} />`, document.getElementById('app'));

@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, activeAccount, reportSummary, reportShareList, reportShareCreate, reportShareRevoke, reportSetTerms, seoLoadSites,
-  aivisSummary, aivisStatus, aivisSuggest, aivisSavePrompts, aivisSaveSettings, aivisEstimate, aivisRunStart, aivisRunTick, aivisDiag } from './store.js';
+  aivisSummary, aivisStatus, aivisSuggest, aivisSavePrompts, aivisSaveSettings, aivisEstimate, aivisRunStart, aivisRunTick, aivisDiag, gbpPerfSummary } from './store.js';
 import { Card, Btn, Modal, Field, Input, Select, Checkbox, Textarea } from './ui.js';
 import { ReportBody } from './report-body.js';
 import { ensureVizCss } from './report-view.js';
@@ -421,6 +421,7 @@ export function Report() {
   const [showTerms, setShowTerms] = useState(false);
   const [showAivis, setShowAivis] = useState(false);
   const [aivis, setAivis] = useState(null);
+  const [gbp, setGbp] = useState(null);
 
   useEffect(() => { ensureVizCss(); }, []);
   useEffect(() => {
@@ -447,8 +448,19 @@ export function Report() {
     catch (_) { setAivis(null); }
   };
 
+  // Same contract as loadAivis: its own function, its own failure. Google's
+  // Performance API has small per-minute quotas, so a throttle here must cost
+  // the profile section alone and never the report. Not keyed on siteId --
+  // a Google Business Profile belongs to the BUSINESS, not to one website.
+  const loadGbp = async () => {
+    if (!accountId) return;
+    try { const r = await gbpPerfSummary({ months: 13, view }); setGbp(r.section || null); }
+    catch (_) { setGbp(null); }
+  };
+
   useEffect(() => { load(); }, [accountId, siteId, months, view]);
   useEffect(() => { loadAivis(); }, [accountId, siteId, view]);
+  useEffect(() => { loadGbp(); }, [accountId, view]);
 
   const onAction = (kind) => {
     if (kind === 'jt') location.hash = '/jt';
@@ -495,7 +507,7 @@ export function Report() {
       ${!data && loading && html`<div class="py-24 text-center text-sm text-slate-400">Building the report…</div>`}
       ${!data && !loading && !err && html`<div class="py-24 text-center text-sm text-slate-400">No report data yet.</div>`}
       ${data && html`<div class=${cx('transition-opacity', loading && 'opacity-60')}>
-        <${ReportBody} data=${data} aivis=${aivis} onAction=${onAction} />
+        <${ReportBody} data=${data} aivis=${aivis} gbp=${gbp} onAction=${onAction} />
       </div>`}
 
       ${showShare && html`<${ShareModal} accountId=${accountId} siteId=${siteId} onClose=${() => setShowShare(false)} />`}

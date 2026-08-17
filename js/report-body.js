@@ -16,6 +16,7 @@ import {
 } from './report-view.js';
 import { AiVisibility } from './report-aivis.js';
 import { WebsiteWins } from './report-wins.js';
+import { GbpEngagement } from './report-gbp.js';
 
 // The single number the report leads with. Exactly one per view, ≥48px, in
 // the same sans as everything else.
@@ -95,7 +96,7 @@ function Nudges({ nudges, onAction }) {
 // keeping it out of seo-report means phase 1 stays byte-for-byte unchanged.
 // Both callers fetch the two payloads in parallel and hand them in here, so
 // the composed page is still rendered from one place.
-export function ReportBody({ data, aivis, onAction }) {
+export function ReportBody({ data, aivis, gbp, onAction }) {
   useEffect(() => { ensureVizCss(); }, []);
   const t = brandTokens(data?.business?.brandColor);
   const isClient = data.view === 'client';
@@ -150,6 +151,17 @@ export function ReportBody({ data, aivis, onAction }) {
            NOTE: no backticks in here — this comment lives INSIDE a template
            literal, and one backtick would terminate it (the phase-1 CSS bug). -->
       ${data.wins && html`<${WebsiteWins} wins=${data.wins} business=${data.business} />`}
+
+      <!-- ──────────── 0c. GOOGLE BUSINESS PROFILE (v2 section 2) ─────────── -->
+      <!-- Sits with the insight block, after the website and before the money.
+           Like AI visibility this arrives from its OWN function (seo-gbpperf),
+           fetched in parallel, so a Google quota stall costs this section and
+           nothing else. Renders nothing at all when no profile is connected or
+           nothing has been collected yet — an un-onboarded client sees no
+           empty scaffold, exactly as with the two sections above.
+           NOTE: no backticks in this comment — it lives INSIDE a template
+           literal and one backtick would terminate it (the phase-1 CSS bug). -->
+      ${gbp && html`<${GbpEngagement} gbp=${gbp} business=${data.business} />`}
 
       <!-- ─────────────────────────── 1. MONEY LOOP ─────────────────────── -->
       <section>

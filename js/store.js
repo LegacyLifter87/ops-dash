@@ -875,6 +875,23 @@ export const aivisRunStart = (siteId) => seoInvokeAivis('run_start', { siteId })
 export const aivisRunTick = (runId) => seoInvokeAivis('run_tick', { runId });
 export const aivisDiag = () => seoInvokeAivis('diag');
 
+// --- Google Business Profile engagement (seo-gbpperf fn) --------------------
+// Separate from seo-gbp on purpose: seo-gbp owns the OAuth connection and the
+// audit, and a reporting call must never be able to disturb either. Separate
+// from seo-report for the same reason AI visibility is — Google's Performance
+// API has small per-minute quotas, and a throttle there must cost this one
+// section rather than the whole report.
+async function seoInvokeGbpPerf(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-gbpperf', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const gbpPerfSummary = ({ months, view } = {}) => seoInvokeGbpPerf('summary', { months, view });
+export const gbpPerfStatus = () => seoInvokeGbpPerf('status');
+export const gbpPerfCollect = () => seoInvokeGbpPerf('collect');
+export const gbpPerfBackfill = () => seoInvokeGbpPerf('backfill');
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };
