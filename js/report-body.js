@@ -15,6 +15,7 @@ import {
   ReportHeader, ReportFooter, Assumptions, SectionHead, Est, CountUp, useInView,
 } from './report-view.js';
 import { AiVisibility } from './report-aivis.js';
+import { WebsiteWins } from './report-wins.js';
 
 // The single number the report leads with. Exactly one per view, ≥48px, in
 // the same sans as everything else.
@@ -137,6 +138,18 @@ export function ReportBody({ data, aivis, onAction }) {
            proof. Renders nothing at all when the feature has never been set up
            for this business, so an un-onboarded client sees no empty scaffold. -->
       ${aivis && html`<${AiVisibility} data=${aivis} onAction=${onAction} />`}
+
+      <!-- ───────────────────── 0b. WEBSITE WINS (v2 section 3) ──────────── -->
+      <!-- Sits with the insight, above the money: the reporting v2 direction is
+           that the page opens with what the marketing is DOING and closes with
+           the money as proof. Unlike AI visibility this arrives inside the main
+           seo-report payload (data.wins), because it is assembled from data the
+           report already reads — so there is nothing to fetch in parallel and
+           nothing extra to fail. A seo-report older than v2 simply has no wins
+           key and this renders nothing.
+           NOTE: no backticks in here — this comment lives INSIDE a template
+           literal, and one backtick would terminate it (the phase-1 CSS bug). -->
+      ${data.wins && html`<${WebsiteWins} wins=${data.wins} business=${data.business} />`}
 
       <!-- ─────────────────────────── 1. MONEY LOOP ─────────────────────── -->
       <section>
