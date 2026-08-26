@@ -5,11 +5,11 @@
 // stale-former-name citations with deep links to fix them. Push/sync = Phase 2.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { seoCitationsLoad, seoCitationsSaveProfile, seoCitationsScan, seoCitationsRecheck, seoCitationsSetStatus, seoFbStatus, seoFbConnect, seoFbDisconnect, seoFbPages, seoFbSelectPage, seoFbGet, seoFbUpdate } from './store.js';
+import { blPlan, blCreateCampaign, blRefreshLookup, blConfirm, seoCitationsLoad, seoCitationsSaveProfile, seoCitationsScan, seoCitationsRecheck, seoCitationsSetStatus, seoFbStatus, seoFbConnect, seoFbDisconnect, seoFbPages, seoFbSelectPage, seoFbGet, seoFbUpdate } from './store.js';
 
 const STATUS_OPTS = [['todo', 'To do'], ['in_progress', 'In progress'], ['fixed', 'Fixed'], ['ignored', 'Ignored']];
 const statusTone = (s) => s === 'fixed' ? 'text-emerald-700 border-emerald-200 bg-emerald-50' : s === 'in_progress' ? 'text-amber-700 border-amber-200 bg-amber-50' : s === 'ignored' ? 'text-slate-400 border-slate-200 bg-slate-50' : 'text-slate-600 border-slate-200 bg-white';
-import { Card, Btn, Input } from './ui.js';
+import { Card, Btn, Input, Select } from './ui.js';
 
 // Facebook Page sync — connect, pick a Page, compare its NAP to the source of
 // truth, edit and push. The first "able to sync" directory besides Google.
@@ -84,6 +84,247 @@ const Field = ({ label, value, onInput, placeholder, wide }) => html`<div class=
   <label class="text-[11px] text-slate-400">${label}</label>
   <${Input} value=${value || ''} onInput=${onInput} placeholder=${placeholder || ''} />
 </div>`;
+
+// BrightLocal citation building. The ONLY place in this app that spends money
+// and publishes a client's details to third parties, so the whole component is
+// arranged around making that unmissable rather than convenient:
+//   - what will be submitted is shown BEFORE the order, field by field
+//   - where it disagrees with our own records is called out, not buried
+//   - the order button states the cost and cannot be reached without reading it
+//   - the reviewed details are hashed; if they change, the server refuses
+function BrightLocalBuilder() {
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  const [pkg, setPkg] = useState('cb25');
+  const [pubs, setPubs] = useState(['dataaxle']);
+  const [auto, setAuto] = useState(true);
+  const [picked, setPicked] = useState([]);
+  const [dupes, setDupes] = useState(true);
+  const [express, setExpress] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [showDirs, setShowDirs] = useState(false);
+
+  const load = () => blPlan().then(setPlan).catch((e) => {
+    if (/unknown action/i.test(e.message || '')) setPlan({ pending: true });
+    else { setErr(e.message); setPlan({}); }
+  });
+  useEffect(() => { load(); }, []);
+
+  const start = async () => {
+    setBusy('start'); setErr(''); setOk('');
+    try { await blCreateCampaign(); await load(); setOk('Campaign started. Nothing has been ordered or charged yet.'); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const recheck = async () => {
+    setBusy('look'); setErr('');
+    try { await blRefreshLookup(plan.campaign.campaign_id); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const listings = ({ cb0: 0, cb10: 10, cb15: 15, cb25: 25, cb30: 30, cb50: 50, cb75: 75, cb100: 100 })[pkg] ?? 0;
+  const credits = plan?.credits ?? 0;
+  const shortBy = Math.max(0, listings - credits);
+
+  const order = async () => {
+    const nap = plan?.nap?.submitting || {};
+    const lines = [
+      'This spends credits and submits these details to public directories.',
+      '',
+      `Business:  ${nap.name}`,
+      `Address:   ${[nap.street, nap.city, nap.state, nap.zip].filter(Boolean).join(', ')}`,
+      `Phone:     ${nap.phone || '—'}`,
+      '',
+      `Package:   ${pkg} (${listings} listing${listings === 1 ? '' : 's'})`,
+      `Sent to:   ${pubs.join(', ')}`,
+      auto ? 'Directories: chosen automatically by BrightLocal' : `Directories: ${picked.length} chosen by hand`,
+      '',
+      'Listings are slow and awkward to correct once published.',
+      '',
+      'Order this now?',
+    ];
+    if (!confirm(lines.join('\n'))) return;
+    setBusy('order'); setErr(''); setOk('');
+    try {
+      const r = await blConfirm({
+        campaignId: plan.campaign.campaign_id,
+        packageId: pkg,
+        publishers: pubs,
+        autoSelect: auto,
+        citations: auto ? [] : picked,
+        removeDuplicates: dupes,
+        express,
+        notes: notes.trim() || undefined,
+        napHash: plan.nap.hash,
+      });
+      setOk(`Ordered — ${r.listings} listing${r.listings === 1 ? '' : 's'} submitted for building.`);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  if (plan === null) return html`<${Card}><div class="p-4 text-sm text-slate-400">Loading citation builder…</div></${Card}>`;
+  if (plan.pending) return null;
+  if (plan.ready === false && plan.reason === 'no_location') {
+    return html`<${Card}><div class="p-4">
+      <div class="font-semibold text-slate-800 mb-1">🏗 Build citations</div>
+      <div class="text-sm text-slate-500">${plan.message}</div>
+    </div></${Card}>`;
+  }
+
+  const nap = plan.nap || {};
+  const diffs = (nap.diff || []).filter((d) => d.status === 'differs');
+  const unknowns = (nap.diff || []).filter((d) => d.status === 'unknown');
+  const lk = plan.lookup;
+
+  return html`<${Card}><div class="p-4 space-y-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="font-semibold text-slate-800">🏗 Build citations <span class="text-xs font-normal text-slate-400">— BrightLocal</span></div>
+      <span class=${cx('text-[11px] px-2 py-0.5 rounded-full', credits > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+        ${credits > 0 ? `${credits} credits` : 'no credits'}
+      </span>
+    </div>
+
+    <!-- What would actually be sent. Shown before anything can be ordered. -->
+    <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">What gets submitted</div>
+      <div class="space-y-1">
+        ${(nap.diff || []).map((d) => html`
+          <div class="flex items-baseline justify-between gap-3 text-sm">
+            <span class="text-slate-400 capitalize w-20 shrink-0">${d.field}</span>
+            <span class="flex-1 text-slate-800 truncate">${d.theirs || html`<span class="text-slate-300">not set</span>`}</span>
+            ${d.status === 'differs' && html`<span class="shrink-0 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5">we have "${d.ours}"</span>`}
+          </div>`)}
+      </div>
+      ${diffs.length > 0 && html`<div class="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+        ${diffs.length} detail${diffs.length === 1 ? '' : 's'} disagree with our own record${nap.ours?.source ? ` (${nap.ours.source})` : ''}.
+        Fix it in BrightLocal before ordering — this is what will be published.
+      </div>`}
+      ${diffs.length === 0 && unknowns.length > 0 && html`<div class="mt-2 text-[11px] text-slate-400">
+        ${unknowns.length} field${unknowns.length === 1 ? '' : 's'} we have nothing to compare against — check them by eye.
+      </div>`}
+    </div>
+
+    <!-- Existing listings and their accuracy. Free, and useful on its own. -->
+    ${lk && html`<div class="rounded-xl border border-slate-200 p-3">
+      <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Already listed</div>
+        <button onClick=${recheck} disabled=${busy === 'look'} class="text-[11px] text-slate-400 hover:text-slate-700 underline">${busy === 'look' ? 'checking…' : 'check again'}</button>
+      </div>
+      ${lk.status === 'processing'
+        ? html`<div class="text-sm text-slate-500">BrightLocal is still scanning directories…</div>`
+        : html`
+          <div class="text-sm text-slate-700">Found on <span class="font-semibold">${lk.found}</span> director${lk.found === 1 ? 'y' : 'ies'}.</div>
+          ${Object.entries(lk.mismatches || {}).some(([, n]) => n > 0) && html`
+            <div class="text-xs text-slate-500 mt-1">
+              Disagreeing with the profile:
+              ${Object.entries(lk.mismatches).filter(([, n]) => n > 0).map(([f, n]) => html`<span class="ml-1 text-amber-700">${n} ${f}</span>`)}
+            </div>`}
+          ${(lk.citations || []).length > 0 && html`<details class="mt-2">
+            <summary class="text-[11px] text-slate-400 cursor-pointer">See the listings</summary>
+            <div class="space-y-1 mt-1.5">
+              ${lk.citations.slice(0, 25).map((c) => html`
+                <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                  <a href=${c.profile_url} target="_blank" rel="noopener noreferrer" class="truncate text-brand-700 hover:underline">${c.domain}</a>
+                  <span class="shrink-0 text-[11px]">
+                    ${c.matching_results
+                      ? Object.entries(c.matching_results).filter(([, v]) => v === false).map(([f]) => html`<span class="text-amber-700 ml-1">${f} differs</span>`)
+                      : html`<span class="text-slate-300">no details</span>`}
+                  </span>
+                </div>`)}
+            </div>
+          </details>`}`}
+    </div>`}
+
+    ${!plan.campaign ? html`
+      <div>
+        <div class="text-sm text-slate-600 mb-2">No campaign started for this business yet. Starting one is free — it scans directories and prepares the order without charging anything.</div>
+        ${plan.canOrder
+          ? html`<${Btn} size="sm" variant="secondary" onClick=${start} disabled=${busy === 'start'}>${busy === 'start' ? 'Starting…' : 'Start a campaign'}</${Btn}>`
+          : html`<div class="text-sm text-slate-500">An agency owner needs to start it.</div>`}
+      </div>`
+    : html`
+      <div class="rounded-xl border border-slate-200 p-3 space-y-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">The order</div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">How many listings</div>
+            <${Select} value=${pkg} onChange=${(e) => setPkg(e.target.value)}>
+              ${(plan.packages || []).map((p) => html`<option value=${p.id}>${p.listings === 0 ? 'Aggregators only (no listings)' : `${p.listings} listings`}</option>`)}
+            </${Select}>
+          </div>
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Data aggregators</div>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 pt-1.5">
+              ${(plan.availablePublishers || []).map((p) => html`
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="checkbox" checked=${pubs.includes(p)}
+                    onChange=${(e) => setPubs((v) => e.target.checked ? [...v, p] : v.filter((x) => x !== p))} />
+                  ${p}
+                </label>`)}
+            </div>
+          </div>
+        </div>
+
+        ${listings > 0 && html`<div>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked=${auto} onChange=${(e) => setAuto(e.target.checked)} />
+            Let BrightLocal choose the directories
+          </label>
+          ${!auto && html`<div class="mt-2">
+            <button onClick=${() => setShowDirs((v) => !v)} class="text-xs text-brand-700 underline">
+              ${showDirs ? 'Hide' : 'Choose'} directories (${picked.length} selected)
+            </button>
+            ${showDirs && html`<div class="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+              ${(plan.availableCitations || []).map((d) => html`
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="checkbox" checked=${picked.includes(d)}
+                    onChange=${(e) => setPicked((v) => e.target.checked ? [...v, d] : v.filter((x) => x !== d))} />
+                  <span class="truncate">${d}</span>
+                </label>`)}
+            </div>`}
+          </div>`}
+        </div>`}
+
+        <div class="flex flex-wrap gap-x-4 gap-y-1">
+          <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked=${dupes} onChange=${(e) => setDupes(e.target.checked)} /> Find and remove duplicate listings
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked=${express} onChange=${(e) => setExpress(e.target.checked)} /> Express (submitted within 24h)
+          </label>
+        </div>
+
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Notes for BrightLocal&#39;s submissions team (optional)</div>
+          <${Input} value=${notes} onInput=${(e) => setNotes(e.target.value)} placeholder="Anything specific about how this should be handled" />
+        </div>
+
+        ${shortBy > 0 && listings > 0 && html`<div class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+          Not enough credits: this needs ${listings}, the account has ${credits}. Buy ${shortBy} more in BrightLocal to order.
+        </div>`}
+
+        <div class="border-t border-slate-200 pt-3">
+          <div class="text-xs text-slate-500 mb-2">
+            ${listings > 0
+              ? html`Ordering spends <span class="font-semibold text-slate-700">${listings} credit${listings === 1 ? '' : 's'}</span> and publishes the details above to ${auto ? 'directories BrightLocal selects' : `${picked.length} chosen director${picked.length === 1 ? 'y' : 'ies'}`}.`
+              : html`Aggregators only — no directory listings, so no citation credits are spent.`}
+          </div>
+          ${plan.canOrder
+            ? html`<${Btn} size="sm" variant="cta" onClick=${order}
+                disabled=${busy === 'order' || (listings > 0 && shortBy > 0) || !pubs.length || diffs.length > 0}>
+                ${busy === 'order' ? 'Ordering…' : listings > 0 ? `Order ${listings} listings` : 'Submit to aggregators'}
+              </${Btn}>`
+            : html`<div class="text-sm text-slate-500">Only an agency owner can place the order.</div>`}
+          ${diffs.length > 0 && html`<div class="text-[11px] text-amber-700 mt-1.5">Ordering is blocked while the details disagree with our record — fix them in BrightLocal first.</div>`}
+        </div>
+      </div>`}
+
+    ${ok && html`<div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">${ok}</div>`}
+    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
+  </div></${Card}>`;
+}
 
 export function Citations({ siteId, domain, canRun = true }) {
   const [f, setF] = useState(null);
@@ -212,7 +453,9 @@ export function Citations({ siteId, domain, canRun = true }) {
         </div>
       </div></${Card}>
 
-      <div class="text-[11px] text-slate-400 text-center">Phase 1: discovery + consistency. One-click remote editing/sync per directory is coming next — starting with the profiles we can push to directly (Google Business Profile first).</div>
+      <${BrightLocalBuilder} />
+
+      <div class="text-[11px] text-slate-400 text-center">Above: what we find and how consistent it is. Below that: building new listings through BrightLocal, which spends credits and publishes to third parties — so it always shows you what will be sent before anything is ordered.</div>
     `}
   </div>`;
 }

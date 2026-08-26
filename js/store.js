@@ -920,6 +920,16 @@ export const blLink = (locationId, accountId) => seoInvokeBl('link', { locationI
 export const blUnlink = (locationId) => seoInvokeBl('unlink', { locationId });
 export const blBusiness = () => seoInvokeBl('overview', { accountId: getActiveAccountId() });
 
+// Phase 2. `blPlan` and `blRefreshLookup` are read-only. `blCreateCampaign`
+// creates a DRAFT and spends nothing. `blConfirm` is the only call in this app
+// that spends citation credits and pushes the business's NAP to public
+// directories — it requires an explicit acknowledgement plus the napHash that
+// was reviewed, so a stale or unreviewed order is refused server-side.
+export const blPlan = () => seoInvokeBl('plan', { accountId: getActiveAccountId() });
+export const blCreateCampaign = (emails) => seoInvokeBl('create_campaign', { accountId: getActiveAccountId(), emails });
+export const blRefreshLookup = (campaignId) => seoInvokeBl('refresh_lookup', { accountId: getActiveAccountId(), campaignId });
+export const blConfirm = (opts) => seoInvokeBl('confirm', { accountId: getActiveAccountId(), ...opts, acknowledge: true });
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };
