@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.9.1
+ * Version: 1.9.2
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.9.1');
+define('OPSDASH_VERSION', '1.9.2');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -269,6 +269,38 @@ function opsdash_seo_plugin() {
 	return 'none';
 }
 
+// Point a post's canonical at another URL — the fix for two posts competing
+// for the same search.
+//
+// It MUST go into the active SEO plugin's own field. Writing our
+// _opsdash_canonical while Rank Math or Yoast is installed emits a SECOND
+// canonical tag alongside theirs, and Google discards conflicting canonicals
+// entirely — leaving the site worse off than before, with no canonical signal
+// at all. 14 of 15 connected sites run Rank Math, so this is the normal case,
+// not an edge case.
+//
+// Returns false when the active plugin owns canonicals somewhere we cannot
+// safely write (AIOSEO keeps them in its own table, not post meta), so the
+// caller can report it instead of silently doing nothing.
+function opsdash_set_canonical($post_id, $url) {
+	$url = esc_url_raw($url);
+	if (!$url) return false;
+	$which = opsdash_seo_plugin();
+	if ($which === 'rankmath') {
+		update_post_meta($post_id, 'rank_math_canonical_url', $url);
+	} elseif ($which === 'yoast') {
+		update_post_meta($post_id, '_yoast_wpseo_canonical', $url);
+	} elseif ($which === 'aioseo') {
+		return false; // stored in AIOSEO's own table; not safely settable here
+	} else {
+		update_post_meta($post_id, '_opsdash_canonical', $url);
+		return true;
+	}
+	// A plugin owns the canonical now, so make sure ours is not also emitted.
+	delete_post_meta($post_id, '_opsdash_canonical');
+	return true;
+}
+
 function opsdash_set_seo_meta($post_id, $seo_title, $meta_desc, $focus_kw = '') {
 	$which = opsdash_seo_plugin();
 	if ($seo_title !== '') {
@@ -342,9 +374,15 @@ add_action('wp_head', function () {
 		$decoded = json_decode($schema, true);
 		if ($decoded) echo '<script type="application/ld+json">' . opsdash_json($decoded) . '</script>' . "\n";
 	}
-	// Canonical fix: only set for pages the audit flagged as missing one.
-	$canon = get_post_meta($pid, '_opsdash_canonical', true);
-	if ($canon) echo '<link rel="canonical" href="' . esc_url($canon) . '" />' . "\n";
+	// Canonical fix: only for pages the audit flagged as missing one, and only
+	// when no SEO plugin is emitting its own. Printing ours alongside Rank
+	// Math's produces two conflicting canonicals, which Google ignores
+	// outright - strictly worse than the single tag it already had.
+	if (opsdash_seo_plugin() === 'none') {
+		$canon = get_post_meta($pid, '_opsdash_canonical', true);
+		if ($canon) echo '<link rel="canonical" href="' . esc_url($canon) . '" />' . "
+";
+	}
 });
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +1038,14 @@ function opsdash_update_seo(WP_REST_Request $req) {
 
 	opsdash_set_seo_meta($post_id, sanitize_text_field($p['seo_title'] ?? ''), sanitize_text_field($p['meta_description'] ?? ''), sanitize_text_field($p['focus_keyword'] ?? ''));
 	if (!empty($p['schema_jsonld'])) opsdash_set_schema($post_id, $p['schema_jsonld']);
-	if (!empty($p['canonical'])) update_post_meta($post_id, '_opsdash_canonical', esc_url_raw($p['canonical']));
+	$canonical_set = null;
+	if (!empty($p['canonical'])) $canonical_set = opsdash_set_canonical($post_id, $p['canonical']);
 
-	return ['ok' => true, 'post_id' => $post_id, 'link' => get_permalink($post_id)];
+	$out = ['ok' => true, 'post_id' => $post_id, 'link' => get_permalink($post_id)];
+	if ($canonical_set !== null) {
+		$out['canonical_set'] = $canonical_set;
+		$out['seo_plugin'] = opsdash_seo_plugin();
+		if (!$canonical_set) $out['canonical_note'] = 'This site keeps canonicals inside its SEO plugin, which the connector cannot write. Set it there instead.';
+	}
+	return $out;
 }
