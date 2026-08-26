@@ -903,6 +903,23 @@ async function seoInvokeOpps(action, extra = {}) {
 }
 export const oppsSummary = ({ siteId } = {}) => seoInvokeOpps('summary', { siteId });
 
+// --- BrightLocal citations (seo-bl fn) -------------------------------------
+// Phase 1 is mapping + visibility only: every call here is read-only against
+// BrightLocal, or edits OUR OWN mapping table. Nothing in this block creates
+// or confirms a citation campaign, because confirming spends credits AND
+// pushes the client's NAP to public directories.
+async function seoInvokeBl(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-bl', { body: { action, ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const blOverview = () => seoInvokeBl('agency_overview');
+export const blSync = () => seoInvokeBl('sync');
+export const blLink = (locationId, accountId) => seoInvokeBl('link', { locationId, accountId });
+export const blUnlink = (locationId) => seoInvokeBl('unlink', { locationId });
+export const blBusiness = () => seoInvokeBl('overview', { accountId: getActiveAccountId() });
+
 // --- Job Tracker bridge (agency link + analytics pull) ----------------------
 async function jtInvoke(action, extra = {}) {
   const body = { action, accountId: getActiveAccountId(), ...extra };

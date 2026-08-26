@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio, blOverview, blSync, blLink, blUnlink } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -169,6 +169,140 @@ function GoogleAdsTokenCard({ onBanner }) {
 // hold manager access to every client's profile under a single Google login, so
 // signing in here once replaces a separate OAuth dance per business — each
 // business then just picks its profile out of the portfolio (Local → Profile).
+// Citations (BrightLocal). PHASE 1 = mapping + visibility only.
+//
+// This card deliberately cannot BUILD citations. Confirming a Citation Builder
+// campaign spends credits AND submits the client's name/address/phone to
+// public directories — the money comes back, the bad NAP does not. So the
+// order is: prove the mapping is right and make the existing state visible
+// first, then put building behind an explicit confirm with a NAP pre-flight.
+function CitationsCard({ onBanner }) {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const load = () => blOverview().then(setSt).catch((e) => {
+    if (/unknown action|not authorized/i.test(e.message || '')) setSt({ pending: true });
+    else { setErr(e.message); setSt({}); }
+  });
+  useEffect(() => { load(); }, []);
+
+  const sync = async () => {
+    setBusy('sync'); setErr('');
+    try {
+      const d = await blSync();
+      await load();
+      onBanner(`✅ BrightLocal synced — ${d.locations} location(s), ${d.campaigns} campaign(s), ${d.matched} linked to a business.`);
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const link = async (locationId, accountId) => {
+    if (!accountId) return;
+    setBusy(`l${locationId}`); setErr('');
+    try { await blLink(locationId, accountId); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const unlink = async (locationId) => {
+    setBusy(`u${locationId}`); setErr('');
+    try { await blUnlink(locationId); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+
+  const locs = st?.locations || [];
+  const camps = st?.campaigns || [];
+  const accounts = st?.accounts || [];
+  const linked = locs.filter((l) => l.account_id);
+  const unmatched = locs.filter((l) => !l.account_id);
+  const paid = camps.filter((c) => c.paid === true);
+  const drafts = camps.filter((c) => c.paid === false || c.status === 'saved');
+  const built = paid.reduce((a, c) => a + (c.citations_ordered || 0), 0);
+  const acctName = (id) => accounts.find((a) => a.id === id)?.name || '—';
+
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">🔗 Citations <span class="text-xs font-normal text-slate-400">— BrightLocal listings</span></div>
+      ${st !== null && !st.pending && html`<span class=${cx('text-[11px] px-2 py-0.5 rounded-full', (st.credits || 0) > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+        ${(st.credits || 0) > 0 ? `${st.credits} credits` : 'no credits'}
+      </span>`}
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Mirrors your BrightLocal account so citation work shows up next to everything else. Read-only for now — buying a campaign spends credits and pushes the business's name, address and phone out to public directories, so that step will sit behind its own confirmation rather than a button here.</p>
+
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>`
+      : st.pending ? html`<div class="text-sm text-slate-500">Citations aren't switched on for this dashboard yet.</div>`
+      : html`
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Citations built</div><div class="text-lg font-bold text-slate-800 tabular-nums">${built}</div></div>
+        <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Businesses linked</div><div class="text-lg font-bold text-slate-800 tabular-nums">${linked.length}<span class="text-xs font-normal text-slate-400"> / ${locs.length}</span></div></div>
+        <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Paid campaigns</div><div class="text-lg font-bold text-slate-800 tabular-nums">${paid.length}</div></div>
+        <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Unbought drafts</div><div class=${cx('text-lg font-bold tabular-nums', drafts.length ? 'text-amber-600' : 'text-slate-800')}>${drafts.length}</div></div>
+      </div>
+
+      ${(st.credits || 0) === 0 && html`<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        No citation credits on the account. Campaigns can be planned, but nothing can be submitted until credits are bought in BrightLocal.
+      </div>`}
+
+      ${paid.length > 0 && html`<div class="mt-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Already built</div>
+        <div class="space-y-1">
+          ${paid.map((c) => html`
+            <div class="flex items-baseline justify-between gap-3 text-sm">
+              <span class="truncate text-slate-700">${c.account_id ? acctName(c.account_id) : (c.name || 'Unlinked location')}</span>
+              <span class="shrink-0 text-xs text-slate-400 tabular-nums">
+                ${c.citations_ordered} listings · ${c.package_id} · ${c.submission_date ? new Date(c.submission_date).toLocaleDateString() : c.status}
+              </span>
+            </div>`)}
+        </div>
+      </div>`}
+
+      ${drafts.length > 0 && html`<div class="mt-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Started but never bought</div>
+        <div class="space-y-1">
+          ${drafts.map((c) => html`
+            <div class="flex items-baseline justify-between gap-3 text-sm">
+              <span class="truncate text-slate-700">${c.account_id ? acctName(c.account_id) : (c.name || 'Unlinked location')}</span>
+              <span class="shrink-0 text-xs text-amber-600">draft${c.creation_date ? ` · ${new Date(c.creation_date).toLocaleDateString()}` : ''}</span>
+            </div>`)}
+        </div>
+      </div>`}
+
+      ${unmatched.length > 0 && html`<div class="mt-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">In BrightLocal, not matched to a business</div>
+        <div class="space-y-1.5">
+          ${unmatched.map((l) => html`
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div class="min-w-0">
+                <div class="text-sm text-slate-700 truncate">${l.business_name}</div>
+                <div class="text-[11px] text-slate-400 truncate">${[l.city, l.website_url].filter(Boolean).join(' · ')}</div>
+              </div>
+              <${Select} value="" onChange=${(e) => link(l.location_id, e.target.value)} disabled=${busy === `l${l.location_id}`}>
+                <option value="">Link to…</option>
+                ${accounts.map((a) => html`<option value=${a.id}>${a.name}</option>`)}
+              </${Select}>
+            </div>`)}
+        </div>
+        <div class="text-[11px] text-slate-400 mt-1.5">Leave these unlinked if they are no longer clients — nothing syncs for a location that is not attached to a business.</div>
+      </div>`}
+
+      ${linked.length > 0 && html`<details class="mt-3">
+        <summary class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 cursor-pointer">Linked locations (${linked.length})</summary>
+        <div class="space-y-1 mt-1.5">
+          ${linked.map((l) => html`
+            <div class="flex items-baseline justify-between gap-3 text-sm">
+              <span class="truncate text-slate-700">${l.business_name} <span class="text-slate-400">→ ${acctName(l.account_id)}</span></span>
+              <span class="shrink-0 flex items-center gap-2">
+                <span class="text-[11px] text-slate-400">${l.match_method === 'manual' ? 'set by hand' : l.match_method === 'auto_domain' ? 'matched by website' : 'matched by name'}</span>
+                <button onClick=${() => unlink(l.location_id)} disabled=${busy === `u${l.location_id}`} class="text-[11px] text-slate-400 hover:text-rose-600 underline">unlink</button>
+              </span>
+            </div>`)}
+        </div>
+      </details>`}
+
+      <div class="flex flex-wrap items-center gap-2 mt-3">
+        <${Btn} size="sm" variant="secondary" onClick=${sync} disabled=${busy === 'sync'}>${busy === 'sync' ? 'Syncing…' : '↻ Sync from BrightLocal'}</${Btn}>
+        <span class="text-[11px] text-slate-400">Runs automatically once a day.</span>
+      </div>`}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+  </div></${Card}>`;
+}
+
 function GbpAgencyCard({ onBanner }) {
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState('');
@@ -309,6 +443,8 @@ export function AgencySettings() {
     <${GoogleAdsTokenCard} onBanner=${setBanner} />
 
     <${GbpAgencyCard} onBanner=${setBanner} />
+
+    <${CitationsCard} onBanner=${setBanner} />
 
     <${Card}><div class="p-4 border-l-4 border-amber-300">
       <div class="font-semibold text-slate-800 mb-1">Agency owners <span class="text-xs font-normal text-slate-400">— full access to every business + staff management</span></div>
