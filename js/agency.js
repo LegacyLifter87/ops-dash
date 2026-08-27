@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio, blOverview, blSync, blLink, blUnlink } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio, seoBingAgencyStatus, seoBingAgencyConnect, seoBingAgencyDisconnect, seoBingAgencyPortfolio, blOverview, blSync, blLink, blUnlink } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -372,6 +372,77 @@ function GbpAgencyCard({ onBanner }) {
   </div></${Card}>`;
 }
 
+// Bing Webmaster Tools — the Search Console of the Microsoft side, and the
+// index that feeds Copilot and ChatGPT search. Agency-first for a harder reason
+// than GBP: a Bing API KEY only ever covers one Bing account, so OAuth is the
+// only thing that makes this work for more than one agency.
+function BingAgencyCard({ onBanner }) {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const load = () => seoBingAgencyStatus().then(setSt).catch((e) => {
+    if (/no account|unknown action/i.test(e.message || '')) setSt({ connected: false, canManage: false, pending: true });
+    else { setErr(e.message); setSt({}); }
+  });
+  useEffect(() => {
+    load();
+    // Returning from Bing's consent screen (seo-bing-callback → ?bing=agency).
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('bing') === 'agency') { onBanner('✅ Bing connected for the agency — every business can now pick its verified site.'); history.replaceState(null, '', location.pathname + location.hash); }
+      else if (q.get('bing') === 'error') { setErr('Bing sign-in did not complete. Try again.'); history.replaceState(null, '', location.pathname + location.hash); }
+    } catch { /* ignore */ }
+  }, []);
+  const connect = async () => {
+    setBusy('connect'); setErr('');
+    try { const d = await seoBingAgencyConnect(); location.href = d.url; }
+    catch (e) { setErr(e.message); setBusy(''); }
+  };
+  const refresh = async () => {
+    setBusy('refresh'); setErr('');
+    try { const d = await seoBingAgencyPortfolio(true); await load(); onBanner(`✅ Site list refreshed — ${(d.sites || []).length} verified site(s) reachable.`); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const disconnect = async () => {
+    if (!confirm('Disconnect the agency Bing sign-in?\n\nBusinesses using it lose their Bing data until the agency signs in again. Nothing changes inside Bing Webmaster Tools itself.')) return;
+    setBusy('disc'); setErr('');
+    try { await seoBingAgencyDisconnect(); await load(); onBanner('Agency Bing sign-in removed.'); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const stale = st?.portfolio_at && (Date.now() - new Date(st.portfolio_at).getTime()) > 86400000;
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">🔎 Bing Webmaster Tools <span class="text-xs font-normal text-slate-400">— one sign-in for every client site</span></div>
+      ${st !== null && !st.pending && (st.connected
+        ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ connected</span>`
+        : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">not connected</span>`)}
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Sign in once with the Bing account that holds your clients' verified sites — every business then picks its site from that list. Bing matters more than its search share suggests: it is the index behind Copilot and ChatGPT search, so this is where AI-search visibility is measured from the index side. We ask for <span class="font-medium">read-only</span> access; we can never submit or remove URLs on a client site.</p>
+    <p class="text-xs text-slate-400 mb-3">⚠️ Bing only returns data for sites <span class="font-medium">verified in that Bing account</span>. If yours are empty, open Bing Webmaster Tools and use <span class="font-medium">Import from Google Search Console</span> — it carries the verification across for every property at once, with no DNS changes.</p>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>`
+      : st.connected ? html`
+        <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+          <div class="text-sm text-slate-800">Signed in${st.email ? html` as <span class="font-medium">${st.email}</span>` : ' to Bing'}</div>
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Verified sites</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.sites == null ? '—' : st.sites.toLocaleString()}</div></div>
+            <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Businesses using it</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.attached || 0}<span class="text-xs font-normal text-slate-400"> / ${st.businesses || 0}</span></div></div>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-2">
+            ${st.portfolio_at ? `Site list read ${new Date(st.portfolio_at).toLocaleString()}${stale ? ' — refresh to pick up newly verified sites' : ''}` : 'Site list not read yet — refresh to pull it from Bing.'}
+          </div>
+          ${st.canManage && html`<div class="flex flex-wrap items-center gap-2 mt-3">
+            <${Btn} size="sm" variant="secondary" onClick=${refresh} disabled=${busy === 'refresh'}>${busy === 'refresh' ? 'Listing sites…' : '↻ Refresh site list'}</${Btn}>
+            <${Btn} size="sm" variant="ghost" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : '🔑 Sign in again'}</${Btn}>
+            <button onClick=${disconnect} disabled=${busy === 'disc'} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+          </div>`}
+        </div>`
+      : st.pending ? html`<div class="text-sm text-slate-500">Bing isn't switched on for this dashboard yet.</div>`
+      : st.canManage ? html`<${Btn} size="sm" variant="cta" onClick=${connect} disabled=${busy === 'connect'}>${busy === 'connect' ? 'Redirecting…' : 'Sign in with Bing'}</${Btn}>`
+        : html`<div class="text-sm text-slate-500">An agency owner needs to sign in before sites can be picked.</div>`}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+  </div></${Card}>`;
+}
+
 export function AgencySettings() {
   const s = useStore();
   const myEmail = getUserEmail();
@@ -443,6 +514,7 @@ export function AgencySettings() {
     <${GoogleAdsTokenCard} onBanner=${setBanner} />
 
     <${GbpAgencyCard} onBanner=${setBanner} />
+    <${BingAgencyCard} onBanner=${setBanner} />
 
     <${CitationsCard} onBanner=${setBanner} />
 

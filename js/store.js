@@ -510,6 +510,25 @@ export const seoGbpAgencyDisconnect = () => seoInvokeGbpAgency('gbp_agency_disco
 export const seoGbpAgencyPortfolio = (refresh = false) => seoInvokeGbpAgency('gbp_agency_portfolio', { refresh });
 // Attaching a portfolio profile is business-scoped (it writes that business's row).
 export const seoGbpAgencyPick = (loc) => seoInvokeGbp('gbp_agency_pick', { locationId: loc.id, title: loc.title, address: loc.address });
+
+// ---- Bing Webmaster Tools --------------------------------------------------
+// Same agency-first shape as GBP above, and for a harder reason: a Bing API KEY
+// is scoped to one Bing account, so a single shared key would serve exactly one
+// agency and silently return nothing for every other one. OAuth is what makes
+// Bing multi-tenant at all.
+async function seoInvokeBingAgency(action, extra = {}) {
+  const body = { action, ...extra };
+  const agencyId = state.curAgency?.id || state.identity?.agencyId || null;
+  if (agencyId && body.agencyId === undefined) body.agencyId = agencyId;
+  const { data, error } = await supabase.functions.invoke('seo-bing', { body });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoBingAgencyStatus = () => seoInvokeBingAgency('bing_agency_status');
+export const seoBingAgencyConnect = () => seoInvokeBingAgency('bing_agency_connect');
+export const seoBingAgencyDisconnect = () => seoInvokeBingAgency('bing_agency_disconnect');
+export const seoBingAgencyPortfolio = (refresh = false) => seoInvokeBingAgency('bing_agency_portfolio', { refresh });
 export async function seoSetBrandTerms(siteId, terms) {
   const { error } = await supabase.from('seo_sites').update({ brand_terms: terms }).eq('id', siteId);
   if (error) throw new Error(error.message);
