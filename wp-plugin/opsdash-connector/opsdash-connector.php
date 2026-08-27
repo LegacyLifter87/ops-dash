@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.9.2
+ * Version: 1.9.3
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.9.2');
+define('OPSDASH_VERSION', '1.9.3');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -386,6 +386,32 @@ add_action('wp_head', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Microsoft Clarity — behaviour analytics (heatmaps, session recordings,
+// rage/dead clicks). Ops Dash sets the project id remotely via /clarity; the
+// official snippet is then emitted on EVERY page. This is its own wp_head hook,
+// NOT part of the singular-only SEO hook above: tracking belongs on the home
+// page, archives and search results too. 1.9.3.
+// ---------------------------------------------------------------------------
+function opsdash_clarity_id() {
+	// Clarity project ids are short lowercase alphanumerics; sanitising on READ
+	// means even a bad value written directly to wp_options cannot break out of
+	// the string literal below.
+	$id = (string) get_option('opsdash_clarity_id', '');
+	return preg_replace('/[^a-z0-9]/', '', strtolower($id));
+}
+add_action('wp_head', function () {
+	$id = opsdash_clarity_id();
+	if ($id === '' || strlen($id) > 20) return;
+	echo "<script type=\"text/javascript\">\n" .
+		"(function(c,l,a,r,i,t,y){\n" .
+		"    c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};\n" .
+		"    t=l.createElement(r);t.async=1;t.src=\"https://www.clarity.ms/tag/\"+i;\n" .
+		"    y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);\n" .
+		"})(window, document, \"clarity\", \"script\", \"" . esc_js($id) . "\");\n" .
+		"</script>\n";
+}, 5);
+
+// ---------------------------------------------------------------------------
 // robots.txt — WordPress serves a VIRTUAL robots.txt through this filter, but
 // only when no physical robots.txt sits at the web root. When Ops Dash has
 // stored custom rules we serve those verbatim; empty option = WP default.
@@ -566,6 +592,27 @@ add_action('rest_api_init', function () {
 		},
 	]);
 
+	// Microsoft Clarity project id: GET reports it, POST sets or clears it
+	// ({"project_id": ""} clears). The tracking snippet goes live on the next
+	// page load — no cache purge is attempted here, so a page-cached site may
+	// take until its cache expires to start recording.
+	register_rest_route('opsdash/v1', '/clarity', [
+		'methods' => ['GET', 'POST'],
+		'permission_callback' => 'opsdash_auth',
+		'callback' => function (WP_REST_Request $req) {
+			if ($req->get_method() === 'POST') {
+				$p = $req->get_json_params();
+				if (!is_array($p)) $p = [];
+				if (array_key_exists('project_id', $p)) {
+					$id = preg_replace('/[^a-z0-9]/', '', strtolower((string) $p['project_id']));
+					if (strlen($id) > 20) return new WP_Error('opsdash_bad_id', 'That does not look like a Clarity project id.', ['status' => 400]);
+					update_option('opsdash_clarity_id', $id);
+				}
+			}
+			return ['ok' => true, 'clarity_id' => opsdash_clarity_id()];
+		},
+	]);
+
 	// Normalise heading structure so the page has exactly one H1. Driven by the
 	// RENDERED h1 count from the audit, because many themes emit their own H1.
 	register_rest_route('opsdash/v1', '/fix-headings', [
@@ -586,6 +633,7 @@ add_action('rest_api_init', function () {
 				'site_name' => get_bloginfo('name'),
 				'wp_version' => get_bloginfo('version'),
 				'seo_plugin' => opsdash_seo_plugin(),
+				'clarity_id' => opsdash_clarity_id(),
 				'posts_published' => (int) $counts->publish,
 				'url' => home_url(),
 			];

@@ -1,7 +1,7 @@
 import os, zipfile
 
 SRC = 'wp-plugin/opsdash-connector'
-VER = '1.9.2'
+VER = '1.9.3'
 OUT = f'opsdash-connector-{VER}.zip'
 
 if os.path.exists(OUT):
