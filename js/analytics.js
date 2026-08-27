@@ -4,7 +4,7 @@
 // and top events. Account-scoped (no site selector). No dev-token gate.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaSetRange, seoGaInsights, seoGaDisconnect } from './store.js';
+import { useStore, getActiveAccountId, seoGaStatus, seoGaConnect, seoGaProperties, seoGaSelectProperty, seoGaSync, seoGaSetRange, seoGaInsights, seoGaDisconnect, seoClarityStatus, seoClarityConnect, seoClarityPushScript, seoClarityCollect, seoClarityDisconnect } from './store.js';
 import { Card, Btn, Modal } from './ui.js';
 import { useSort, SortTh } from './sortable.js';
 
@@ -90,6 +90,7 @@ export function Analytics() {
     ${banner && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-emerald-50 text-emerald-700 flex justify-between"><span>${banner}</span><button onClick=${() => setBanner('')} class="opacity-60">✕</button></div>`}
     ${err && html`<div class="rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700">${err}</div>`}
     ${inner}
+    <${ClarityCard} />
     ${picker && html`<${PropertyPicker} properties=${picker} busy=${busy === 'pick'} onPick=${pick} onClose=${() => setPicker(null)} />`}
   </div>`;
 
@@ -147,6 +148,95 @@ export function Analytics() {
         ${view === 'events' && html`<${EventsTable} rows=${snaps.events || []} />`}
       </div></${Card}>`}
   `);
+}
+
+// Microsoft Clarity — heatmaps, session recordings, rage/dead clicks. The one
+// integration that is manual BY DESIGN: Microsoft offers no sign-in for it and
+// no way to create a project from the outside, so the card says exactly what
+// to do by hand and automates the rest (script install via the WP connector,
+// daily collection because Clarity only serves a rolling 3-day window).
+function ClarityCard() {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
+  const [pid, setPid] = useState('');
+  const [tok, setTok] = useState('');
+  const load = () => seoClarityStatus().then(setSt).catch((e) => { setErr(e.message); setSt({}); });
+  useEffect(() => { load(); }, []);
+  const connect = async () => {
+    setBusy('connect'); setErr(''); setNote('');
+    try {
+      const r = await seoClarityConnect(pid, tok);
+      setPid(''); setTok('');
+      setNote(r.script_live
+        ? '✅ Connected — the tracking script is live on the site. Recordings start with the next visitor; the first numbers land after tonight\'s collection.'
+        : `Connected. ${r.script_note || ''}`);
+      if (r.warning) setNote((n) => `${n} ${r.warning}`);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const push = async () => {
+    setBusy('push'); setErr(''); setNote('');
+    try { const r = await seoClarityPushScript(); setNote(r.script_live ? '✅ Tracking script installed.' : r.note || 'Not installed yet.'); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const collect = async () => {
+    setBusy('collect'); setErr(''); setNote('');
+    try { const r = await seoClarityCollect(); setNote(`✅ Collected ${r.day}: ${r.sessions ?? '—'} sessions, ${r.users ?? '—'} users. (Clarity allows 10 API calls/day — the nightly collection uses 4.)`); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const disconnect = async () => {
+    if (!confirm('Disconnect Microsoft Clarity?\n\nThe tracking script is removed from the site and collection stops. History already collected is kept. The Clarity project itself is untouched.')) return;
+    setBusy('disc'); setErr('');
+    try { await seoClarityDisconnect(); setNote('Disconnected — the tracking script has been removed.'); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const lat = st?.latest;
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">🎥 Microsoft Clarity <span class="text-xs font-normal text-slate-400">— heatmaps, recordings, rage clicks · free</span></div>
+      ${st !== null && (st.connected
+        ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ connected${st.script_live === false ? ' · script pending' : ''}</span>`
+        : html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">not connected</span>`)}
+    </div>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>`
+    : st.connected ? html`
+      <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+        <div class="text-sm text-slate-700">Project <span class="font-mono font-medium">${st.project_id}</span>
+          · <a class="underline text-brand-700" target="_blank" rel="noopener" href=${`https://clarity.microsoft.com/projects/view/${st.project_id}/dashboard`}>open heatmaps & recordings ↗</a></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Days of history</div><div class="text-lg font-bold text-slate-800 tabular-nums">${st.days_collected}</div></div>
+          <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Sessions (last day)</div><div class="text-lg font-bold text-slate-800 tabular-nums">${lat?.sessions ?? '—'}</div></div>
+          <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Rage clicks</div><div class="text-lg font-bold text-slate-800 tabular-nums">${lat?.rage_clicks ?? '—'}</div></div>
+          <div class="rounded-lg bg-white border border-slate-200 p-2.5"><div class="text-[11px] text-slate-400">Dead clicks</div><div class="text-lg font-bold text-slate-800 tabular-nums">${lat?.dead_clicks ?? '—'}</div></div>
+        </div>
+        <div class="text-[11px] text-slate-400">
+          ${st.last_collect ? `Last collected ${new Date(st.last_collect).toLocaleString()}. ` : 'Nothing collected yet — the first pull runs tonight. '}
+          History builds forward-only: Clarity's own API only serves the last 3 days, so every day collected here is a day that can never be recovered later.
+        </div>
+        ${st.last_error && html`<div class="text-xs text-rose-600">Last collection error: ${st.last_error}</div>`}
+        ${st.canManage && html`<div class="flex flex-wrap items-center gap-2">
+          ${st.script_live === false && html`<${Btn} size="sm" variant="secondary" onClick=${push} disabled=${busy === 'push'}>${busy === 'push' ? 'Installing…' : 'Install tracking script'}</${Btn}>`}
+          <${Btn} size="sm" variant="ghost" onClick=${collect} disabled=${busy === 'collect'}>${busy === 'collect' ? 'Collecting…' : '↻ Collect now'}</${Btn}>
+          <button onClick=${disconnect} disabled=${busy === 'disc'} class="text-xs text-slate-400 hover:text-rose-600 underline">Disconnect</button>
+        </div>`}
+      </div>`
+    : html`
+      <p class="text-xs text-slate-400 mb-2">Free behaviour analytics from Microsoft: heatmaps, session recordings, and rage/dead-click detection — the picture of what visitors actually do that pairs with GA4's numbers. Setup is manual because Microsoft offers no sign-in for Clarity: create the project and token by hand once, and Ops Dash automates the rest — the tracking script is installed on the site remotely, and data is collected nightly (Clarity itself only keeps 3 days).</p>
+      <ol class="text-xs text-slate-500 mb-3 list-decimal ml-4 space-y-0.5">
+        <li>At <a class="underline" href="https://clarity.microsoft.com" target="_blank" rel="noopener">clarity.microsoft.com</a>, add a new project for this website.</li>
+        <li>The <span class="font-medium">project id</span> is the short code in the project's URL (…/projects/view/<span class="font-mono">abc123xyz</span>/…).</li>
+        <li>In that project: <span class="font-medium">Settings → Data Export → Generate new API token</span>, and copy it.</li>
+      </ol>
+      ${st?.canManage !== false ? html`<div class="flex flex-wrap items-end gap-2">
+        <label class="text-xs text-slate-500">Project id<br/><input value=${pid} onInput=${(e) => setPid(e.target.value)} placeholder="abc123xyz" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-36" /></label>
+        <label class="text-xs text-slate-500 grow max-w-md">API token<br/><input value=${tok} onInput=${(e) => setTok(e.target.value)} placeholder="eyJhbGciOi…" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-full" /></label>
+        <${Btn} size="sm" onClick=${connect} disabled=${busy === 'connect' || !pid || !tok}>${busy === 'connect' ? 'Connecting…' : 'Connect Clarity'}</${Btn}>
+      </div>` : html`<div class="text-sm text-slate-500">Ask an admin to connect Clarity.</div>`}`}
+    ${note && html`<div class="text-xs text-emerald-700 mt-2">${note}</div>`}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+  </div></${Card}>`;
 }
 
 function PropertyPicker({ properties, busy, onPick, onClose }) {

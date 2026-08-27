@@ -617,6 +617,22 @@ export const seoGaSync = (extra) => seoInvokeGa('ga_sync', extra);
 export const seoGaSetRange = (rangeDays) => seoInvokeGa('ga_set_range', { rangeDays });
 export const seoGaInsights = () => seoInvokeGa('ga_insights');
 export const seoGaDisconnect = () => seoInvokeGa('ga_disconnect');
+// --- Microsoft Clarity (account-scoped; manual setup BY DESIGN — Microsoft
+// offers no OAuth and no way to create a Clarity project programmatically,
+// so the project id + Data Export token are made by hand in Clarity and
+// pasted here; the tracking script itself is installed remotely via the
+// WP connector, and daily collection builds the history Clarity won't keep) ---
+async function seoInvokeClarity(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('seo-clarity', { body: { action, accountId: getActiveAccountId(), ...extra } });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoClarityStatus = () => seoInvokeClarity('clarity_status');
+export const seoClarityConnect = (projectId, token) => seoInvokeClarity('clarity_connect', { projectId, token });
+export const seoClarityPushScript = () => seoInvokeClarity('clarity_push_script');
+export const seoClarityCollect = () => seoInvokeClarity('clarity_collect');
+export const seoClarityDisconnect = () => seoInvokeClarity('clarity_disconnect');
 // Edit a generated article before it goes to WordPress (RLS: admins/agency).
 export async function seoBriefSave(siteId, key, patch) {
   const { error } = await supabase.from('seo_briefs').update(patch).eq('site_id', siteId).eq('cluster', key);
