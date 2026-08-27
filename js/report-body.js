@@ -75,6 +75,26 @@ function ChannelCosts({ pnl }) {
     </div>`;
 }
 
+// The Google vs Microsoft organic segment line. Deliberately one quiet line
+// under the trend, not a panel: Bing is 0.5–8% of organic for most clients
+// (a third for one), and the trend charts above already carry the BLENDED
+// totals. Shares are recomputed from the sums — engine CTRs differ by up to
+// 7x, so averaging rates would be wrong.
+function OrganicSplitLine({ split }) {
+  if (!split?.google || !split?.microsoft) return null;
+  const g = split.google, ms = split.microsoft;
+  const total = (g.clicks || 0) + (ms.clicks || 0);
+  if (!total) return null;
+  const pct = (v) => `${Math.round((v / total) * 100)}%`;
+  return html`
+    <div class="mt-2 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1" style="color:var(--muted)">
+      <span class="font-medium" style="color:var(--ink)">Organic by search engine:</span>
+      <span>Google ${g.clicks.toLocaleString()} visits (${pct(g.clicks)})</span>
+      <span>·</span>
+      <span>Microsoft/Bing ${ms.clicks.toLocaleString()} visits (${pct(ms.clicks)})</span>
+    </div>`;
+}
+
 function Nudges({ nudges, onAction }) {
   if (!nudges?.length) return null;
   return html`
@@ -257,6 +277,7 @@ export function ReportBody({ data, aivis, gbp, opps, onAction }) {
           <${SectionHead} eyebrow="Month by month" title="The direction of travel"
             sub="Each panel keeps its own scale — visits, dollars and revenue don't share an axis." />
           <${TrendPanels} trend=${data.trend} showSpend=${data.sources?.ads && !isClient ? true : data.sources?.ads} showRevenue=${data.measured} />
+          <${OrganicSplitLine} split=${data.organicSplit} />
         </section>`}
 
       <${Assumptions} economics=${data.economics} notes=${data.notes} measured=${data.measured} />
