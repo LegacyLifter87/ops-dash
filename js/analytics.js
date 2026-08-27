@@ -150,6 +150,18 @@ export function Analytics() {
   `);
 }
 
+// Small ⓘ with a popover. Opens on hover AND on click — hover does not exist
+// on touch screens, and this card is used from phones.
+function InfoTip({ label, children }) {
+  const [open, setOpen] = useState(false);
+  return html`<span class="relative inline-block align-middle ml-1">
+    <button type="button" aria-label=${label || 'More info'}
+      onClick=${() => setOpen(!open)} onMouseEnter=${() => setOpen(true)} onMouseLeave=${() => setOpen(false)}
+      class="w-4 h-4 inline-flex items-center justify-center rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold cursor-help align-middle hover:bg-brand-100 hover:text-brand-700">i</button>
+    ${open && html`<div class="absolute z-20 left-0 bottom-full mb-1.5 w-64 rounded-lg border border-slate-200 bg-white p-2.5 shadow-lg text-[11px] leading-relaxed text-slate-600 font-normal normal-case whitespace-normal">${children}</div>`}
+  </span>`;
+}
+
 // Microsoft Clarity — heatmaps, session recordings, rage/dead clicks. The one
 // integration that is manual BY DESIGN: Microsoft offers no sign-in for it and
 // no way to create a project from the outside, so the card says exactly what
@@ -223,15 +235,20 @@ function ClarityCard() {
         </div>`}
       </div>`
     : html`
-      <p class="text-xs text-slate-400 mb-2">Free behaviour analytics from Microsoft: heatmaps, session recordings, and rage/dead-click detection — the picture of what visitors actually do that pairs with GA4's numbers. Setup is manual because Microsoft offers no sign-in for Clarity: create the project and token by hand once, and Ops Dash automates the rest — the tracking script is installed on the site remotely, and data is collected nightly (Clarity itself only keeps 3 days).</p>
-      <ol class="text-xs text-slate-500 mb-3 list-decimal ml-4 space-y-0.5">
-        <li>At <a class="underline" href="https://clarity.microsoft.com" target="_blank" rel="noopener">clarity.microsoft.com</a>, add a new project for this website.</li>
-        <li>The <span class="font-medium">project id</span> is the short code in the project's URL (…/projects/view/<span class="font-mono">abc123xyz</span>/…).</li>
-        <li>In that project: <span class="font-medium">Settings → Data Export → Generate new API token</span>, and copy it.</li>
-      </ol>
+      <p class="text-xs text-slate-400 mb-3">Free behaviour analytics from Microsoft: heatmaps, session recordings, and rage/dead-click detection — the picture of what visitors actually do that pairs with GA4's numbers. Microsoft offers no sign-in for Clarity, so both values below come from your <a class="underline" href="https://clarity.microsoft.com" target="_blank" rel="noopener">Clarity dashboard</a> — hover the <span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold align-middle">i</span> icons for exactly where to find each one. Ops Dash automates everything after the paste: the tracking script is installed on the site remotely, and data is collected nightly (Clarity itself only keeps 3 days).</p>
       ${st?.canManage !== false ? html`<div class="flex flex-wrap items-end gap-2">
-        <label class="text-xs text-slate-500">Project id<br/><input value=${pid} onInput=${(e) => setPid(e.target.value)} placeholder="abc123xyz" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-36" /></label>
-        <label class="text-xs text-slate-500 grow max-w-md">API token<br/><input value=${tok} onInput=${(e) => setTok(e.target.value)} placeholder="eyJhbGciOi…" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-full" /></label>
+        <label class="text-xs text-slate-500">Project id<${InfoTip} label="How to find the project id">
+            <div class="font-semibold text-slate-700 mb-1">Finding the project id</div>
+            <div>Sign in at <span class="font-medium">clarity.microsoft.com</span> and open the project for this website (or <span class="font-medium">Add new project</span> if it doesn't have one yet — takes seconds, Clarity is free).</div>
+            <div class="mt-1">The project id is the short code in your browser's address bar:</div>
+            <div class="mt-1 font-mono text-[10px] bg-slate-50 rounded px-1.5 py-1 break-all">clarity.microsoft.com/projects/view/<span class="text-brand-700 font-bold">abc123xyz</span>/…</div>
+          </${InfoTip}><br/><input value=${pid} onInput=${(e) => setPid(e.target.value)} placeholder="abc123xyz" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-36" /></label>
+        <label class="text-xs text-slate-500 grow max-w-md">API token<${InfoTip} label="How to generate the API token">
+            <div class="font-semibold text-slate-700 mb-1">Generating the API token</div>
+            <div>Inside that Clarity project: <span class="font-medium">Settings → Data Export → Generate new API token</span>.</div>
+            <div class="mt-1">Name it anything (e.g. <span class="font-mono">ops-dash</span>), then copy the long token it shows — <span class="font-medium">it's displayed only once</span>. If you miss it, just generate another.</div>
+            <div class="mt-1 text-slate-400">Only project admins see the Data Export menu. The token starts with <span class="font-mono">eyJ…</span></div>
+          </${InfoTip}><br/><input value=${tok} onInput=${(e) => setTok(e.target.value)} placeholder="eyJhbGciOi…" class="mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-mono w-full" /></label>
         <${Btn} size="sm" onClick=${connect} disabled=${busy === 'connect' || !pid || !tok}>${busy === 'connect' ? 'Connecting…' : 'Connect Clarity'}</${Btn}>
       </div>` : html`<div class="text-sm text-slate-500">Ask an admin to connect Clarity.</div>`}`}
     ${note && html`<div class="text-xs text-emerald-700 mt-2">${note}</div>`}
