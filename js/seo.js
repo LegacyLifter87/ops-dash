@@ -73,7 +73,18 @@ export function SEO() {
       setBanner('Business added. Set its services in the Brand kit (Social tab) and its service area (Strategy tab), then generate socials — Search Console is optional and can be connected later.');
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
-  const removeSite = async (id) => { if (!confirm('Remove this site and its synced data?')) return; setBusy('rm'); try { await seoRemoveSite(id); if (activeSite === id) setActiveSite(''); await loadStatus(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
+  // Removing a site cascades through ~37 tables — brand kit, social calendar
+  // and posts, WordPress pairing, keywords, a year of history. The server
+  // refuses unless the domain is typed back exactly; if the wrong text is
+  // typed, its 409 message lists precisely what would be deleted.
+  const removeSite = async (id) => {
+    const site = (st?.sites || []).find((s) => s.id === id);
+    const typed = prompt(`⚠️ Removing ${site?.domain || 'this site'} permanently deletes EVERYTHING attached to it — brand kit, social calendar & posts, WordPress pairing, keywords, and all history. This cannot be undone.\n\nIf you're changing the Google login, just Disconnect → Connect and re-pick the property — the site keeps all its data.\n\nType the domain exactly to delete anyway:`);
+    if (typed == null || !typed.trim()) return;
+    setBusy('rm');
+    try { await seoRemoveSite(id, typed.trim()); if (activeSite === id) setActiveSite(''); await loadStatus(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
   const sync = async () => { if (!activeSite) return; setBusy('sync'); setErr(''); try { const r = await seoSync(activeSite); setBanner(`Synced ${num(r.queries)} query rows and ${num(r.pages)} page rows.`); setData(await seoLoadData(activeSite)); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
 
   const views = useMemo(() => {

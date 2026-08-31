@@ -175,7 +175,7 @@ export const seoStatus = () => seoInvoke('status');
 export const seoConnect = () => seoInvoke('connect');
 export const seoDisconnect = () => seoInvoke('disconnect');
 export const seoAddSite = (property, displayName) => seoInvoke('add_site', { property, displayName });
-export const seoRemoveSite = (siteId) => seoInvoke('remove_site', { siteId });
+export const seoRemoveSite = (siteId, confirmDomain) => seoInvoke('remove_site', { siteId, confirmDomain });
 export const seoSync = (siteId) => seoInvoke('sync', siteId ? { siteId } : {});
 export const seoGscBackfill = (siteId) => seoInvoke('backfill', { siteId });
 export const seoTrendsAi = (siteId) => seoInvoke('trends_ai', { siteId });
