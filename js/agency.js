@@ -272,10 +272,8 @@ function CitationsCard({ onBanner }) {
                 <div class="text-sm text-slate-700 truncate">${l.business_name}</div>
                 <div class="text-[11px] text-slate-400 truncate">${[l.city, l.website_url].filter(Boolean).join(' · ')}</div>
               </div>
-              <${Select} value="" onChange=${(e) => link(l.location_id, e.target.value)} disabled=${busy === `l${l.location_id}`}>
-                <option value="">Link to…</option>
-                ${accounts.map((a) => html`<option value=${a.id}>${a.name}</option>`)}
-              </${Select}>
+              <${Select} value="" onChange=${(v) => v && link(l.location_id, v)}
+                options=${[{ value: '', label: 'Link to…' }, ...accounts.map((a) => ({ value: a.id, label: a.name }))]} />
             </div>`)}
         </div>
         <div class="text-[11px] text-slate-400 mt-1.5">Leave these unlinked if they are no longer clients — nothing syncs for a location that is not attached to a business.</div>

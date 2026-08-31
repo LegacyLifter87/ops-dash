@@ -127,7 +127,7 @@ export const Textarea = ({ value, onInput, rows = 3, placeholder }) => html`
 
 export const Select = ({ value, onChange, options, class: cls = '' }) => html`
   <select value=${value} onChange=${(e) => onChange?.(e.target.value)} class=${cx(inputCls, 'bg-white', cls)}>
-    ${options.map((o) => html`<option value=${o.value} selected=${o.value === value}>${o.label}</option>`)}
+    ${(options || []).map((o) => html`<option value=${o.value} selected=${o.value === value}>${o.label}</option>`)}
   </select>`;
 
 export const Checkbox = ({ checked, onChange, label }) => html`
