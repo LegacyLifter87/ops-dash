@@ -7,7 +7,7 @@
 //  - the agency's own Job Tracker link + task assignment
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio, seoBingAgencyStatus, seoBingAgencyConnect, seoBingAgencyDisconnect, seoBingAgencyPortfolio, blOverview, blSync, blLink, blUnlink } from './store.js';
+import { useStore, getUserEmail, getCurrentAgency, seoAgencyList, seoAgencyGrant, seoAgencyRevoke, seoMemberGrant, seoMemberSetAccounts, seoMemberSetTier, seoMemberRevoke, seoTeamSendReset, seoTeamSetPassword, seoAgencyInfo, seoAgencyUpdateInfo, seoAdsStatus, seoAdsSetPlatformToken, seoAdsClearPlatformToken, seoUsageSummary, seoGbpAgencyStatus, seoGbpAgencyConnect, seoGbpAgencyDisconnect, seoGbpAgencyPortfolio, seoBingAgencyStatus, seoBingAgencyConnect, seoBingAgencyDisconnect, seoBingAgencyPortfolio, blOverview, blSync, blLink, blUnlink, seoBillingStatus, seoBillingCheckout, seoBillingTopup, seoBillingPortal } from './store.js';
 import { Card, Btn, Input, Field, Select } from './ui.js';
 import { TempPw, PwModal, AccountsModal, JtAgencyCard } from './team.js';
 
@@ -441,6 +441,85 @@ function BingAgencyCard({ onBanner }) {
   </div></${Card}>`;
 }
 
+// Billing: the agency's plan (monthly base, billed to the card on file via
+// Stripe) and the prepaid API wallet ($10/$25/$50/custom top-ups). API calls
+// stop when the wallet is empty — unless the platform bills this agency's
+// usage itself. Card entry and management are Stripe-hosted pages; card data
+// never touches Ops Dash.
+function BillingCard({ onBanner }) {
+  const fmt$ = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [custom, setCustom] = useState('');
+  const load = () => seoBillingStatus().then(setSt).catch((e) => { setErr(e.message); setSt({}); });
+  useEffect(() => {
+    load();
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('billing') === 'topup_success') { onBanner('✅ Wallet top-up received — the balance updates as soon as Stripe confirms (a few seconds).'); history.replaceState(null, '', location.pathname + location.hash); }
+      else if (q.get('billing') === 'sub_success') { onBanner('✅ Subscription active — your plan is billing to the card you entered.'); history.replaceState(null, '', location.pathname + location.hash); }
+      else if (q.get('billing') === 'cancelled') { history.replaceState(null, '', location.pathname + location.hash); }
+    } catch { /* ignore */ }
+  }, []);
+  const go = async (fn, key) => {
+    setBusy(key); setErr('');
+    try { const r = await fn(); if (r.url) location.href = r.url; }
+    catch (e) { setErr(e.message); setBusy(''); }
+  };
+  const topup = (usd) => go(() => seoBillingTopup(usd), `t${usd}`);
+  const kindLabel = { topup: 'Top-up', usage: 'API usage', adjust: 'Adjustment', refund: 'Refund' };
+  return html`<${Card}><div class="p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">💳 Billing <span class="text-xs font-normal text-slate-400">— plan & API wallet</span></div>
+      ${st?.billing_exempt && html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">API usage billed to the platform</span>`}
+    </div>
+    ${st === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
+      ${st.plan ? html`<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 mb-3">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <span class="text-sm font-medium text-slate-800">${st.plan.name}</span>
+            <span class="text-xs text-slate-500 ml-2">${fmt$(st.plan.monthly_cents)}/mo · up to ${st.plan.max_accounts ?? '∞'} businesses · ${st.plan.max_staff ?? '∞'} team sign-ins</span>
+          </div>
+          ${st.sub_status === 'active' ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ billing</span>`
+            : st.sub_status === 'pending_payment' ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">payment method needed</span>`
+            : st.sub_status ? html`<span class="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">${st.sub_status}</span>` : ''}
+        </div>
+        ${st.canManage && html`<div class="flex flex-wrap gap-2 mt-2">
+          ${st.sub_status === 'pending_payment' && html`<${Btn} size="sm" variant="cta" onClick=${() => go(seoBillingCheckout, 'co')} disabled=${!!busy}>${busy === 'co' ? 'Opening…' : '💳 Enter card & start subscription'}</${Btn}>`}
+          ${st.has_card && html`<${Btn} size="sm" variant="ghost" onClick=${() => go(seoBillingPortal, 'po')} disabled=${!!busy}>${busy === 'po' ? 'Opening…' : 'Manage card & invoices'}</${Btn}>`}
+        </div>`}
+      </div>` : html`<p class="text-xs text-slate-400 mb-3">No plan assigned yet — your platform admin sets that up.</p>`}
+
+      ${!st.billing_exempt && html`<div class="rounded-xl border border-slate-200 p-3">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="text-sm text-slate-700">API wallet: <span class=${`font-bold tabular-nums ${(st.wallet_cents ?? 0) > 0 ? 'text-slate-900' : 'text-rose-600'}`}>${fmt$(st.wallet_cents)}</span></div>
+          ${(st.wallet_cents ?? 0) <= 0 && html`<span class="text-[11px] text-rose-600">Empty — API-powered features pause until it's topped up.</span>`}
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">Prepays the AI, image and data calls your businesses make. Payment happens on a secure Stripe page.</p>
+        ${st.canManage && html`<div class="flex flex-wrap items-end gap-2 mt-2">
+          ${(st.topup_presets || [1000, 2500, 5000]).map((c) => html`<${Btn} size="sm" variant="secondary" onClick=${() => topup(c / 100)} disabled=${!!busy}>${busy === `t${c / 100}` ? '…' : `+ ${fmt$(c).replace('.00', '')}`}</${Btn}>`)}
+          <div class="flex items-end gap-1">
+            <div><label class="text-[10px] text-slate-400">Custom ($)</label><input type="number" min="5" max="1000" value=${custom} onInput=${(e) => setCustom(e.target.value)} class="w-20 px-2 py-1.5 rounded-lg border border-slate-300 text-sm" /></div>
+            <${Btn} size="sm" onClick=${() => custom && topup(Number(custom))} disabled=${!!busy || !custom}>Add</${Btn}>
+          </div>
+        </div>`}
+        ${(st.ledger || []).length > 0 && html`<details class="mt-2">
+          <summary class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 cursor-pointer">Recent activity</summary>
+          <div class="mt-1 space-y-0.5">
+            ${st.ledger.map((l) => html`<div class="flex justify-between text-xs">
+              <span class="text-slate-500">${kindLabel[l.kind] || l.kind} · ${new Date(l.created_at).toLocaleDateString()}</span>
+              <span class=${l.delta_cents >= 0 ? 'text-emerald-700' : 'text-slate-600'}>${l.delta_cents >= 0 ? '+' : ''}${fmt$(l.delta_cents)} <span class="text-slate-400">→ ${fmt$(l.balance_after)}</span></span>
+            </div>`)}
+          </div>
+        </details>`}
+      </div>`}
+      ${!st.configured && st.canManage && (st.plan || !st.billing_exempt) && html`<p class="text-[11px] text-amber-600 mt-2">Stripe isn't connected yet — payments turn on once the platform admin finishes setup.</p>`}
+    `}
+    ${err && html`<div class="text-xs text-rose-600 mt-2">${err}</div>`}
+  </div></${Card}>`;
+}
+
 export function AgencySettings() {
   const s = useStore();
   const myEmail = getUserEmail();
@@ -506,6 +585,8 @@ export function AgencySettings() {
     ${cred && html`<${TempPw} cred=${cred} onClose=${() => setCred(null)} />`}
 
     <${ContactCard} onBanner=${setBanner} />
+
+    <${BillingCard} onBanner=${setBanner} />
 
     <${ApiCostsCard} />
 

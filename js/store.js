@@ -670,6 +670,27 @@ export const seoAgencyList = () => seoInvokeTeam('agency_list', {});
 export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email });
 // Multi-agency: caller tier + the SUPER console (platform admin only).
 export const seoAgencyWhoami = () => seoInvokeTeam('agency_whoami', {});
+// --- Billing (Stripe): platform plans + per-agency usage wallet -------------
+// Card data never touches Ops Dash — checkout/portal are Stripe-hosted pages.
+async function seoInvokeBilling(action, extra = {}) {
+  const body = { action, ...extra };
+  const agencyId = state.curAgency?.id || state.identity?.agencyId || null;
+  if (agencyId && body.agencyId === undefined) body.agencyId = agencyId;
+  const { data, error } = await supabase.functions.invoke('seo-billing', { body });
+  if (error) { let m = error.message; try { const c = await error.context?.json(); if (c?.error) m = c.error; } catch { /* ignore */ } throw new Error(m); }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const seoBillingStatus = () => seoInvokeBilling('billing_status');
+export const seoBillingCheckout = () => seoInvokeBilling('start_checkout');
+export const seoBillingTopup = (usd) => seoInvokeBilling('topup', { usd });
+export const seoBillingPortal = () => seoInvokeBilling('portal');
+export const seoSuperPlans = () => seoInvokeBilling('super_plans');
+export const seoSuperPlanSave = (p) => seoInvokeBilling('plan_save', p);
+export const seoSuperPlanArchive = (id) => seoInvokeBilling('plan_archive', { id });
+export const seoSuperBillingList = () => seoInvokeBilling('super_billing_list');
+export const seoSuperAssignPlan = (agencyId, planId) => seoInvokeBilling('super_assign_plan', { agencyId, planId });
+export const seoSuperSetExempt = (agencyId, exempt) => seoInvokeBilling('super_set_exempt', { agencyId, exempt });
 export const seoSuperListAgencies = () => seoInvokeTeam('super_list_agencies', {});
 // Per-agency caps (platform console). Set via a super-only rpc; ENFORCED by
 // BEFORE INSERT triggers on seo_agency_users / seo_accounts, so no path —

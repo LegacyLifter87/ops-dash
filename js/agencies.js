@@ -5,7 +5,7 @@
 // it. Inside, "← All agencies" (in the sidebar) exits back to this screen.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency, seoSuperListAdmins, seoSuperAddAdmin, seoSuperRemoveAdmin, seoSetAgencyLimits, seoAgencyLimits } from './store.js';
+import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency, seoSuperListAdmins, seoSuperAddAdmin, seoSuperRemoveAdmin, seoSetAgencyLimits, seoAgencyLimits, seoSuperPlans, seoSuperPlanSave, seoSuperPlanArchive, seoSuperBillingList, seoSuperAssignPlan, seoSuperSetExempt } from './store.js';
 import { Btn, Input, Field, Modal } from './ui.js';
 
 function OwnerCred({ cred, onClose }) {
@@ -98,6 +98,129 @@ function LimitsModal({ agency, limits, onClose, onDone }) {
       <${Btn} class="w-full" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save limits'}</${Btn}>
     </div>
   </${Modal}>`;
+}
+
+const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2).replace(/\.00$/, '')}`;
+
+// Platform plans + per-agency billing. Plans define the monthly base (billed
+// as a Stripe subscription) and the staff/business caps; assigning one applies
+// the caps immediately and starts billing — right away when the agency has a
+// card on file, otherwise the owner completes checkout from their Billing card.
+// "Bills to platform" agencies skip the wallet gate and need no card.
+function PlansBilling() {
+  const [plans, setPlans] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [editing, setEditing] = useState(null);   // {} = new, {plan} = edit
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
+  const load = async () => {
+    try {
+      const [p, b] = await Promise.all([seoSuperPlans(), seoSuperBillingList()]);
+      setPlans(p.plans || []); setRows(b.agencies || []);
+    } catch (e) { setErr(e.message); setPlans([]); }
+  };
+  useEffect(() => { load(); }, []);
+  const assign = async (ag, planId) => {
+    const plan = (plans || []).find((p) => p.id === planId);
+    const label = plan ? `${plan.name} (${money(plan.monthly_cents)}/mo)` : 'no plan';
+    if (!confirm(planId
+      ? `Put ${ag.name} on ${label}?\n\nTheir team/business limits update immediately. Billing starts now if they have a card on file — otherwise they'll be asked to enter one, and the subscription starts when they do.`
+      : `Take ${ag.name} off their plan?\n\nTheir Stripe subscription is cancelled and their limits are cleared.`)) return;
+    setBusy(`a${ag.id}`); setErr(''); setNote('');
+    try { const r = await seoSuperAssignPlan(ag.id, planId || null); if (r.note) setNote(`${ag.name}: ${r.note}`); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const toggleExempt = async (ag) => {
+    if (!ag.billing_exempt && !confirm(`Bill ${ag.name}'s API usage to the platform?\n\nThey won't need a card or wallet — every API call they make is the platform's cost.`)) return;
+    setBusy(`e${ag.id}`); setErr('');
+    try { await seoSuperSetExempt(ag.id, !ag.billing_exempt); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  };
+  const archive = async (p) => {
+    if (!confirm(`Archive the "${p.name}" plan?`)) return;
+    setErr('');
+    try { await seoSuperPlanArchive(p.id); await load(); } catch (e) { setErr(e.message); }
+  };
+  const subBadge = (s) => {
+    if (!s) return '';
+    const tone = s === 'active' ? 'bg-emerald-100 text-emerald-700' : s === 'pending_payment' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700';
+    return html`<span class=${`text-[10px] px-1.5 py-0.5 rounded-full ${tone}`}>${s === 'pending_payment' ? 'awaiting card' : s}</span>`;
+  };
+  return html`<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+      <div class="font-semibold text-slate-800">Plans & billing <span class="text-xs font-normal text-slate-400">— monthly base + API wallet, via Stripe</span></div>
+      <${Btn} size="sm" variant=${editing ? 'ghost' : 'secondary'} onClick=${() => setEditing(editing ? null : {})}>${editing ? 'Cancel' : '+ New plan'}</${Btn}>
+    </div>
+    <p class="text-xs text-slate-400 mb-3">A plan = monthly price (Stripe subscription) + team/business limits. Assign one and billing starts automatically. The wallet is separate: agencies prepay for API usage and calls stop when it's empty — unless you mark them "bills to platform".</p>
+    ${err && html`<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700 mb-2">${err}</div>`}
+    ${note && html`<div class="rounded-lg px-3 py-2 text-sm bg-sky-50 text-sky-800 mb-2">${note}</div>`}
+    ${editing && html`<${PlanForm} plan=${editing.plan} onClose=${() => setEditing(null)} onDone=${load} />`}
+    ${plans === null ? html`<div class="text-sm text-slate-400">Loading…</div>` : html`
+      ${plans.filter((p) => p.active).length > 0 && html`<div class="space-y-1.5 mb-4">
+        ${plans.filter((p) => p.active).map((p) => html`<div key=${p.id} class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+          <div class="flex-1 min-w-0">
+            <span class="text-sm font-medium text-slate-800">${p.name}</span>
+            <span class="text-xs text-slate-500 ml-2">${money(p.monthly_cents)}/mo · ${p.max_accounts ?? '∞'} businesses · ${p.max_staff ?? '∞'} team</span>
+            ${!p.stripe_price_id && p.monthly_cents > 0 && html`<span class="text-[10px] text-amber-600 ml-2">no Stripe price yet — re-save once Stripe is configured</span>`}
+          </div>
+          <span class="text-[11px] text-slate-400">${p.agencies} agenc${p.agencies === 1 ? 'y' : 'ies'}</span>
+          <button onClick=${() => setEditing({ plan: p })} class="text-xs text-slate-400 hover:text-brand-700 underline">edit</button>
+          <button onClick=${() => archive(p)} class="text-xs text-slate-400 hover:text-rose-600 underline">archive</button>
+        </div>`)}
+      </div>`}
+      <div class="divide-y divide-slate-50">
+        ${rows.map((ag) => html`<div key=${ag.id} class="flex items-center gap-3 py-2 flex-wrap">
+          <div class="flex-1 min-w-[140px]">
+            <div class="text-sm text-slate-800 truncate">${ag.name}</div>
+            <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+              ${subBadge(ag.sub_status)}
+              ${ag.billing_exempt
+                ? html`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">bills to platform</span>`
+                : html`<span class="text-[10px] text-slate-400">wallet ${money(ag.wallet_cents)}</span>`}
+            </div>
+          </div>
+          <select value=${ag.plan_id || ''} disabled=${busy === `a${ag.id}`}
+            onChange=${(e) => { const v = e.target.value; e.target.value = ag.plan_id || ''; assign(ag, v || null); }}
+            class="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+            <option value="">— no plan —</option>
+            ${(plans || []).filter((p) => p.active || p.id === ag.plan_id).map((p) => html`<option value=${p.id} selected=${p.id === ag.plan_id}>${p.name} (${money(p.monthly_cents)}/mo)</option>`)}
+          </select>
+          <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer" title="API usage bills to the platform — no card or wallet needed">
+            <input type="checkbox" checked=${ag.billing_exempt} disabled=${busy === `e${ag.id}`} onChange=${() => toggleExempt(ag)} class="accent-violet-600" />
+            platform-billed
+          </label>
+        </div>`)}
+      </div>`}
+  </div>`;
+}
+
+function PlanForm({ plan, onClose, onDone }) {
+  const [name, setName] = useState(plan?.name || '');
+  const [monthly, setMonthly] = useState(plan ? String(plan.monthly_cents / 100) : '');
+  const [maxAccounts, setMaxAccounts] = useState(plan?.max_accounts == null ? '' : String(plan.max_accounts));
+  const [maxStaff, setMaxStaff] = useState(plan?.max_staff == null ? '' : String(plan.max_staff));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      await seoSuperPlanSave({ id: plan?.id, name: name.trim(), monthlyUsd: Number(monthly) || 0, maxAccounts, maxStaff });
+      await onDone(); onClose();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<div class="rounded-xl border border-brand-200 bg-brand-50/40 p-3 mb-3">
+    <div class="text-sm font-medium text-slate-800 mb-2">${plan ? `Edit plan — ${plan.name}` : 'New plan'}</div>
+    <div class="grid sm:grid-cols-4 gap-2">
+      <div><label class="text-[11px] text-slate-400">Name</label><${Input} value=${name} onInput=${setName} placeholder="Starter" /></div>
+      <div><label class="text-[11px] text-slate-400">Monthly (USD)</label><${Input} type="number" min="0" step="1" value=${monthly} onInput=${setMonthly} placeholder="99" /></div>
+      <div><label class="text-[11px] text-slate-400">Max businesses</label><${Input} type="number" min="0" step="1" value=${maxAccounts} onInput=${setMaxAccounts} placeholder="unlimited" /></div>
+      <div><label class="text-[11px] text-slate-400">Max team sign-ins</label><${Input} type="number" min="0" step="1" value=${maxStaff} onInput=${setMaxStaff} placeholder="unlimited" /></div>
+    </div>
+    ${plan && html`<p class="text-[11px] text-slate-400 mt-1.5">Changing the price creates a new Stripe price — agencies already subscribed keep the old price until you reassign their plan. Limit changes apply to agencies on this plan the next time you reassign it.</p>`}
+    ${err && html`<div class="text-sm text-rose-600 mt-2">${err}</div>`}
+    <div class="mt-2"><${Btn} size="sm" onClick=${save} disabled=${busy || !name.trim()}>${busy ? 'Saving…' : plan ? 'Save plan' : 'Create plan'}</${Btn}></div>
+  </div>`;
 }
 
 // Overall (platform) admins: full access to every agency and business. Logins
@@ -252,6 +375,8 @@ export function AgencyConsole() {
             </div>
           </div>`)}
         </div>`}
+
+      <${PlansBilling} />
 
       <${PlatformAdmins} />
     </main>
