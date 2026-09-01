@@ -5,7 +5,7 @@
 // Approval ON: "Generate batch" → review → approve → auto-scheduled publishing.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost, seoWpCategories, seoWpCreateCategory } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost, seoWpCategories, seoWpCreateCategory, seoSetBlogPriorities, seoBlogPrioritySuggestions } from './store.js';
 import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
 import { mdRender } from './keywords.js';
 import { BriefsLibrary } from './briefs.js';
@@ -259,6 +259,8 @@ export function Autoblog() {
       </div>
     </div></${Card}>
 
+    <${PrioritiesCard} site=${site} schedule=${st?.schedule} onBanner=${setBanner} onSaved=${() => load(site)} />
+
     ${approval && cfg.enabled && html`<${Card}><div class="p-4 text-sm text-slate-600">
       <span class="font-medium text-amber-700">Auto-drafting is on.</span> The system checks every ~10 minutes and writes drafts on your cadence into the queue below for review — it keeps a rolling buffer ready and pauses new drafts once enough are waiting. Approve the ones you want and they auto-schedule and publish; <span class="font-medium">nothing posts until you approve it.</span> ${st?.schedule?.next_run_at ? `Next draft around ${when(st.schedule.next_run_at)}.` : ''}
     </div></${Card}>`}
@@ -355,6 +357,77 @@ export function Autoblog() {
 
 // Capture WHY a draft was rejected — the reason trains the generator, and the
 // optional toggle blocks the keyword from ever being written/auto-pulled again.
+// What to write about first — ordered service + service-area priorities.
+// Saved via its own RPC (the schedule table is server-only); the keyword
+// picker BOOSTS matching topics by rank, it never filters — so an over-narrow
+// list can't starve the blogger, it just stops steering once priorities are
+// exhausted for the month.
+function PrioritiesCard({ site, schedule, onBanner, onSaved }) {
+  const [services, setServices] = useState([]);
+  const [areas, setAreas] = useState([]);
+  const [sug, setSug] = useState({ services: [], areas: [] });
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    setServices(Array.isArray(schedule?.priority_services) ? schedule.priority_services : []);
+    setAreas(Array.isArray(schedule?.priority_areas) ? schedule.priority_areas : []);
+    setDirty(false);
+  }, [site, schedule?.updated_at]);
+  useEffect(() => { if (site) seoBlogPrioritySuggestions(site).then(setSug).catch(() => setSug({ services: [], areas: [] })); }, [site]);
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await seoSetBlogPriorities(site, services, areas); setDirty(false); onBanner('✅ Blog priorities saved — the next drafts will favor them, top of the list first.'); onSaved?.(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const List = ({ label, hint, items, setItems, suggestions, placeholder }) => {
+    const [input, setInput] = useState('');
+    const add = (v) => { const t = String(v || '').trim(); if (!t || items.some((x) => x.toLowerCase() === t.toLowerCase()) || items.length >= 12) return; setItems([...items, t]); setDirty(true); setInput(''); };
+    const remove = (i) => { setItems(items.filter((_, j) => j !== i)); setDirty(true); };
+    const up = (i) => { if (i === 0) return; const n = [...items]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; setItems(n); setDirty(true); };
+    const unused = suggestions.filter((s) => !items.some((x) => x.toLowerCase() === s.toLowerCase())).slice(0, 8);
+    return html`<div>
+      <label class="text-[11px] uppercase tracking-wide text-slate-400">${label}</label>
+      <p class="text-[11px] text-slate-400 mb-1.5">${hint}</p>
+      ${items.length > 0 && html`<div class="space-y-1 mb-2">
+        ${items.map((it, i) => html`<div key=${it} class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5">
+          <span class="text-xs font-bold text-brand-700 w-5 shrink-0">#${i + 1}</span>
+          <span class="text-sm text-slate-700 truncate flex-1">${it}</span>
+          ${i > 0 && html`<button onClick=${() => up(i)} title="Move up" class="text-slate-400 hover:text-brand-700 text-sm px-1">↑</button>`}
+          <button onClick=${() => remove(i)} title="Remove" class="text-slate-400 hover:text-rose-600 text-sm px-1">✕</button>
+        </div>`)}
+      </div>`}
+      <div class="flex gap-2">
+        <input value=${input} onInput=${(e) => setInput(e.target.value)}
+          onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); add(input); } }}
+          placeholder=${placeholder} class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" />
+        <${Btn} size="sm" variant="secondary" onClick=${() => add(input)} disabled=${!input.trim()}>+ Add</${Btn}>
+      </div>
+      ${unused.length > 0 && html`<div class="flex flex-wrap gap-1.5 mt-2">
+        ${unused.map((s) => html`<button key=${s} onClick=${() => add(s)}
+          class="text-[11px] px-2 py-0.5 rounded-full border border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50">+ ${s}</button>`)}
+      </div>`}
+    </div>`;
+  };
+  return html`<${Card}><div class="p-4 space-y-4">
+    <div>
+      <div class="font-semibold text-slate-800">🎯 What to write about first</div>
+      <p class="text-xs text-slate-400 mt-0.5">Steer the autoblogger toward the services and areas that matter most right now. Order matters — #1 gets the strongest push. This boosts matching topics in the keyword strategy; it never blocks anything, so the blogger keeps writing even when a priority runs out of fresh topics.</p>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <${List} label="Priority services" hint="e.g. the service line you want more work for"
+        items=${services} setItems=${setServices} suggestions=${sug.services} placeholder="e.g. chimney sweep" />
+      <${List} label="Priority areas" hint="Cities or towns to favor in topics"
+        items=${areas} setItems=${setAreas} suggestions=${sug.areas} placeholder="e.g. Gainesville" />
+    </div>
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="text-[11px] text-slate-400">${services.length === 0 && areas.length === 0 ? 'No priorities set — the blogger picks purely on strategy scores.' : `${services.length} service(s), ${areas.length} area(s) prioritized.`}</div>
+      <${Btn} size="sm" onClick=${save} disabled=${busy || !dirty}>${busy ? 'Saving…' : dirty ? 'Save priorities' : 'Saved'}</${Btn}>
+    </div>
+    ${err && html`<div class="text-xs text-rose-600">${err}</div>`}
+  </div></${Card}>`;
+}
+
 function RejectModal({ keyword, onClose, onConfirm }) {
   const [sel, setSel] = useState('');
   const [note, setNote] = useState('');

@@ -698,6 +698,26 @@ async function seoInvokeAutoblog(action, extra = {}) {
   if (data?.error) throw new Error(data.error);
   return data;
 }
+// Blogger priorities — saved via a dedicated SQL rpc (with its own permission
+// check) because seo_blog_schedule is service-role-only and seo-autoblog's
+// save_schedule whitelists its fields. The picker (seo_pick_blog_keywords v5)
+// treats these as rank-weighted score BOOSTS, never filters.
+export async function seoSetBlogPriorities(siteId, services, areas) {
+  const { data, error } = await supabase.rpc('seo_set_blog_priorities', { p_site: siteId, p_services: services, p_areas: areas });
+  if (error) throw new Error(error.message);
+  return data;
+}
+// Suggestion chips: the site's known service pages + service-area cities.
+export async function seoBlogPrioritySuggestions(siteId) {
+  const [{ data: svc }, { data: area }] = await Promise.all([
+    supabase.from('seo_strategy_pages').select('service_name').eq('site_id', siteId).eq('is_service', true).not('service_name', 'is', null).limit(40),
+    supabase.from('seo_service_area').select('cities').eq('site_id', siteId).maybeSingle(),
+  ]);
+  const services = [...new Set((svc || []).map((r) => String(r.service_name || '').trim()).filter(Boolean))];
+  const raw = Array.isArray(area?.cities) ? area.cities : [];
+  const areas = [...new Set(raw.map((x) => typeof x === 'string' ? x : String(x?.name || x?.city || '')).map((s) => s.trim()).filter(Boolean))];
+  return { services: services.slice(0, 24), areas: areas.slice(0, 40) };
+}
 export const seoAutoblogStatus = (siteId) => seoInvokeAutoblog('status', { siteId });
 export const seoAutoblogSave = (siteId, cfg) => seoInvokeAutoblog('save_schedule', { siteId, ...cfg });
 export const seoAutoblogPlanBatch = (siteId, n) => seoInvokeAutoblog('plan_batch', { siteId, n });
