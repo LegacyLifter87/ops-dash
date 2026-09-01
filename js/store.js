@@ -671,6 +671,19 @@ export const seoAgencyGrant = (email) => seoInvokeTeam('agency_grant', { email }
 // Multi-agency: caller tier + the SUPER console (platform admin only).
 export const seoAgencyWhoami = () => seoInvokeTeam('agency_whoami', {});
 export const seoSuperListAgencies = () => seoInvokeTeam('super_list_agencies', {});
+// Per-agency caps (platform console). Set via a super-only rpc; ENFORCED by
+// BEFORE INSERT triggers on seo_agency_users / seo_accounts, so no path —
+// edge function or frontend RLS insert — can exceed them. NULL = unlimited.
+export async function seoSetAgencyLimits(agencyId, maxStaff, maxAccounts) {
+  const { data, error } = await supabase.rpc('seo_set_agency_limits', { p_agency: agencyId, p_max_staff: maxStaff, p_max_accounts: maxAccounts });
+  if (error) throw new Error(error.message);
+  return data;
+}
+export async function seoAgencyLimits() {
+  const { data, error } = await supabase.from('seo_agencies').select('id, max_staff, max_accounts');
+  if (error) throw new Error(error.message);
+  return Object.fromEntries((data || []).map((r) => [r.id, r]));
+}
 export const seoSuperCreateAgency = (name, ownerEmail) => seoInvokeTeam('super_create_agency', { name, ownerEmail });
 export const seoSuperUpdateAgency = (agencyId, name) => seoInvokeTeam('super_update_agency', { agencyId, name });
 export const seoUserAccounts = (userId) => seoInvokeTeam('user_accounts', { userId });

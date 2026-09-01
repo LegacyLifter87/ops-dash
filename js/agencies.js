@@ -5,7 +5,7 @@
 // it. Inside, "← All agencies" (in the sidebar) exits back to this screen.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect } from './lib.js';
-import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency, seoSuperListAdmins, seoSuperAddAdmin, seoSuperRemoveAdmin } from './store.js';
+import { getUserEmail, signOut, enterAgency, seoSuperListAgencies, seoSuperCreateAgency, seoSuperUpdateAgency, seoSuperDeleteAgency, seoSuperListAdmins, seoSuperAddAdmin, seoSuperRemoveAdmin, seoSetAgencyLimits, seoAgencyLimits } from './store.js';
 import { Btn, Input, Field, Modal } from './ui.js';
 
 function OwnerCred({ cred, onClose }) {
@@ -60,6 +60,42 @@ function DeleteAgencyModal({ agency, onClose, onDone }) {
       </${Field}>
       ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
       <${Btn} variant="danger" class="w-full" onClick=${del} disabled=${busy || confirm !== agency.name}>${busy ? 'Deleting…' : 'Delete agency permanently'}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+// Per-agency caps: how many staff sign-ins and businesses an agency may have.
+// Enforced at the database (insert triggers), so the caps hold no matter which
+// path tries to add — an agency owner simply gets a clear "reached its limit"
+// message. Blank = unlimited; existing rows over a new cap stay, the cap only
+// blocks NEW additions.
+function LimitsModal({ agency, limits, onClose, onDone }) {
+  const toStr = (v) => (v == null ? '' : String(v));
+  const [staff, setStaff] = useState(toStr(limits?.max_staff));
+  const [accounts, setAccounts] = useState(toStr(limits?.max_accounts));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const toNum = (s) => { const t = String(s).trim(); if (t === '') return null; const n = Math.floor(Number(t)); return Number.isFinite(n) && n >= 0 ? n : NaN; };
+  const save = async () => {
+    const ms = toNum(staff), ma = toNum(accounts);
+    if (Number.isNaN(ms) || Number.isNaN(ma)) { setErr('Limits must be whole numbers (or blank for unlimited).'); return; }
+    setBusy(true); setErr('');
+    try { await seoSetAgencyLimits(agency.id, ms, ma); await onDone(); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return html`<${Modal} title=${`Limits — ${agency.name}`} onClose=${onClose}>
+    <div class="space-y-3">
+      <p class="text-xs text-slate-500">Cap what this agency can add. Blank = unlimited. If they're already over a new cap nothing is removed — the cap just blocks additions until they're back under it (or you raise it).</p>
+      <div class="grid grid-cols-2 gap-3">
+        <${Field} label=${`Team sign-ins (now: ${agency.staff ?? 0})`}>
+          <${Input} type="number" min="0" step="1" value=${staff} onInput=${setStaff} placeholder="unlimited" />
+        <//>
+        <${Field} label=${`Businesses (now: ${agency.businesses ?? 0})`}>
+          <${Input} type="number" min="0" step="1" value=${accounts} onInput=${setAccounts} placeholder="unlimited" />
+        <//>
+      </div>
+      ${err && html`<div class="text-sm text-rose-600">${err}</div>`}
+      <${Btn} class="w-full" onClick=${save} disabled=${busy}>${busy ? 'Saving…' : 'Save limits'}</${Btn}>
     </div>
   </${Modal}>`;
 }
@@ -122,10 +158,17 @@ export function AgencyConsole() {
   const [cred, setCred] = useState(null);
   const [renaming, setRenaming] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [limitsFor, setLimitsFor] = useState(null);
+  const [limits, setLimits] = useState({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  const load = async () => { try { const r = await seoSuperListAgencies(); setAgencies(r.agencies || []); } catch (e) { setErr(e.message); setAgencies([]); } };
+  const load = async () => {
+    try {
+      const [r, lim] = await Promise.all([seoSuperListAgencies(), seoAgencyLimits().catch(() => ({}))]);
+      setAgencies(r.agencies || []); setLimits(lim || {});
+    } catch (e) { setErr(e.message); setAgencies([]); }
+  };
   useEffect(() => { load(); }, []);
 
   const create = async () => {
@@ -193,8 +236,16 @@ export function AgencyConsole() {
               </div>
             </button>
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.businesses ?? 0} business${(a.businesses ?? 0) === 1 ? '' : 'es'}</span>
-              <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${a.staff ?? 0} staff</span>
+              ${(() => {
+                const lim = limits[a.id] || {};
+                const chip = (used, cap, label) => {
+                  const at = cap != null && used >= cap;
+                  return html`<span class=${`text-[11px] px-2 py-0.5 rounded-full ${at ? 'bg-amber-100 text-amber-700 font-medium' : 'bg-slate-100 text-slate-600'}`}
+                    title=${cap != null ? `Limit: ${cap}` : 'No limit set'}>${used}${cap != null ? ` / ${cap}` : ''} ${label}</span>`;
+                };
+                return html`${chip(a.businesses ?? 0, lim.max_accounts, (a.businesses ?? 0) === 1 && lim.max_accounts == null ? 'business' : 'businesses')}${chip(a.staff ?? 0, lim.max_staff, 'staff')}`;
+              })()}
+              <button onClick=${() => setLimitsFor(a)} title="Set team & business limits" class="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-700">🎚 Limits</button>
               <button onClick=${() => setRenaming(a)} title="Rename agency" class="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-700">✏️ Rename</button>
               <button onClick=${() => setDeleting(a)} title="Delete agency" class="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:border-rose-300 hover:text-rose-700">🗑 Delete</button>
               <${Btn} size="sm" onClick=${() => enterAgency(a.id, a.name)}>Open →</${Btn}>
@@ -207,5 +258,6 @@ export function AgencyConsole() {
 
     ${renaming && html`<${RenameAgencyModal} agency=${renaming} onClose=${() => setRenaming(null)} onDone=${load} />`}
     ${deleting && html`<${DeleteAgencyModal} agency=${deleting} onClose=${() => setDeleting(null)} onDone=${load} />`}
+    ${limitsFor && html`<${LimitsModal} agency=${limitsFor} limits=${limits[limitsFor.id]} onClose=${() => setLimitsFor(null)} onDone=${load} />`}
   </div>`;
 }
