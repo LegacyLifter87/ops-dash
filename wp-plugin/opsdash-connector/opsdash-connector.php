@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ops Dash Connector
  * Description: Connects this site to the Ops Dash SEO platform. Receives AI-drafted blog posts and SEO metadata (titles, meta descriptions, JSON-LD schema) pushed from your Ops Dash dashboard. Content arrives as drafts unless your dashboard says otherwise. Works with Yoast, Rank Math, and All in One SEO — or standalone.
- * Version: 1.9.3
+ * Version: 1.9.4
  * Author: Legacy Sales Engineering
  * License: GPLv2 or later
  * Update URI: https://ops.legacybuilder.app/opsdash-connector
@@ -108,7 +108,7 @@ register_activation_hook(__FILE__, function () { delete_option('opsdash_cleanup_
 // first copy stays in charge and the site keeps working.
 if (defined('OPSDASH_VERSION')) return;
 
-define('OPSDASH_VERSION', '1.9.3');
+define('OPSDASH_VERSION', '1.9.4');
 // Pairing-code exchange endpoint: the plugin trades the short code the user
 // typed for the real connection key, server-to-server. Public endpoint; codes
 // are single-use, 15-minute, host-locked, and rate-limited server-side.
@@ -995,9 +995,11 @@ function opsdash_publish(WP_REST_Request $req) {
 	// without one, our own head output covers it.
 	if (opsdash_seo_plugin() === 'none') update_post_meta($post_id, '_opsdash_canonical', get_permalink($post_id));
 
+	$article_title = sanitize_text_field($p['title'] ?? '');
+
 	$featured = null;
 	if (!empty($p['featured_image_url'])) {
-		$img = opsdash_sideload_featured($post_id, $p['featured_image_url'], $p['featured_image_alt'] ?? '');
+		$img = opsdash_sideload_featured($post_id, $p['featured_image_url'], $p['featured_image_alt'] ?? '', $article_title);
 		$featured = is_wp_error($img) ? ['error' => $img->get_error_message()] : ['attachment_id' => $img];
 	}
 
@@ -1008,9 +1010,10 @@ function opsdash_publish(WP_REST_Request $req) {
 	if (!empty($p['images']) && is_array($p['images'])) {
 		$content2 = get_post_field('post_content', $post_id);
 		$first_att = 0;
+		$img_n = 0;
 		foreach (array_slice($p['images'], 0, 8) as $img) {
 			if (!is_array($img)) continue;
-			$att = opsdash_attach_image($post_id, $img);
+			$att = opsdash_attach_image($post_id, $img, $img_n++, $article_title);
 			if (is_wp_error($att)) { $img_results[] = ['marker' => $img['marker'] ?? '', 'error' => $att->get_error_message()]; continue; }
 			$src = wp_get_attachment_image_url($att, 'large');
 			if (!$src) $src = wp_get_attachment_url($att);
@@ -1036,25 +1039,72 @@ function opsdash_publish(WP_REST_Request $req) {
 	];
 }
 
+// SEO filename for an attachment: slugified alt text (what the image IS), an
+// index to keep siblings unique, and the real extension. "dryer-vent-cleaning
+// -ocala-fl-2.png" instead of "0.png" or a stock-photo hash. 1.9.4.
+function opsdash_img_filename($alt, $index, $ext) {
+	$base = sanitize_title(wp_trim_words(sanitize_text_field((string) $alt), 8, ''));
+	if ($base === '') $base = 'image';
+	$base = substr($base, 0, 70);
+	return $base . ($index > 0 ? '-' . ($index + 1) : '') . '.' . $ext;
+}
+
+// Media-library SEO fields on an attachment: title (what shows in the
+// library and some themes' lightboxes), alt (already the ranking signal),
+// caption + description (the library's excerpt/content). All derived from
+// the slot's SEO alt text plus the article it belongs to — the data the
+// publish payload already carries.
+function opsdash_img_meta($att, $alt, $post_title) {
+	$alt = sanitize_text_field((string) $alt);
+	if ($alt === '') return;
+	update_post_meta($att, '_wp_attachment_image_alt', $alt);
+	$desc = $post_title !== ''
+		? sprintf('%s — image from the article “%s”.', $alt, sanitize_text_field($post_title))
+		: $alt;
+	wp_update_post([
+		'ID' => $att,
+		'post_title' => $alt,
+		'post_excerpt' => $alt,       // caption
+		'post_content' => $desc,      // description
+	]);
+}
+
 // Attach one image (remote URL or base64 payload) to the media library.
-function opsdash_attach_image($post_id, $img) {
+// 1.9.4: the stored FILE NAME is controlled (download_url + media_handle_
+// sideload instead of media_sideload_image, whose filename comes from the
+// remote URL — which for our pipeline was junk like "0.png" or a stock hash),
+// and title/alt/caption/description are all populated from the slot's SEO alt
+// text. $index keeps sibling filenames unique; $post_title feeds the
+// description.
+function opsdash_attach_image($post_id, $img, $index = 0, $post_title = '') {
 	require_once ABSPATH . 'wp-admin/includes/media.php';
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	require_once ABSPATH . 'wp-admin/includes/image.php';
+	$alt = sanitize_text_field($img['alt'] ?? '');
 	$att = null;
 	if (!empty($img['url'])) {
-		$att = media_sideload_image(esc_url_raw($img['url']), $post_id, sanitize_text_field($img['alt'] ?? ''), 'id');
-		if (is_wp_error($att)) return $att;
+		$url = esc_url_raw($img['url']);
+		$tmp = download_url($url, 60);
+		if (is_wp_error($tmp)) return $tmp;
+		$path = (string) wp_parse_url($url, PHP_URL_PATH);
+		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+		if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'gif'], true)) $ext = 'jpg';
+		$file_array = [
+			'name' => opsdash_img_filename($alt !== '' ? $alt : basename($path), $index, $ext),
+			'tmp_name' => $tmp,
+		];
+		$att = media_handle_sideload($file_array, $post_id);
+		if (is_wp_error($att)) { @unlink($tmp); return $att; }
 	} elseif (!empty($img['data_base64'])) {
 		$bits = base64_decode($img['data_base64'], true);
 		if ($bits === false) return new WP_Error('opsdash_b64', 'invalid base64 image data');
 		$mime = in_array($img['mime'] ?? '', ['image/png', 'image/jpeg', 'image/webp'], true) ? $img['mime'] : 'image/jpeg';
 		$ext = $mime === 'image/png' ? 'png' : ($mime === 'image/webp' ? 'webp' : 'jpg');
-		$up = wp_upload_bits('opsdash-' . substr(md5($img['data_base64']), 0, 10) . '.' . $ext, null, $bits);
+		$up = wp_upload_bits(opsdash_img_filename($alt, $index, $ext), null, $bits);
 		if (!empty($up['error'])) return new WP_Error('opsdash_upload', $up['error']);
 		$att = wp_insert_attachment([
 			'post_mime_type' => $mime,
-			'post_title' => sanitize_text_field($img['alt'] ?? 'Image'),
+			'post_title' => $alt !== '' ? $alt : 'Image',
 			'post_status' => 'inherit',
 		], $up['file'], $post_id);
 		if (is_wp_error($att)) return $att;
@@ -1062,20 +1112,17 @@ function opsdash_attach_image($post_id, $img) {
 	} else {
 		return new WP_Error('opsdash_noimg', 'image needs url or data_base64');
 	}
-	if (!empty($img['alt'])) update_post_meta($att, '_wp_attachment_image_alt', sanitize_text_field($img['alt']));
+	opsdash_img_meta($att, $alt, $post_title);
 	return $att;
 }
 
 // Download an image from a URL into the media library and set it as the
 // post's featured image. Failures here never fail the publish itself.
-function opsdash_sideload_featured($post_id, $url, $alt) {
-	require_once ABSPATH . 'wp-admin/includes/media.php';
-	require_once ABSPATH . 'wp-admin/includes/file.php';
-	require_once ABSPATH . 'wp-admin/includes/image.php';
-	$att_id = media_sideload_image(esc_url_raw($url), $post_id, null, 'id');
+// 1.9.4: same SEO filename + metadata treatment as inline images.
+function opsdash_sideload_featured($post_id, $url, $alt, $post_title = '') {
+	$att_id = opsdash_attach_image($post_id, ['url' => $url, 'alt' => $alt], 0, $post_title);
 	if (is_wp_error($att_id)) return $att_id;
 	set_post_thumbnail($post_id, $att_id);
-	if ($alt !== '') update_post_meta($att_id, '_wp_attachment_image_alt', sanitize_text_field($alt));
 	return $att_id;
 }
 
