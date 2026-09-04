@@ -161,10 +161,11 @@ export function Ads() {
 }
 
 function CustomerPicker({ customers, busy, onPick, onClose }) {
+  const list = [...customers].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
   return html`<${Modal} title="Choose a Google Ads account" onClose=${onClose}>
     <div class="space-y-2 text-sm">
-      ${customers.length === 0 ? html`<div class="text-slate-500 py-4 text-center">No ad accounts were accessible with this Google login.</div>`
-        : customers.map((c) => html`<button onClick=${() => onPick(c)} disabled=${busy} class="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-brand-300 hover:bg-brand-50 flex items-center justify-between gap-2">
+      ${list.length === 0 ? html`<div class="text-slate-500 py-4 text-center">No ad accounts were accessible with this Google login.</div>`
+        : list.map((c) => html`<button onClick=${() => onPick(c)} disabled=${busy} class="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-brand-300 hover:bg-brand-50 flex items-center justify-between gap-2">
           <div><div class="font-medium text-slate-800">${c.name}</div><div class="text-xs text-slate-400">${c.id}${c.login_customer_id ? ' · under manager ' + c.login_customer_id : ''}</div></div>
           <span class="text-xs text-slate-400">${c.currency || ''}</span>
         </button>`)}

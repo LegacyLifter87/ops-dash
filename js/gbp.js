@@ -155,7 +155,7 @@ function AgencyPicker({ businessName, domain, onClose, onPicked }) {
   useEffect(() => { load(false); }, []);
 
   const me = activeAccount()?.name || '';
-  const locs = data?.locations || [];
+  const locs = (data?.locations || []).slice().sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
   const taken = data?.taken || {};
   const nameWords = wordsOf(businessName || me);
   const core = domainCore(domain);

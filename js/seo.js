@@ -147,7 +147,7 @@ export function SEO() {
     </div>`;
   }
 
-  const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p));
+  const props = (status.properties || []).filter((p) => !(status.sites || []).some((s) => s.gsc_property === p)).sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
   const site = (status.sites || []).find((s) => s.id === activeSite);
   const tabs = [['health', '🩺 Site Health'], ['trends', '📈 Trends'], ['striking', `Striking Distance (${views.striking.length})`], ['lowctr', `Low CTR (${views.lowCtr.length})`], ['rising', `Rising & New (${views.rising.length})`], ['cannibal', `Cannibalization (${views.cannibal.length})`], ['pages', `Pages (${views.pages.length})`]];
 

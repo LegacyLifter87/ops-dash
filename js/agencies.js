@@ -289,7 +289,7 @@ export function AgencyConsole() {
   const load = async () => {
     try {
       const [r, lim] = await Promise.all([seoSuperListAgencies(), seoAgencyLimits().catch(() => ({}))]);
-      setAgencies(r.agencies || []); setLimits(lim || {});
+      setAgencies((r.agencies || []).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))); setLimits(lim || {});
     } catch (e) { setErr(e.message); setAgencies([]); }
   };
   useEffect(() => { load(); }, []);

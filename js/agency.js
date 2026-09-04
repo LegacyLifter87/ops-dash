@@ -208,7 +208,7 @@ function CitationsCard({ onBanner }) {
 
   const locs = st?.locations || [];
   const camps = st?.campaigns || [];
-  const accounts = st?.accounts || [];
+  const accounts = (st?.accounts || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
   const linked = locs.filter((l) => l.account_id);
   const unmatched = locs.filter((l) => !l.account_id);
   const paid = camps.filter((c) => c.paid === true);
