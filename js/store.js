@@ -1056,3 +1056,5 @@ export async function seoReviewEventsMany(kind, subjectIds) {
   for (const e of data || []) { (by[e.subject_id] = by[e.subject_id] || []).push(e); }
   return by;
 }
+export const seoMediaLogoInfo = (id) => seoInvokeMedia('logo_info', { id });
+export const seoMediaRestamp = (id, x, y, frac) => seoInvokeMedia('restamp', { id, x, y, frac });

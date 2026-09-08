@@ -5,8 +5,8 @@
 // injected images (nano-banana) and Reels (Kling) → review/approve.
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
-import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents } from './store.js';
+import { html, useState, useEffect, useRef, cx } from './lib.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents, seoMediaLogoInfo, seoMediaRestamp } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field, ReviewTimeline, durShort } from './ui.js';
 
 const PILLAR = {
@@ -868,6 +868,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [zoom, setZoom] = useState(false); // full-screen media lightbox
+  const [logoEd, setLogoEd] = useState(false); // drag-to-place logo editor
   const [regenOpen, setRegenOpen] = useState(false); // in-dashboard regenerate-with-feedback composer
   const [regenFb, setRegenFb] = useState('');
   const [rejOpen, setRejOpen] = useState(false); // reject composer — rejecting auto-regenerates, steered by the reason
@@ -974,6 +975,8 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
         <div class="grid md:grid-cols-2 gap-4">
           <div class="relative rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center min-h-[280px] overflow-hidden self-start">
             ${media && html`<button onClick=${() => setZoom(true)} title="View full size" class="absolute top-2 right-2 z-10 bg-slate-900/60 hover:bg-slate-900/80 text-white text-xs px-2.5 py-1.5 rounded-lg">⛶ Enlarge</button>`}
+            ${media && post.format === 'image' && post.media_task_id && !pushed && html`<button onClick=${() => setLogoEd(true)} title="Drag the logo to a different spot or resize it" class="absolute top-2 left-2 z-10 bg-slate-900/60 hover:bg-slate-900/80 text-white text-xs px-2.5 py-1.5 rounded-lg">🏷 Move logo</button>`}
+            ${logoEd && html`<${LogoEditor} taskId=${post.media_task_id} onClose=${() => setLogoEd(false)} onSaved=${async () => { setLogoEd(false); await onChanged(); }} />`}
             ${media ? (post.format === 'video'
               ? html`<video src=${media} controls class="max-h-[62vh] w-full object-contain"></video>`
               : html`<img src=${media} alt="post media" onError=${imgFallback} onClick=${() => setZoom(true)} class="max-h-[62vh] w-full object-contain cursor-zoom-in" title="Click to enlarge" />`)
@@ -1084,6 +1087,82 @@ async function downloadPost(p) {
     catch (_) { window.open(urls[i], '_blank'); }
   }
   saveBlob(new Blob([postCaptionText(p)], { type: 'text/plain' }), `${p.post_date}-${postSlug(p)}.txt`);
+}
+
+// Drag-to-place logo editor. Shows the UNSTAMPED original with the brand
+// logo overlaid as a draggable element; Apply re-composites server-side
+// (seo-media restamp) from the clean original and repoints the post's media
+// URL to a fresh cache-safe file. Images generated before logo editing
+// shipped have no kept original — the server's error explains that one
+// regeneration makes the logo movable.
+function LogoEditor({ taskId, onClose, onSaved }) {
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState({ x: 0.97, y: 0.03, frac: 0.19 });
+  const boxRef = useRef(null);
+  const logoRef = useRef(null);
+  useEffect(() => {
+    seoMediaLogoInfo(taskId).then((r) => {
+      setInfo(r);
+      if (!r.editable) { setErr(!r.logoUrl ? 'No brand logo is on file for this business — upload one in the brand kit first.' : 'This image was generated before logo editing existed — regenerate it once and the logo becomes movable.'); return; }
+      const p = r.pos || {};
+      if (typeof p.x === 'number') setPos({ x: p.x, y: p.y, frac: p.frac || 0.19 });
+      else {
+        const c = p.corner || 'top-right';
+        setPos({ x: c.endsWith('left') ? 0.03 : 0.97, y: c.startsWith('top') ? 0.03 : 0.97, frac: p.frac || 0.19 });
+      }
+    }).catch((e) => setErr(e.message));
+  }, [taskId]);
+  const startDrag = (e) => {
+    e.preventDefault();
+    const box = boxRef.current, lg = logoRef.current;
+    if (!box || !lg) return;
+    const br = box.getBoundingClientRect();
+    const lr = lg.getBoundingClientRect();
+    const grabX = e.clientX - lr.left, grabY = e.clientY - lr.top;
+    const move = (ev) => {
+      const x = Math.min(1, Math.max(0, (ev.clientX - br.left - grabX) / Math.max(1, br.width - lr.width)));
+      const y = Math.min(1, Math.max(0, (ev.clientY - br.top - grabY) / Math.max(1, br.height - lr.height)));
+      setPos((p) => ({ ...p, x, y }));
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await seoMediaRestamp(taskId, pos.x, pos.y, pos.frac); await onSaved(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  const pct = (v) => (v * 100).toFixed(2);
+  return html`<div class="fixed inset-0 z-[60] bg-slate-900/60 flex items-center justify-center p-4" onClick=${onClose}>
+    <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-4" onClick=${(e) => e.stopPropagation()}>
+      <div class="flex items-center justify-between mb-2">
+        <div class="font-semibold text-slate-800">🏷 Position the logo</div>
+        <button onClick=${onClose} class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+      </div>
+      ${err && html`<div class="text-sm text-rose-600 bg-rose-50 rounded-lg px-3 py-2 mb-2">${err}</div>`}
+      ${!info && !err && html`<div class="text-sm text-slate-400 py-10 text-center">Loading…</div>`}
+      ${info?.editable && html`<div>
+        <p class="text-xs text-slate-400 mb-2">Drag the logo where you want it and size it below — Apply re-stamps the image from the clean original, so nothing gets covered twice.</p>
+        <div ref=${boxRef} class="relative w-full rounded-xl overflow-hidden border border-slate-200 select-none touch-none">
+          <img src=${info.origUrl} class="w-full block pointer-events-none" draggable=${false} />
+          <img ref=${logoRef} src=${info.logoUrl} draggable=${false} onPointerDown=${startDrag}
+            style=${`position:absolute;width:${Math.round(pos.frac * 100)}%;left:${pct(pos.x)}%;top:${pct(pos.y)}%;transform:translate(-${pct(pos.x)}%,-${pct(pos.y)}%);cursor:grab;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))`} />
+        </div>
+        <div class="flex items-center gap-3 mt-3">
+          <span class="text-xs text-slate-500 whitespace-nowrap">Logo size</span>
+          <input type="range" min="8" max="35" value=${Math.round(pos.frac * 100)} onInput=${(e) => setPos((p) => ({ ...p, frac: Number(e.target.value) / 100 }))} class="flex-1" />
+          <span class="text-xs text-slate-500 tabular-nums w-9 text-right">${Math.round(pos.frac * 100)}%</span>
+        </div>
+        <div class="flex items-center justify-end gap-2 mt-3">
+          <${Btn} variant="secondary" size="sm" onClick=${onClose}>Cancel</${Btn}>
+          <${Btn} size="sm" onClick=${save} disabled=${busy}>${busy ? 'Applying…' : 'Apply logo position'}</${Btn}>
+        </div>
+      </div>`}
+    </div>
+  </div>`;
 }
 
 // Client approval tracker — where the month stands with the client: what was
