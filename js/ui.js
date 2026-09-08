@@ -195,13 +195,14 @@ const RT_META = {
   rejected: ['✋', 'Client rejected'],
   edited: ['📝', 'Client edited the draft'],
 };
-const rtDur = (ms) => {
+export const durShort = (ms) => {
   const m = Math.max(1, Math.round(ms / 60000));
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   if (h < 48) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 };
+const rtDur = durShort;
 const rtWhen = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 export function ReviewTimeline({ events }) {
   if (!events || !events.length) return null;

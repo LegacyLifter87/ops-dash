@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
 import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents } from './store.js';
-import { Card, Btn, Input, Textarea, Select, Field, ReviewTimeline } from './ui.js';
+import { Card, Btn, Input, Textarea, Select, Field, ReviewTimeline, durShort } from './ui.js';
 
 const PILLAR = {
   educational: ['📘', 'bg-sky-100 text-sky-700'],
@@ -1113,7 +1113,7 @@ function ApprovalTracker({ posts, appr, month, siteName, calendarId }) {
   const reReady = fb.filter((p) => p.status === 'ready');
   if (!posts.length) return '';
   const a = appr?.approval;
-  const fmtD = (d) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+  const fmtD = (d) => (d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
   const fbState = (p) => (p.ghl_post_id ? ['🚀 scheduled', 'bg-emerald-600 text-white'] : p.status === 'approved' ? ['re-approved', 'bg-emerald-100 text-emerald-700'] : p.status === 'ready' ? ['revised — awaiting approval', 'bg-sky-100 text-sky-700'] : p.status === 'media_pending' ? ['being revised', 'bg-amber-100 text-amber-700'] : [p.status.replace('_', ' '), 'bg-slate-100 text-slate-600']);
 
   const [tone, headline] = (() => {
@@ -1181,6 +1181,12 @@ function ApprovalTracker({ posts, appr, month, siteName, calendarId }) {
             <span class=${cx('px-1.5 py-0.5 rounded-full font-medium', cls)}>${lbl}</span>
           </div>
           <div class="text-xs text-slate-600 italic mt-1">“${p.client_feedback}”</div>
+          ${(p.feedback_at || p.revised_at) && html`<div class="flex flex-wrap items-center gap-2 mt-1.5 text-[11px]">
+            ${p.feedback_at && html`<span class="text-slate-400">✏️ feedback ${fmtD(p.feedback_at)}</span>`}
+            ${p.revised_at && html`<span class="text-slate-400">→ 📤 revision ready ${fmtD(p.revised_at)}</span>`}
+            ${p.feedback_at && p.revised_at && new Date(p.revised_at) > new Date(p.feedback_at) && html`<span class="px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">⏱ revised in ${durShort(new Date(p.revised_at) - new Date(p.feedback_at))}</span>`}
+            ${p.feedback_at && !p.revised_at && p.status === 'media_pending' && html`<span class="text-amber-600">⏳ revising now…</span>`}
+          </div>`}
         </div>`; })}
       </div>`}
     </div>`}
