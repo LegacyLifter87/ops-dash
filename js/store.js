@@ -1040,3 +1040,19 @@ export const jtAgencyStatus = () => jtInvoke('agency_jt_status');
 export const jtAgencySet = (companyId) => jtInvoke('agency_jt_set', { companyId });
 export const jtAgencyUsers = () => jtInvoke('agency_task_users');
 export const jtAgencyTaskCreate = ({ title, description, dueDate, dueTime, assigneeId }) => jtInvoke('agency_task_create', { title, description, dueDate, dueTime, assigneeId });
+
+// ── Client-review audit trail (seo_review_events — trigger-populated, RLS-read) ──
+export async function seoReviewEvents(kind, subjectId) {
+  const { data, error } = await supabase.from('seo_review_events').select('event,round,detail,created_at').eq('kind', kind).eq('subject_id', String(subjectId)).order('created_at');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function seoReviewEventsMany(kind, subjectIds) {
+  const ids = (subjectIds || []).map(String);
+  if (!ids.length) return {};
+  const { data, error } = await supabase.from('seo_review_events').select('subject_id,event,round,detail,created_at').eq('kind', kind).in('subject_id', ids).order('created_at');
+  if (error) throw new Error(error.message);
+  const by = {};
+  for (const e of data || []) { (by[e.subject_id] = by[e.subject_id] || []).push(e); }
+  return by;
+}

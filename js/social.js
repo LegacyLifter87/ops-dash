@@ -6,8 +6,8 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow } from './store.js';
-import { Card, Btn, Input, Textarea, Select, Field } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents } from './store.js';
+import { Card, Btn, Input, Textarea, Select, Field, ReviewTimeline } from './ui.js';
 
 const PILLAR = {
   educational: ['📘', 'bg-sky-100 text-sky-700'],
@@ -1091,9 +1091,18 @@ async function downloadPost(p) {
 // change (with their feedback verbatim and each revision's current state),
 // and whether every approved post has been dispatched to GHL for scheduling.
 // Data is all client-side already (posts + the seo-approval status row).
-function ApprovalTracker({ posts, appr, month, siteName }) {
+function ApprovalTracker({ posts, appr, month, siteName, calendarId }) {
   const [showFb, setShowFb] = useState(true);
   const [zip, setZip] = useState('');
+  // Full review audit trail (every send, feedback, revision and approval with
+  // timestamps) — trigger-written server-side, read straight from the table.
+  const [trail, setTrail] = useState(null);
+  const [showTrail, setShowTrail] = useState(false);
+  useEffect(() => {
+    let on = true;
+    if (calendarId) seoReviewEvents('social', calendarId).then((ev) => on && setTrail(ev)).catch(() => on && setTrail([]));
+    return () => { on = false; };
+  }, [calendarId, appr?.approval?.status, appr?.approval?.round]);
   const approved = posts.filter((p) => p.status === 'approved');
   const pushed = approved.filter((p) => p.ghl_post_id);
   const ready = posts.filter((p) => p.status === 'ready');
@@ -1174,6 +1183,10 @@ function ApprovalTracker({ posts, appr, month, siteName }) {
           <div class="text-xs text-slate-600 italic mt-1">“${p.client_feedback}”</div>
         </div>`; })}
       </div>`}
+    </div>`}
+    ${(trail || []).length > 0 && html`<div class="mt-3 pt-3 border-t border-slate-100">
+      <button onClick=${() => setShowTrail(!showTrail)} class="text-xs font-medium text-slate-600 hover:text-brand-700">🕓 Review history (${trail.length}) ${showTrail ? '▾' : '▸'}</button>
+      ${showTrail && html`<div class="mt-2"><${ReviewTimeline} events=${trail} /></div>`}
     </div>`}
   </div></${Card}>`;
 }
@@ -1381,7 +1394,7 @@ export function Social() {
 
     <${PlanCard} site=${site} onBanner=${setBanner} key=${site} />
 
-    ${cal && html`<${ApprovalTracker} posts=${posts} appr=${appr} month=${month} siteName=${sites.find((x) => x.id === site)?.display_name || sites.find((x) => x.id === site)?.domain || ''} />`}
+    ${cal && html`<${ApprovalTracker} posts=${posts} appr=${appr} month=${month} calendarId=${cal.id} siteName=${sites.find((x) => x.id === site)?.display_name || sites.find((x) => x.id === site)?.domain || ''} />`}
 
     <${Card}><div class="p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-2">

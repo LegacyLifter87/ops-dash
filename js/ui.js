@@ -183,3 +183,46 @@ export const EmptyState = ({ title, sub, action }) => html`
     ${sub && html`<div class="text-sm text-slate-500 mt-1">${sub}</div>`}
     ${action && html`<div class="mt-4">${action}</div>`}
   </div>`;
+
+// Review-history timeline — renders the client-review audit trail
+// (seo_review_events rows) with absolute timestamps plus computed durations:
+// how fast the client responded to each send, and how fast a revision went
+// back out after their feedback.
+const RT_META = {
+  sent: ['📤', 'Sent to client'],
+  feedback: ['✏️', 'Client requested changes'],
+  approved: ['✅', 'Approved'],
+  rejected: ['✋', 'Client rejected'],
+  edited: ['📝', 'Client edited the draft'],
+};
+const rtDur = (ms) => {
+  const m = Math.max(1, Math.round(ms / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+};
+const rtWhen = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+export function ReviewTimeline({ events }) {
+  if (!events || !events.length) return null;
+  return html`<div class="space-y-1">
+    ${events.map((e, i) => {
+      const [icon, label] = RT_META[e.event] || ['•', e.event];
+      const t = new Date(e.created_at).getTime();
+      let chip = null;
+      if (e.event === 'sent' && /^revision/.test(e.detail || '')) {
+        const fb = events.slice(0, i).reverse().find((x) => x.event === 'feedback' || x.event === 'rejected');
+        if (fb) chip = ['bg-indigo-50 text-indigo-700', `revision turned around in ${rtDur(t - new Date(fb.created_at).getTime())}`];
+      } else if (['feedback', 'approved', 'rejected'].includes(e.event)) {
+        const sent = events.slice(0, i).reverse().find((x) => x.event === 'sent');
+        if (sent) chip = ['bg-slate-100 text-slate-500', `client responded in ${rtDur(t - new Date(sent.created_at).getTime())}`];
+      }
+      return html`<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+        <span class="text-slate-400 tabular-nums whitespace-nowrap">${rtWhen(e.created_at)}</span>
+        <span class="text-slate-700">${icon} ${label}${e.round ? html`<span class="text-slate-400"> · round ${e.round}</span>` : ''}</span>
+        ${e.detail && html`<span class="text-slate-400">— ${e.detail}</span>`}
+        ${chip && html`<span class=${'px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ' + chip[0]}>⏱ ${chip[1]}</span>`}
+      </div>`;
+    })}
+  </div>`;
+}

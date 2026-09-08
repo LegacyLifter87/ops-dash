@@ -5,8 +5,8 @@
 // Approval ON: "Generate batch" → review → approve → auto-scheduled publishing.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost, seoWpCategories, seoWpCreateCategory, seoSetBlogPriorities, seoBlogPrioritySuggestions } from './store.js';
-import { Card, Btn, Select, Input, Textarea, Modal } from './ui.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoLoadBriefs, seoAutoblogStatus, seoAutoblogSave, seoAutoblogPlanBatch, seoAutoblogGenerateOne, seoAutoblogApprove, seoAutoblogReject, seoAutoblogPublishOne, seoAutoblogRetry, seoAutoblogRemove, seoAutoblogEditPost, seoWpCategories, seoWpCreateCategory, seoSetBlogPriorities, seoBlogPrioritySuggestions, seoReviewEventsMany } from './store.js';
+import { Card, Btn, Select, Input, Textarea, Modal, ReviewTimeline } from './ui.js';
 import { mdRender } from './keywords.js';
 import { BriefsLibrary } from './briefs.js';
 
@@ -173,6 +173,16 @@ export function Autoblog() {
   if (!sites.length) return html`<div class="max-w-5xl mx-auto p-6"><${Card}><div class="p-8 text-center text-sm text-slate-500">Connect Google Search Console in the SEO tab to add a site first.</div></${Card}></div>`;
 
   const queue = st?.queue || [];
+  // Client-review audit trail per queue row (sent / edited / approved /
+  // rejected with timestamps), trigger-written server-side.
+  const [trails, setTrails] = useState({});
+  useEffect(() => {
+    let on = true;
+    const ids = queue.map((q) => q.id);
+    if (ids.length) seoReviewEventsMany('blog', ids).then((by) => on && setTrails(by)).catch(() => {});
+    else setTrails({});
+    return () => { on = false; };
+  }, [queue.map((q) => `${q.id}:${q.status}`).join(',')]);
   const approval = cfg?.approval_required;
   const reviewables = queue.filter((q) => ['pending_approval', 'drafted', 'generating', 'planned'].includes(q.status));
 
@@ -337,6 +347,7 @@ export function Autoblog() {
                   <button onClick=${() => setReject({ id: q.id, keyword: q.keyword })} class="text-slate-400 hover:text-rose-600">cancel</button>`}
                 ${!b && ['planned', 'failed', 'rejected', 'drafted', 'pending_approval'].includes(q.status) && html`<button onClick=${() => rowAct(seoAutoblogRemove, q.id)} class="text-slate-300 hover:text-rose-600">✕</button>`}
               </div>
+              ${(trails[String(q.id)] || []).length > 0 && html`<div class="w-full pl-2 border-l-2 border-slate-100"><${ReviewTimeline} events=${trails[String(q.id)]} /></div>`}
             </div>`;
           })}
         </div>`}
