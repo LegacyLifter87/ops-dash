@@ -69,7 +69,13 @@ export function Audit() {
         done += r.audited || 0;
         await load(site); // table fills in progressively
       }
-      setBanner(`Audited ${num(done)} of ${num(urls.length)} pages — discovered via ${sourceSummary(d)}.`);
+      // Fold the fresh crawl straight into the site-level health score —
+      // previously that card sat stale until "Run site audit" was clicked
+      // separately, which read as "the audit never updates".
+      let scoreNote = '';
+      try { const sa = await seoSiteAuditRun(site); setSiteAudit(sa.audit); scoreNote = ` SEO health score: ${sa.audit.score}/100.`; } catch (_) { /* keep page-level results */ }
+      const prunedNote = d.pruned ? ` Removed ${num(d.pruned)} page(s) that no longer exist on the site.` : '';
+      setBanner(`Audited ${num(done)} of ${num(urls.length)} pages — discovered via ${sourceSummary(d)}.${prunedNote}${scoreNote}`);
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
   const analyzeAi = async (url) => {
