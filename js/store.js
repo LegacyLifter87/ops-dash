@@ -1058,3 +1058,11 @@ export async function seoReviewEventsMany(kind, subjectIds) {
 }
 export const seoMediaLogoInfo = (id) => seoInvokeMedia('logo_info', { id });
 export const seoMediaRestamp = (id, x, y, frac) => seoInvokeMedia('restamp', { id, x, y, frac });
+
+// Expanded brand styles save through their own rpc: seo-social's profile_save
+// whitelists aesthetics against its original 9 keys and would drop new ones.
+export async function seoSetSocialAesthetics(siteId, keys) {
+  const { data, error } = await supabase.rpc('seo_set_social_aesthetics', { p_site_id: siteId, p_keys: keys || [] });
+  if (error) throw new Error(error.message);
+  return data;
+}

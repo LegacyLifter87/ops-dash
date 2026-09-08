@@ -6,7 +6,7 @@
 // Scheduling/publishing happens in GoHighLevel — this tab curates.
 // ---------------------------------------------------------------------------
 import { html, useState, useEffect, useRef, cx } from './lib.js';
-import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents, seoMediaLogoInfo, seoMediaRestamp } from './store.js';
+import { useStore, getActiveAccountId, seoLoadSites, seoAddManualSite, seoSocialRewritePost, seoSocialProfile, seoSocialProfileSave, seoSocialLogoUpload, seoSocialPlanMonth, seoSocialWriteBatch, seoSocialMediaBatch, seoSocialRegenMedia, seoSocialRefresh, seoSocialCalendar, seoSocialUpdatePost, seoSocialApprove, seoSocialReject, seoSocialApproveAll, seoSocialPillarsGet, seoSocialPillarsSave, seoSocialGhlUnschedule, seoSocialGhlStatus, seoSocialGhlConnect, seoSocialGhlSetAccounts, seoSocialGhlDisconnect, seoSocialGhlPush, seoSocialGhlOauthStart, seoSocialGhlRefreshAccounts, seoSocialPhotos, seoSocialDriveLink, seoSocialPhotosSync, seoSocialPhotoDelete, seoSocialDriveOauthStart, seoSocialDriveStatus, seoSocialDriveBrowse, seoSocialDrivePick, seoSocialDriveDisconnect, seoPhotoCatalog, seoPhotoAnalyze, seoPhotoMatch, seoSocialBadgeUpload, seoSocialBadgeDelete, seoSocialCertUpload, seoSocialReviewsSync, seoSocialReviewsList, seoStrategyPages, seoApprovalStatus, seoApprovalSendNow, seoAutopilotStatus, seoAutopilotRunNow, seoReviewEvents, seoMediaLogoInfo, seoMediaRestamp, seoSetSocialAesthetics } from './store.js';
 import { Card, Btn, Input, Textarea, Select, Field, ReviewTimeline, durShort } from './ui.js';
 
 const PILLAR = {
@@ -37,6 +37,15 @@ const AESTHETICS = [
   ['bold-minimalism', '🎯 Bold Minimal', 'One saturated color, oversized type, few elements — energy without clutter'],
   ['retro-local', '🏷 Retro Local', 'Vintage badge, "since YYYY", warm grading — established family businesses'],
   ['playful-pop', '🎉 Playful Pop', 'Primary colors, halftone, starbursts — events and giveaways only'],
+  ['coastal-fresh', '🌊 Coastal Fresh', 'Airy light blues + sandy neutrals, breezy sunlight — pools, exterior cleaning, coastal brands'],
+  ['heritage-craftsman', '🪚 Heritage Craftsman', 'Wood textures, deep browns/greens, hand-built detail — carpentry, remodel, chimney'],
+  ['tech-modern', '💠 Tech Modern', 'Dark fields, one electric accent, grids and glows — smart home, security, solar'],
+  ['warm-family', '🏡 Warm Family', 'Soft warm neutrals, rounded type, cozy home scenes — home services, cleaning'],
+  ['high-contrast-alert', '⚠️ High-Contrast Alert', 'Black + hazard-bright accent, urgent type — emergency and storm response'],
+  ['blueprint-technical', '📐 Blueprint Technical', 'Blueprint blues, fine line-work, measured labels — inspections, precision trades'],
+  ['monochrome-premium', '🖤 Monochrome Premium', 'B&W photos + one brand-color duotone accent — sharp, upscale services'],
+  ['farmhouse-rustic', '🌾 Farmhouse Rustic', 'Cream fields, barn-red/denim accents, hand-painted feel — rural and ranch'],
+  ['sport-dynamic', '🏁 Sport Dynamic', 'Diagonal energy, bold italics, action shots — detailing, fleets, high-energy crews'],
 ];
 // Brand voices the owner can approve — mirrors the visual style selector.
 // Pick any; the AI chooses ONE per month from the approved set (or freely
@@ -115,7 +124,7 @@ export function BrandKit({ site, onBanner }) {
     if (site) seoSocialProfile(site).then((r) => {
       setP(r.profile || {}); setLogoUrl(r.logoUrl);
       const pr = r.profile || {};
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set(Array.isArray(pr.aesthetics) ? pr.aesthetics : []), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', pillars: [], insights: pr.insights || '', visualTruth: pr.visual_truth || '' });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, platforms: new Set(pr.plan?.platforms || ['facebook', 'instagram']), aesthetics: new Set((Array.isArray(pr.aesthetics) ? pr.aesthetics : []).map((a) => String(a).split(' (')[0])), voices: new Set(Array.isArray(pr.voices) ? pr.voices : []), certs: (Array.isArray(pr.certifications) ? pr.certifications : []).map((c) => ({ ...c })), imageSources: new Set(pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai']), commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', pillars: [], insights: pr.insights || '', visualTruth: pr.visual_truth || '' });
       if (!r.profile) setOpen(true);
       // Service categories (pillars) come from the dedicated seo-pillars fn,
       // which seeds one uncategorized group from any existing manual_services.
@@ -137,9 +146,11 @@ export function BrandKit({ site, onBanner }) {
   const save = async () => {
     setBusy('save'); setErr('');
     try {
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, visualTruth: f.visualTruth, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, visualTruth: f.visualTruth, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
       // The grouped category → service structure is stored separately (seo-pillars).
       await seoSocialPillarsSave(site, (f.pillars || []).filter((pl) => String(pl.name || '').trim() || (pl.services || []).some((s) => String(s.name || '').trim())).map((pl) => ({ name: pl.name, services: (pl.services || []).filter((s) => String(s.name || '').trim()).map((s) => ({ name: s.name, url: s.url })) })));
+      // Styles save via their own rpc (expanded list w/ rich descriptions).
+      await seoSetSocialAesthetics(site, [...(f.aesthetics || [])]);
       // Re-read so persisted cert rows (and their badge slots) are current.
       const r2 = await seoSocialProfile(site);
       setP(r2.profile || {});
@@ -221,7 +232,7 @@ export function BrandKit({ site, onBanner }) {
         // first so the upload has a row to attach to.
         const saved = (p?.certifications || []).some((x) => x?.id === certId);
         if (!saved) {
-          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', aesthetics: [...(f.aesthetics || [])], voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, visualTruth: f.visualTruth, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
+          await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: p?.promotion || '', voices: [...(f.voices || [])], certifications: (f.certs || []).filter((c) => String(c.name || '').trim()), commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, manualServices: flatSvcs(f.pillars), insights: f.insights, visualTruth: f.visualTruth, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(p?.plan?.reviewsPerMonth) || 0, platforms: [...f.platforms], imageSources: [...(f.imageSources || ['company', 'ai'])], serviceMix: Array.isArray(p?.plan?.serviceMix) ? p.plan.serviceMix : [] } });
         }
         const r = await seoSocialCertUpload(site, certId, b64, ct);
         setP((x) => ({ ...x, certifications: r.certifications }));
@@ -261,8 +272,8 @@ export function BrandKit({ site, onBanner }) {
         <${Field} label="Website"><${Input} value=${f.website} onInput=${(v) => setF({ ...f, website: v })} placeholder="https://acme.com" /></${Field}>
         <${Field} label="Booking link (optional)"><${Input} value=${f.bookingUrl} onInput=${(v) => setF({ ...f, bookingUrl: v })} placeholder="https://acme.com/book" /></${Field}>
         <div class="grid grid-cols-2 gap-2">
-          <${Field} label="Brand color 1"><${Input} value=${f.brandColor1} onInput=${(v) => setF({ ...f, brandColor1: v })} placeholder="#0f766e" /></${Field}>
-          <${Field} label="Brand color 2"><${Input} value=${f.brandColor2} onInput=${(v) => setF({ ...f, brandColor2: v })} placeholder="#f59e0b" /></${Field}>
+          <${Field} label="Brand color 1 (exact hex — enforced on every image)"><${Input} value=${f.brandColor1} onInput=${(v) => setF({ ...f, brandColor1: v })} placeholder="#0f766e" /></${Field}>
+          <${Field} label="Brand color 2 (exact hex — enforced on every image)"><${Input} value=${f.brandColor2} onInput=${(v) => setF({ ...f, brandColor2: v })} placeholder="#f59e0b" /></${Field}>
         </div>
       </div>
       <${Field} label="Voice notes (optional — tone, do/don't say)"><${Textarea} value=${f.voiceNotes} onInput=${(v) => setF({ ...f, voiceNotes: v })} rows=${2} placeholder="Family-owned since 2004; never mention competitor names; friendly but no slang…" /></${Field}>
@@ -395,7 +406,7 @@ export function PlanCard({ site, onBanner }) {
       const m = {};
       (Array.isArray(pr.plan?.serviceMix) ? pr.plan.serviceMix : []).forEach((x) => { if (x?.service) m[x.service] = Number(x.posts) || 0; });
       setMix(m);
-      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: Array.isArray(pr.aesthetics) ? pr.aesthetics : [], voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'], manualServices: Array.isArray(pr.manual_services) ? pr.manual_services : [], autopilot: !!pr.autopilot });
+      setF({ phone: pr.phone || '', website: pr.website || '', bookingUrl: pr.booking_url || '', brandColor1: pr.brand_color1 || '', brandColor2: pr.brand_color2 || '', voiceNotes: pr.voice_notes || '', icp: pr.icp || '', warranty: pr.warranty || '', promotion: pr.promotion || '', approvalEmail: pr.approval_email || '', approvalCc: pr.approval_cc || '', aesthetics: (Array.isArray(pr.aesthetics) ? pr.aesthetics : []).map((a) => String(a).split(' (')[0]), voices: Array.isArray(pr.voices) ? pr.voices : [], certs: Array.isArray(pr.certifications) ? pr.certifications : [], commentTrigger: pr.comment_trigger || '', commentOffer: pr.comment_offer || '', postsPerDay: pr.plan?.postsPerDay || 1, reelsPerMonth: pr.plan?.reelsPerMonth ?? 3, reviewsPerMonth: pr.plan?.reviewsPerMonth ?? 0, platforms: pr.plan?.platforms || ['facebook', 'instagram'], imageSources: pr.plan?.imageSources?.length ? pr.plan.imageSources : ['company', 'ai'], manualServices: Array.isArray(pr.manual_services) ? pr.manual_services : [], autopilot: !!pr.autopilot });
     }).catch((e) => { setErr(e.message); });
     // Service rows carry over automatically from the website map (Strategy tab).
     seoStrategyPages(site).then((r) => setMapSvcs([...new Set((r.pages || []).filter((p2) => p2.is_service).map((p2) => p2.service_name || p2.path).filter(Boolean))])).catch(() => setMapSvcs([]));
@@ -413,7 +424,7 @@ export function PlanCard({ site, onBanner }) {
     setBusy('save'); setErr('');
     try {
       const serviceMix = Object.entries(mix).map(([service, posts]) => ({ service, posts: Number(posts) || 0 })).filter((m) => m.posts > 0);
-      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: f.promotion, approvalEmail: f.approvalEmail, approvalCc: f.approvalCc, aesthetics: f.aesthetics, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources, serviceMix } });
+      await seoSocialProfileSave(site, { phone: f.phone, website: f.website, bookingUrl: f.bookingUrl, brandColor1: f.brandColor1, brandColor2: f.brandColor2, voiceNotes: f.voiceNotes, icp: f.icp, warranty: f.warranty, promotion: f.promotion, approvalEmail: f.approvalEmail, approvalCc: f.approvalCc, voices: f.voices, certifications: f.certs, commentTrigger: f.commentTrigger, commentOffer: f.commentOffer, plan: { postsPerDay: Number(f.postsPerDay), reelsPerMonth: Number(f.reelsPerMonth), reviewsPerMonth: Number(f.reviewsPerMonth), platforms: f.platforms, imageSources: f.imageSources, serviceMix } });
       onBanner('✅ Posting plan saved — it applies from the next month you plan.');
     } catch (e) { setErr(e.message); } finally { setBusy(''); }
   };
