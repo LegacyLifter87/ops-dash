@@ -46,6 +46,16 @@ const AESTHETICS = [
   ['monochrome-premium', '🖤 Monochrome Premium', 'B&W photos + one brand-color duotone accent — sharp, upscale services'],
   ['farmhouse-rustic', '🌾 Farmhouse Rustic', 'Cream fields, barn-red/denim accents, hand-painted feel — rural and ranch'],
   ['sport-dynamic', '🏁 Sport Dynamic', 'Diagonal energy, bold italics, action shots — detailing, fleets, high-energy crews'],
+  ['detail-craftsmanship', '🔍 Detail / Craftsmanship', 'Close-ups of hands, tools, materials, textures and finished-work quality — flooring, remodeling, woodworking, automotive, construction'],
+  ['before-after', '🔁 Before & After', 'Transformation visuals: split-screen or side-by-side, or a strong finished-result reveal — remodeling, cleaning, landscaping, detailing, restoration'],
+  ['lifestyle', '🛋️ Lifestyle', 'The service shown naturally in real-life use, not a traditional ad — relatable and authentic'],
+  ['warm-inviting', '🕯️ Warm & Inviting', 'Warm lighting, natural tones, comfortable environments, welcoming feel — home services, remodeling, landscaping, family-owned'],
+  ['technical-precision', '⚙️ Technical / Precision', 'Clean structured visuals of equipment, tools, measurements and the actual process — electrical, HVAC, generators, engineering'],
+  ['high-contrast', '🌓 High Contrast', 'Strong lighting and shadows, dramatic subject separation, bold impact — automotive, construction, restoration'],
+  ['soft-approachable', '☁️ Soft & Approachable', 'Softer lighting, lighter tones, friendly relaxed photography — welcoming, trustworthy, less corporate'],
+  ['street-urban', '🏙️ Street / Urban', 'Real-world storefronts, streets, urban backgrounds, candid photography — natural local-business feel'],
+  ['premium-lifestyle', '💎 Premium Lifestyle', 'Upscale environments, polished photography, sophisticated settings, high-end but natural — premium remodel, flooring, real estate, offices'],
+  ['cartoon-illustrated', '🎨 Cartoon / Illustrated', 'Playful illustrated or cartoon-like visuals that still carry the branding — promos, seasonal, family-oriented, fun and memorable'],
 ];
 // Brand voices the owner can approve — mirrors the visual style selector.
 // Pick any; the AI chooses ONE per month from the approved set (or freely
@@ -881,6 +891,7 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const [zoom, setZoom] = useState(false); // full-screen media lightbox
   const [logoEd, setLogoEd] = useState(false); // drag-to-place logo editor
   const [regenOpen, setRegenOpen] = useState(false); // in-dashboard regenerate-with-feedback composer
+  const [regenStyle, setRegenStyle] = useState('');   // per-image visual style override for this regeneration
   const [regenFb, setRegenFb] = useState('');
   const [rejOpen, setRejOpen] = useState(false); // reject composer — rejecting auto-regenerates, steered by the reason
   const [rejFb, setRejFb] = useState('');
@@ -925,12 +936,12 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
   const [pic, ptone] = PILLAR[post.pillar] || ['📄', 'bg-slate-100 text-slate-600'];
   const toggleRef = (url) => setRefSel((p) => { const n = new Set(p); if (n.has(url)) n.delete(url); else if (n.size < 3) n.add(url); return n; });
   const toggleTarget = (id) => setTargetSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const saveFields = () => seoSocialUpdatePost(site, post.id, {
+  const saveFields = (o = {}) => seoSocialUpdatePost(site, post.id, {
     caption: f.caption, overlayText: f.overlay, cta: f.cta,
     hashtags: f.tags.split(/[\s,]+/).filter(Boolean),
     refPhotos: [...refSel],
     ...((ghl?.accounts || []).length ? { targetAccounts: [...targetSel] } : {}),
-    ...(post.format === 'video' ? { videoPrompt: f.prompt } : { imagePrompt: f.prompt }),
+    ...(post.format === 'video' ? { videoPrompt: o.prompt ?? f.prompt } : { imagePrompt: o.prompt ?? f.prompt }),
   });
   const run = async (name, fn, next) => { setBusy(name); setErr(''); try { await fn(); await onChanged(); if (next) advance(); } catch (e) { setErr(e.message); } finally { setBusy(''); } };
   const doSave = () => run('save', saveFields, false);
@@ -944,7 +955,25 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
     await seoSocialRegenMedia(site, post.id, reason);
     setRejOpen(false); setRejFb('');
   }, true);
-  const doRegen = (fb) => run('regen', async () => { await saveFields(); await seoSocialRegenMedia(site, post.id, (fb || '').trim()); setRegenOpen(false); setRegenFb(''); }, false);
+  // Per-image style override: stamped into the stored image prompt (so a plain
+  // re-run honors it) AND told to the prompt reviser when there is feedback
+  // (it rewrites the prompt from the notes). Marked one-time so the feedback
+  // learner never turns it into a standing rule for the whole brand.
+  const STYLE_RE = /\n\nVISUAL STYLE OVERRIDE \(this image only\):[\s\S]*$/;
+  const doRegen = (fb) => run('regen', async () => {
+    const st = post.format === 'image' ? AESTHETICS.find((a) => a[0] === regenStyle) : null;
+    let fb2 = (fb || '').trim();
+    let promptToSave = f.prompt;
+    if (st) {
+      const name = st[1].replace(/^\S+\s+/, '');
+      promptToSave = String(f.prompt || '').replace(STYLE_RE, '') + `\n\nVISUAL STYLE OVERRIDE (this image only): ${name} — ${st[2]}`;
+      setF((x) => ({ ...x, prompt: promptToSave }));
+      if (fb2) fb2 += ` (One-time style choice for this image only — render it in the "${name}" visual style: ${st[2]}.)`;
+    }
+    await saveFields({ prompt: promptToSave });
+    await seoSocialRegenMedia(site, post.id, fb2);
+    setRegenOpen(false); setRegenFb(''); setRegenStyle('');
+  }, false);
   // AI-rewrite this one post's text; re-seed the editable fields from the
   // fresh copy so the new caption shows immediately.
   const doRewrite = (fb) => run('rw', async () => {
@@ -1051,8 +1080,13 @@ function ReviewModal({ site, posts, revId, setRevId, library, ghl, onClose, onCh
         <div class="text-xs font-semibold text-slate-700 mb-1">↻ Regenerate with feedback</div>
         <div class="text-xs text-slate-500 mb-2">Please provide feedback about this regeneration — tell the AI what to change about the image. It rewrites the ${post.format === 'video' ? 'video' : 'image'} prompt from your notes, then regenerates. Leave it blank to regenerate as-is.</div>
         <${Textarea} value=${regenFb} onInput=${(v) => setRegenFb(v)} rows=${3} placeholder="e.g. Make the driveway look wetter and boost the contrast between the clean and dirty halves. Change the headline to focus on curb appeal." />
+        ${post.format === 'image' && html`<div class="flex flex-wrap items-center gap-2 mt-2">
+          <span class="text-xs text-slate-500 whitespace-nowrap">🎨 Visual style for this image</span>
+          <${Select} value=${regenStyle} onChange=${setRegenStyle} class="text-xs w-auto" options=${[{ value: '', label: 'Brand style (as planned)' }, ...AESTHETICS.map(([id, label]) => ({ value: id, label }))]} />
+          ${regenStyle && html`<span class="text-[11px] text-slate-400">${(AESTHETICS.find((a) => a[0] === regenStyle) || [])[2] || ''}</span>`}
+        </div>`}
         <div class="flex items-center justify-end gap-2 mt-2">
-          <${Btn} size="sm" variant="secondary" onClick=${() => { setRegenOpen(false); setRegenFb(''); }} disabled=${!!busy}>Cancel</${Btn}>
+          <${Btn} size="sm" variant="secondary" onClick=${() => { setRegenOpen(false); setRegenFb(''); setRegenStyle(''); }} disabled=${!!busy}>Cancel</${Btn}>
           <${Btn} size="sm" variant="secondary" onClick=${() => doRegen('')} disabled=${!!busy}>${busy === 'regen' ? 'Starting…' : 'Regenerate as-is'}</${Btn}>
           <${Btn} size="sm" onClick=${() => doRegen(regenFb)} disabled=${!!busy || regenFb.trim().length < 5}>${busy === 'regen' ? 'Starting…' : '↻ Regenerate with feedback'}</${Btn}>
         </div>
