@@ -1245,7 +1245,7 @@ function ApprovalTracker({ posts, appr, month, siteName, calendarId }) {
     if (!appr.emailConfigured) return ['bg-slate-50 text-slate-600', '✋ Internal approval only — no client approval email is set. Add one on the Posting plan card (📧 Client approval) to route this month through the client.'];
     if (a?.status === 'approved') return ['bg-emerald-50 text-emerald-800', `✅ Client approved this month on ${fmtD(a.approvedAt)}${a.round > 1 ? ` after ${a.round} rounds` : ''}.`];
     if (a?.status === 'changes') return ['bg-amber-50 text-amber-800', `✏️ Round ${a.round || 1}: the client requested changes on ${fb.length} post${fb.length === 1 ? '' : 's'}${revising.length ? ` — ${revising.length} regenerating now` : ''}${reReady.length ? ` — ${reReady.length} revised and awaiting their re-approval` : ''}. They get a fresh approval link automatically once every revision is finished.`];
-    if (a?.status === 'pending') return ['bg-sky-50 text-sky-800', `📤 Round ${a.round || 1} sent to ${appr.email} on ${fmtD(a.emailSentAt)} — awaiting the client's review.`];
+    if (a?.status === 'pending') return ['bg-sky-50 text-sky-800', `📤 Round ${a.round || 1} sent to ${appr.email} on ${fmtD(a.emailSentAt)} — awaiting the client's review.${a.deadlineLabel ? ` Auto-approves if not reviewed by ${a.deadlineLabel}.` : ''}`];
     return ['bg-slate-50 text-slate-600', `✉️ Not sent to the client yet${appr.email ? ` (will go to ${appr.email})` : ''} — the approval email goes out once every post has finished generating.`];
   })();
 
