@@ -32,6 +32,10 @@
     .wp-body .ph-i { font-size: 1.75rem; }
     .wp-body .ph-t b { display: block; font-size: .85rem; color: #475569; font-weight: 600; }
     .wp-body .ph-t span { display: block; font-size: .8rem; color: #94a3b8; }
+    /* Explicit edit mode — the editable areas get an unmistakable frame */
+    .editing .wp-title, .editing .wp-body { outline: 2px dashed #f59e0b; outline-offset: 8px; border-radius: 6px; background: #fffdf5; cursor: text; }
+    .edit-tools button { font-size: .8rem; font-weight: 600; color: #334155; background: #fff; border: 1px solid #cbd5e1; border-radius: .5rem; padding: .4rem .7rem; }
+    .edit-tools button:hover { border-color: #94a3b8; background: #f8fafc; }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen">

@@ -154,18 +154,34 @@ const centerCard = (b, emoji, title, text, extraHtml = '') => {
     </div>`;
 };
 
+// Editing is an EXPLICIT mode (v2): the article opens read-only with a big
+// "Edit article" button; entering edit mode frames the editable areas, shows a
+// small formatting toolbar, and adds Save/Cancel. Saves go to the server
+// immediately with visible confirmation — 0 of the first 24 approvals were
+// ever edited under the old click-anywhere design, and a failed save was
+// silently swallowed.
+let editing = false;
 function renderPending() {
   const b = data.branding || {};
   const blog = data.blog || {};
   const bodyHtml = mdToHtml(blog.content || '');
   app.innerHTML = `
-    ${header(b, 'Your new article, shown just like it will appear on your website. Click into any text to fix wording, then approve or request a different one.')}
-    <div class="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      <div class="px-6 sm:px-10 pt-8">
-        <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-2">✏️ You can edit the title and article text directly · photos are added automatically when it publishes</div>
-        <h1 data-title contenteditable="true" spellcheck="true" class="wp-title focus:outline-none">${esc(blog.title)}</h1>
+    ${header(b, 'Your new article, shown just like it will appear on your website. Want to change any wording? Use <b>Edit article</b>. Otherwise approve it, or request a different one.')}
+    <div data-article class="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div data-edittools class="edit-tools hidden sticky top-0 z-10 flex flex-wrap items-center gap-1.5 px-4 py-2 bg-amber-50 border-b border-amber-200">
+        <span class="text-xs font-semibold text-amber-800 mr-1">✏️ Editing — click into the title or text and type</span>
+        <button type="button" data-fmt="bold" title="Bold"><b>B</b></button>
+        <button type="button" data-fmt="italic" title="Italic"><i>I</i></button>
+        <button type="button" data-fmt="h2" title="Section heading">H2</button>
+        <button type="button" data-fmt="p" title="Normal paragraph">¶</button>
+        <button type="button" data-fmt="ul" title="Bullet list">• List</button>
+        <span data-savestate class="text-xs text-slate-500 ml-auto"></span>
       </div>
-      <div data-content contenteditable="true" spellcheck="true" class="wp-body px-6 sm:px-10 pb-8 focus:outline-none">${bodyHtml}</div>
+      <div class="px-6 sm:px-10 pt-8">
+        <div class="text-xs text-slate-400 mb-2">Photos are added automatically when it publishes.</div>
+        <h1 data-title contenteditable="false" spellcheck="true" class="wp-title focus:outline-none">${esc(blog.title)}</h1>
+      </div>
+      <div data-content contenteditable="false" spellcheck="true" class="wp-body px-6 sm:px-10 pb-8 focus:outline-none">${bodyHtml}</div>
     </div>
     <div data-rej style="display:none" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <div class="text-sm font-semibold text-amber-800 mb-1">What didn't work about this article?</div>
@@ -178,6 +194,9 @@ function renderPending() {
     </div>
     <div data-bar class="fixed bottom-0 inset-x-0 z-20 bg-white/95 border-t border-slate-200 px-4 py-3" style="backdrop-filter:blur(6px)">
       <div class="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-center">
+        <button data-edit class="w-full sm:w-auto shrink-0 font-semibold rounded-xl px-6 py-3.5 text-base border-2 border-amber-400 text-amber-800 bg-amber-50">✏️ Edit article</button>
+        <button data-save style="display:none" class="w-full sm:w-auto shrink-0 text-white font-semibold rounded-xl px-6 py-3.5 text-base bg-amber-500 shadow-lg">💾 Save changes</button>
+        <button data-edit-cancel style="display:none" class="w-full sm:w-auto shrink-0 font-medium rounded-xl px-5 py-3.5 text-base border border-slate-300 text-slate-600 bg-white">Cancel editing</button>
         <button data-approve class="w-full sm:w-auto shrink-0 text-white font-semibold rounded-xl px-8 py-3.5 text-base shadow-lg" style="background:${esc(b.color || '#0f766e')}">✓ Approve & publish to the website</button>
         <button data-reject class="w-full sm:w-auto shrink-0 font-medium rounded-xl px-6 py-3.5 text-base border border-slate-300 text-slate-600 bg-white">✕ Request a different article</button>
         <div class="text-xs text-slate-400 sm:ml-2">Approving publishes it live right away.</div>
@@ -186,6 +205,50 @@ function renderPending() {
   initialBodyHtml = app.querySelector('[data-content]').innerHTML;
   initialTitle = (app.querySelector('[data-title]').textContent || '').trim();
   syncBarPad();
+}
+
+const $ = (sel) => app.querySelector(sel);
+function setEditing(on) {
+  editing = on;
+  const art = $('[data-article]');
+  if (art) art.classList.toggle('editing', on);
+  for (const sel of ['[data-title]', '[data-content]']) { const el = $(sel); if (el) el.setAttribute('contenteditable', on ? 'true' : 'false'); }
+  const tools = $('[data-edittools]'); if (tools) tools.classList.toggle('hidden', !on);
+  const show = (sel, v) => { const el = $(sel); if (el) el.style.display = v ? '' : 'none'; };
+  show('[data-edit]', !on); show('[data-save]', on); show('[data-edit-cancel]', on);
+  show('[data-approve]', !on); show('[data-reject]', !on);
+  const st = $('[data-savestate]'); if (st) st.textContent = '';
+  if (on) { const t = $('[data-title]'); if (t) { t.focus(); } }
+  syncBarPad();
+}
+function hasUnsavedEdits() {
+  const bodyEl = $('[data-content]'), titleEl = $('[data-title]');
+  const newTitle = (titleEl?.textContent || '').trim();
+  return (bodyEl && bodyEl.innerHTML !== initialBodyHtml) || (!!newTitle && newTitle !== initialTitle);
+}
+// Persist title/body edits as markdown. Throws on failure — callers surface it.
+async function saveEdits() {
+  const bodyEl = $('[data-content]'), titleEl = $('[data-title]');
+  const newTitle = (titleEl?.textContent || '').trim();
+  const bodyChanged = bodyEl && bodyEl.innerHTML !== initialBodyHtml;
+  const titleChanged = !!newTitle && newTitle !== initialTitle;
+  if (!bodyChanged && !titleChanged) return false;
+  let md = bodyChanged ? htmlToMd(bodyEl) : null;
+  if (md !== null && hadH1) md = `# ${newTitle || initialTitle}\n\n${md}`;
+  await call({ action: 'blog_save_edits', title: titleChanged ? newTitle : undefined, content: md || undefined });
+  if (bodyEl) initialBodyHtml = bodyEl.innerHTML;
+  if (newTitle) initialTitle = newTitle;
+  return true;
+}
+function applyFormat(kind) {
+  const bodyEl = $('[data-content]');
+  if (!bodyEl) return;
+  bodyEl.focus();
+  if (kind === 'bold') document.execCommand('bold');
+  else if (kind === 'italic') document.execCommand('italic');
+  else if (kind === 'h2') document.execCommand('formatBlock', false, 'h2');
+  else if (kind === 'p') document.execCommand('formatBlock', false, 'p');
+  else if (kind === 'ul') document.execCommand('insertUnorderedList');
 }
 
 function syncBarPad() {
@@ -208,6 +271,29 @@ async function load() {
 
 app.addEventListener('click', async (e) => {
   if (busy) return;
+  const fmt = e.target.closest('[data-fmt]');
+  if (fmt) { e.preventDefault(); applyFormat(fmt.dataset.fmt); return; }
+  if (e.target.closest('[data-edit]')) { setEditing(true); return; }
+  if (e.target.closest('[data-edit-cancel]')) {
+    if (hasUnsavedEdits() && !confirm('Discard your changes to this article?')) return;
+    const bodyEl = $('[data-content]'), titleEl = $('[data-title]');
+    if (bodyEl) bodyEl.innerHTML = initialBodyHtml;
+    if (titleEl) titleEl.textContent = initialTitle;
+    setEditing(false);
+    return;
+  }
+  const saveBtn = e.target.closest('[data-save]');
+  if (saveBtn) {
+    busy = true; saveBtn.textContent = 'Saving…';
+    const st = $('[data-savestate]');
+    try {
+      const changed = await saveEdits();
+      if (st) st.textContent = changed ? '✓ Saved — your wording will be used when it publishes' : 'No changes to save';
+      setEditing(false);
+    } catch (err) { if (st) st.textContent = ''; alert(`Could not save your changes: ${err.message}`); }
+    finally { busy = false; saveBtn.textContent = '💾 Save changes'; }
+    return;
+  }
   if (e.target.closest('[data-reject]')) {
     const box = app.querySelector('[data-rej]');
     if (box) { box.style.display = ''; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); const fb = box.querySelector('[data-fb]'); if (fb) fb.focus(); }
@@ -236,19 +322,11 @@ app.addEventListener('click', async (e) => {
     if (!confirm('Publish this article live on your website now?')) return;
     busy = true; ap.textContent = 'Publishing…';
     try {
-      const titleEl = app.querySelector('[data-title]');
-      const bodyEl = app.querySelector('[data-content]');
-      const newTitle = (titleEl?.textContent || '').trim();
-      const bodyChanged = bodyEl && bodyEl.innerHTML !== initialBodyHtml;
-      const titleChanged = newTitle && newTitle !== initialTitle;
-      // Only save when the client actually changed something — an untouched
-      // article keeps its original markdown byte-for-byte.
-      if (bodyChanged || titleChanged) {
-        let md = bodyChanged ? htmlToMd(bodyEl) : null;
-        if (md !== null && hadH1) md = `# ${newTitle || initialTitle}\n\n${md}`;
-        try { await call({ action: 'blog_save_edits', title: titleChanged ? newTitle : undefined, content: md || undefined }); }
-        catch (_) { /* edits are best-effort — approval proceeds */ }
-      }
+      // Any unsaved edits go to the server first; a failed save STOPS the
+      // approval (the old page swallowed the error and published the
+      // original text, which read as "editing doesn't work").
+      try { await saveEdits(); }
+      catch (err) { throw new Error(`Your edits could not be saved (${err.message}) — the article was NOT published. Try Save changes again, or approve after reloading.`); }
       const r = await call({ action: 'blog_approve' });
       centerCard(data.branding, '🎉', 'Published!', 'Your article is live on your website.', r.link ? `<a href="${esc(r.link)}" class="inline-block mt-4 text-white font-semibold rounded-xl px-6 py-3 text-sm" style="background:${esc((data.branding || {}).color || '#0f766e')}">🔗 View it on your site</a>` : '');
     } catch (err) { busy = false; ap.textContent = '✓ Approve & publish to the website'; alert(err.message); }
